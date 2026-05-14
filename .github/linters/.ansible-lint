@@ -1,0 +1,15 @@
+---
+
+exclude_paths:
+
+- ansible/vendor-collections/
+- vendor-collections/
+- ansible/collections/ansible_collections/community/
+- collections/ansible_collections/community/
+- ansible/collections/ansible_collections/community.general-\*.info/
+- collections/ansible_collections/community.general-\*.info/
+
+warn_list:
+
+- jinja[spacing]
+- var-naming[no-role-prefix]

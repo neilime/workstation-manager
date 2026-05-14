@@ -1,0 +1,85 @@
+---
+- name: Install system prerequisite packages
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: "{{ workstation_manager_resolved.system.packages.prerequisites }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+  when: workstation_manager_resolved.system.packages.prerequisites | length > 0
+
+- name: Check configured timezone file exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "/usr/share/zoneinfo/{{ workstation_manager_resolved.system.timezone }}"
+  register: workstation_manager_system_timezone_file
+
+- name: Assert configured timezone file exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_system_timezone_file.stat.exists
+    fail_msg: >-
+      Configured timezone {{ workstation_manager_resolved.system.timezone }} is not
+      available on this host.
+
+- name: Ensure configured locale exists
+  become: "{{ workstation_manager_use_become }}"
+  community.general.locale_gen:
+    name: "{{ workstation_manager_resolved.system.locale }}"
+    state: present
+
+- name: Write default locale configuration
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: /etc/default/locale
+    mode: "0644"
+    content: |
+      LANG={{ workstation_manager_resolved.system.locale }}
+      LANGUAGE={{ workstation_manager_resolved.system.locale.split('.')[0] }}:en
+      LC_ALL={{ workstation_manager_resolved.system.locale }}
+
+- name: Write system timezone selection
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: /etc/timezone
+    mode: "0644"
+    content: "{{ workstation_manager_resolved.system.timezone }}\n"
+
+- name: Link system localtime
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    src: "/usr/share/zoneinfo/{{ workstation_manager_resolved.system.timezone }}"
+    dest: /etc/localtime
+    state: link
+    force: true
+
+- name: Ensure required system directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop: >-
+    {{
+      [{"path": workstation_manager_resolved.system.state_dir}] +
+      workstation_manager_resolved.system.directories
+    }}
+
+- name: Enable configured system services
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+  loop: "{{ workstation_manager_resolved.system.services.enabled }}"
+  when: workstation_manager_resolved.system.services.enabled | length > 0
+
+- name: Disable configured system services
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+  loop: "{{ workstation_manager_resolved.system.services.disabled }}"
+  when: workstation_manager_resolved.system.services.disabled | length > 0

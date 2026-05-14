@@ -1,0 +1,69 @@
+---
+- name: Inspect Chrome config root for bookmark exports
+  ansible.builtin.stat:
+    path: "{{ workstation_backup_chrome_config_dir }}"
+  register: workstation_backup_chrome_config_stat
+
+- name: Find Chrome bookmark files
+  ansible.builtin.find:
+    paths: "{{ workstation_backup_chrome_config_dir }}"
+    recurse: true
+    patterns: Bookmarks
+    file_type: file
+  register: workstation_backup_chrome_bookmark_files
+  when: workstation_backup_chrome_config_stat.stat.exists
+
+- name: Build Chrome bookmark export plan
+  ansible.builtin.set_fact:
+    workstation_backup_bookmark_plan: >-
+      {{
+        (workstation_backup_chrome_bookmark_files.files | default([])) |
+        neilime.workstation_backup.backup_bookmark_plan(
+          workstation_backup_chrome_config_dir,
+          workstation_backup_bookmarks_export_dir,
+          workstation_backup_tab
+        )
+      }}
+
+- name: Merge Chrome bookmark export plan into execution context
+  ansible.builtin.set_fact:
+    workstation_backup_browser_bookmark_exports: >-
+      {{
+        workstation_backup_browser_bookmark_exports +
+        workstation_backup_bookmark_plan.exports
+      }}
+    workstation_backup_manifest_lines: >-
+      {{
+        workstation_backup_manifest_lines +
+        workstation_backup_bookmark_plan.manifest_lines
+      }}
+
+- name: Ensure Chrome bookmark export directory exists
+  ansible.builtin.file:
+    path: "{{ workstation_backup_bookmarks_export_dir }}"
+    state: directory
+    mode: "0700"
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_browser_bookmark_exports | length > 0
+
+- name: Ensure Chrome bookmark export parent directories exist
+  ansible.builtin.file:
+    path: "{{ item.dest | dirname }}"
+    state: directory
+    mode: "0700"
+  loop: "{{ workstation_backup_browser_bookmark_exports }}"
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_browser_bookmark_exports | length > 0
+
+- name: Export Chrome bookmark files
+  ansible.builtin.copy:
+    src: "{{ item.source }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    mode: "0600"
+  loop: "{{ workstation_backup_browser_bookmark_exports }}"
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_browser_bookmark_exports | length > 0

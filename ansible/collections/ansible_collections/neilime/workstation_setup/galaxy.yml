@@ -1,0 +1,21 @@
+---
+namespace: neilime
+name: workstation_setup
+version: 1.0.0
+readme: README.md
+authors:
+  - Emilien
+description: Internal collection for workstation-manager playbook helpers and tests.
+tags:
+  - linux
+  - infrastructure
+  - tools
+license:
+  - MIT
+dependencies:
+  ansible.posix: "*"
+  community.general: "*"
+repository: https://github.com/neilime/workstation-manager
+documentation: https://github.com/neilime/workstation-manager/blob/main/README.md
+homepage: https://github.com/neilime/workstation-manager
+issues: https://github.com/neilime/workstation-manager/issues

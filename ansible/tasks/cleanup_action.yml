@@ -1,0 +1,4 @@
+---
+- name: Cleanup removable workstation artifacts and report drift
+  ansible.builtin.import_role:
+    name: neilime.workstation_cleanup.cleanup

@@ -1,34 +1,20 @@
 ---
-- name: Cleanup personal computer
-  hosts: personal_computer
-  become: true
+- name: Cleanup workstation
+  hosts: localhost
+  connection: local
+  gather_facts: true
   vars:
-    ansible_config_dir: "/home/ansible/config"
+    workstation_action: cleanup
+    workstation_use_become: >-
+      {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
+      default('true', true) | bool }}
+    workstation_private_override_file: >-
+      {{ lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') |
+      default('', true) }}
+
   tasks:
-    - name: Docker prune
-      community.docker.docker_prune:
-        containers: true
-        images: true
-        images_filters:
-          dangling: false
-        networks: true
-        volumes: true
-        builder_cache: true
+    - name: Resolve workstation config inputs
+      ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml
 
-    - name: Clear useless apt resources using localepurge
-      ansible.builtin.apt:
-        name: localepurge
-        state: present
-      notify: Run localepurge
-
-    - name: Update system using ucaresystem-core
-      ansible.builtin.command: ucaresystem-core -u
-
-    - name: Remove APT dependencies that are no longer required and purge their configuration files
-      ansible.builtin.apt:
-        autoremove: yes
-        purge: true
-
-  handlers:
-    - name: Run localepurge
-      ansible.builtin.command: localepurge
+    - name: Run cleanup action tasks
+      ansible.builtin.import_tasks: tasks/cleanup_action.yml

@@ -1,0 +1,74 @@
+---
+- name: Validate APT repository declarations
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.assert:
+    that:
+      - item.name is string
+      - item.source is string
+      - item.keyring is mapping
+      - item.keyring.url is string
+      - item.keyring.path is string
+    fail_msg: >-
+      Declared APT repository {{ item | to_nice_json }} must include name,
+      source, and keyring.url/keyring.path fields.
+  loop: "{{ workstation_manager_resolved.system.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed-repository') }}"
+  when: workstation_manager_resolved.system.repositories.apt | length > 0
+
+- name: Ensure APT keyring directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item.keyring.path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ workstation_manager_resolved.system.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: workstation_manager_resolved.system.repositories.apt | length > 0
+
+- name: Download APT repository keyrings
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: "{{ item.keyring.url }}"
+    dest: "{{ item.keyring.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.keyring.mode | default('0644') }}"
+  loop: "{{ workstation_manager_resolved.system.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: workstation_manager_resolved.system.repositories.apt | length > 0
+
+- name: Configure declared vendor APT repositories
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt_repository:
+    repo: "{{ item.source }}"
+    filename: "{{ item.filename | default(item.name) }}"
+    state: "{{ item.state | default('present') }}"
+    update_cache: false
+  loop: "{{ workstation_manager_resolved.system.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: workstation_manager_apt_repositories
+  when: workstation_manager_resolved.system.repositories.apt | length > 0
+
+- name: Refresh APT cache after repository changes
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+  when:
+    - workstation_manager_resolved.system.repositories.apt | length > 0
+    - workstation_manager_apt_repositories is changed
+
+- name: Install declared APT packages
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: "{{ workstation_manager_resolved.system.packages.apt }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+  when: workstation_manager_resolved.system.packages.apt | length > 0

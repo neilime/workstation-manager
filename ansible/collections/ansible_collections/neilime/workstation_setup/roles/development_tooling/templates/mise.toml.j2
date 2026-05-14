@@ -1,0 +1,4 @@
+[tools]
+{% for tool_name, tool_version in workstation_manager_mise_config_tools | dictsort %}
+{{ tool_name | to_json }} = {{ tool_version | string | to_json }}
+{% endfor %}

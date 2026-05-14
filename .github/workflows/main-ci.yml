@@ -1,28 +1,28 @@
+---
 name: Main - Continuous Integration
+
+"on":
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-on:
-  push:
-    branches:
-      - main
-
 permissions: {}
 
 jobs:
   clean:
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/prune-pull-requests-images-tags.yml@e4bf7a12228a2a4b5993d2d36b99b4dd0ec80bf5 # 0.32.1
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/prune-pull-requests-images-tags.yml@a0bab9151cc074af9f6c8204ab42a48d2d570379 # v0.30.6
     permissions:
       contents: read
-      packages: write
-      issues: read
-      pull-requests: read
-      # FIXME: This is a workaround for having workflow actions. See https://github.com/orgs/community/discussions/38659
       id-token: write
+      packages: write
+      pull-requests: read
     with:
-      images: '["ansible-ci","ubuntu-ci","git-ci"]'
+      images: '["tooling"]'
 
   ci:
     name: Continuous Integration
@@ -30,13 +30,10 @@ jobs:
     permissions:
       actions: read
       contents: read
-      statuses: write
-      security-events: write
-      packages: write
-      issues: read
-      pull-requests: read
-      # FIXME: This is a workaround for having workflow actions. See https://github.com/orgs/community/discussions/38659
       id-token: write
-    with:
-      sign-images: true
+      issues: read
+      packages: write
+      pull-requests: read
+      security-events: write
+      statuses: write
     secrets: inherit

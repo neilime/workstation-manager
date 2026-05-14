@@ -1,0 +1,11 @@
+directory:
+  - ansible/collections/ansible_collections/neilime/workstation_backup
+  - ansible/collections/ansible_collections/neilime/workstation_cleanup
+  - ansible/collections/ansible_collections/neilime/workstation_setup
+  - ansible/collections/ansible_collections/neilime/workstation_state
+framework:
+  - ansible
+skip-path:
+  - ansible/vendor-collections
+  - ansible/collections/ansible_collections/community
+  - ansible/collections/ansible_collections/community.general-.*\.info

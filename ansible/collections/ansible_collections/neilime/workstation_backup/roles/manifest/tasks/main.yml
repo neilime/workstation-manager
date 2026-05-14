@@ -1,0 +1,20 @@
+---
+- name: Write backup manifest
+  ansible.builtin.copy:
+    dest: "{{ workstation_backup_manifest_path }}"
+    mode: "0644"
+    content: >-
+      {{
+        workstation_backup_manifest_lines |
+        neilime.workstation_backup.backup_manifest_content({
+          'timestamp': workstation_backup_timestamp,
+          'archive_path': workstation_backup_archive_path,
+          'dry_run': workstation_backup_dry_run,
+          'tab_character': workstation_backup_tab,
+          'newline_character': workstation_backup_newline
+        })
+      }}
+- name: Report backup dry run manifest path
+  ansible.builtin.debug:
+    msg: "backup manifest written to {{ workstation_backup_manifest_path }}"
+  when: workstation_backup_dry_run

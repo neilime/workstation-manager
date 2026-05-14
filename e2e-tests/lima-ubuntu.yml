@@ -1,0 +1,27 @@
+---
+vmType: qemu
+cpus: 2
+memory: "4GiB"
+disk: "20GiB"
+
+# yamllint disable rule:line-length
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+# yamllint enable rule:line-length
+
+ssh:
+  localPort: 60022
+
+mountType: "reverse-sshfs"
+mounts:
+  - location: "."
+    mountPoint: "/workspace"
+    writable: false
+
+probes:
+  - mode: readiness
+    description: "sudo is available on the base Ubuntu image"
+    script: |
+      #!/bin/bash
+      command -v sudo

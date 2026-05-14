@@ -1,0 +1,192 @@
+---
+- name: Resolve home-environment settings
+  ansible.builtin.set_fact:
+    workstation_manager_home_environment_chezmoi_enabled: >-
+      {{ workstation_manager_resolved.home_environment.chezmoi.source | length > 0 }}
+    workstation_manager_home_environment_chezmoi_architecture: >-
+      {{
+        {
+          'x86_64': 'amd64',
+          'amd64': 'amd64',
+          'aarch64': 'arm64',
+          'arm64': 'arm64'
+        }.get(ansible_architecture, '')
+      }}
+    workstation_manager_home_environment_chezmoi_config_path: >-
+      {{
+        workstation_manager_resolved.home_environment.chezmoi.config_path
+        if workstation_manager_resolved.home_environment.chezmoi.config_path.startswith('/')
+        else (
+          workstation_manager_resolved.user.home ~ '/'
+          ~ workstation_manager_resolved.home_environment.chezmoi.config_path[2:]
+          if workstation_manager_resolved.home_environment.chezmoi.config_path.startswith('~/')
+          else workstation_manager_resolved.user.home ~ '/'
+          ~ workstation_manager_resolved.home_environment.chezmoi.config_path
+        )
+      }}
+    workstation_manager_home_environment_chezmoi_source_dir: >-
+      {{ workstation_manager_resolved.user.home ~ '/.local/share/chezmoi' }}
+    workstation_manager_home_environment_chezmoi_download_url: >-
+      {{
+        'https://github.com/twpayne/chezmoi/releases/download/v'
+        ~ workstation_manager_resolved.home_environment.chezmoi.version
+        ~ '/chezmoi-linux-'
+        ~ workstation_manager_home_environment_chezmoi_architecture
+      }}
+    workstation_manager_home_environment_chezmoi_template_data: >-
+      {{
+        {
+          'workstation_manager': {
+            'user': {
+              'name': workstation_manager_resolved.user.name,
+              'home': workstation_manager_resolved.user.home,
+              'projects_directory': workstation_manager_resolved.user.projects_directory,
+              'state_dir': workstation_manager_resolved.user.state_dir,
+            },
+            'system': {
+              'state_dir': workstation_manager_resolved.system.state_dir,
+            },
+            'development': {
+              'mise': {
+                'activation_path': workstation_manager_resolved.user.home ~ '/.config/workstation-manager/mise.sh',
+              },
+            },
+          },
+        }
+      }}
+
+- name: Ensure baseline user directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  loop:
+    - "{{ workstation_manager_resolved.user.projects_directory }}"
+    - "{{ workstation_manager_resolved.user.home }}/.cache"
+    - "{{ workstation_manager_resolved.user.home }}/.cache/nix"
+    - "{{ workstation_manager_resolved.user.home }}/.local"
+    - "{{ workstation_manager_resolved.user.home }}/.local/share"
+    - "{{ workstation_manager_resolved.user.home }}/.local/state"
+    - "{{ workstation_manager_resolved.user.home }}/.config"
+
+- name: Assert that the configured Chezmoi target architecture is supported
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_architecture | length > 0
+    fail_msg: >-
+      Chezmoi bootstrap currently supports only amd64 and arm64 Linux targets,
+      but ansible_architecture={{ ansible_architecture }}.
+  when: workstation_manager_home_environment_chezmoi_enabled
+
+- name: Check whether Chezmoi is already installed
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - --version
+  register: workstation_manager_home_environment_chezmoi_version
+  changed_when: false
+  failed_when: false
+  when: workstation_manager_home_environment_chezmoi_enabled
+
+- name: Install the pinned Chezmoi binary
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: "{{ workstation_manager_home_environment_chezmoi_download_url }}"
+    dest: "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - workstation_manager_home_environment_chezmoi_enabled
+    - >-
+      workstation_manager_home_environment_chezmoi_version.rc != 0
+      or workstation_manager_resolved.home_environment.chezmoi.version
+      not in workstation_manager_home_environment_chezmoi_version.stdout
+
+- name: Ensure the managed Chezmoi config directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_home_environment_chezmoi_config_path | dirname }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  when: workstation_manager_home_environment_chezmoi_enabled
+
+- name: Render the managed Chezmoi machine-data config
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: "{{ workstation_manager_home_environment_chezmoi_config_path }}"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0600"
+    content: >-
+      {{ {'data': workstation_manager_home_environment_chezmoi_template_data} | to_nice_yaml(indent=2) }}
+  when: workstation_manager_home_environment_chezmoi_enabled
+
+- name: Check whether the managed Chezmoi source directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
+  register: workstation_manager_home_environment_chezmoi_source_dir_stat
+  when: workstation_manager_home_environment_chezmoi_enabled
+
+- name: Initialize the managed Chezmoi source repository
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - init
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.source }}"
+    creates: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  when:
+    - workstation_manager_home_environment_chezmoi_enabled
+    - not ansible_check_mode
+    - not workstation_manager_home_environment_chezmoi_source_dir_stat.stat.exists
+
+- name: Check whether Chezmoi apply would change managed files
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - apply
+      - --dry-run
+  register: workstation_manager_home_environment_chezmoi_apply_check
+  changed_when: >-
+    {{
+      workstation_manager_home_environment_chezmoi_apply_check.stdout | trim | length > 0
+      or workstation_manager_home_environment_chezmoi_apply_check.stderr | trim | length > 0
+    }}
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  check_mode: false
+  when:
+    - workstation_manager_home_environment_chezmoi_enabled
+    - workstation_manager_resolved.home_environment.chezmoi.apply
+    - not ansible_check_mode
+
+- name: Apply the managed Chezmoi target state
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - apply
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  changed_when: true
+  when:
+    - workstation_manager_home_environment_chezmoi_enabled
+    - workstation_manager_resolved.home_environment.chezmoi.apply
+    - workstation_manager_home_environment_chezmoi_apply_check is changed
+    - not ansible_check_mode

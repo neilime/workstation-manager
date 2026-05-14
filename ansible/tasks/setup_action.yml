@@ -1,0 +1,44 @@
+---
+- name: Apply system base configuration
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.system_base
+
+- name: Apply APT package configuration
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.apt_packages
+
+- name: Apply Flatpak desktop applications
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.flatpak_apps
+
+- name: Apply development tooling
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.development_tooling
+
+- name: Apply primary browser configuration
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.primary_browser
+
+- name: Apply browser profile directories
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.browser_profiles
+
+- name: Apply GNOME desktop preferences
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.gnome_preferences
+
+- name: Restore SSH keys from Bitwarden
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.ssh_keys
+
+- name: Restore GPG keys from Bitwarden
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.gpg_keys
+
+- name: Apply home-environment bootstrap
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.home_environment
+
+- name: Apply managed state markers
+  ansible.builtin.import_role:
+    name: neilime.workstation_state.managed_state

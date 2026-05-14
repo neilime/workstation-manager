@@ -1,323 +1,208 @@
-# ubuntu-config
+# workstation-manager
 
-My own Ubuntu setup & config. This project uses Clean Architecture principles with domain-driven design to create a layered, reproducible development environment using Ansible, Nix, and Home Manager.
+Ubuntu machine setup driven entirely from this repository.
 
-## Quick Start
+The repository is the source of truth for the tools, packages, and machine
+configuration applied during installation.
 
-Get your Ubuntu system configured with everything you need in one command:
+## Workstation Management
 
-```sh
-wget -qO- \
-"https://raw.githubusercontent.com/neilime/ubuntu-config/main/install.sh?$(date +%s)" | sh
-```
+Fresh Ubuntu machine bootstrap requires only:
 
-### Requirements
+- internet access
+- `sudo`
+- Bitwarden credentials plus the vault password available for the interactive login prompt
 
-- A fresh Ubuntu 22.04+ installation (tested on 22.04 and 24.04)
-- An internet connection
-- A user account with `sudo` privileges
-- Bitwarden account credentials for secure password management
+The public entrypoint is `workstation.sh`. The user does not need a local checkout
+to install, re-apply, preview, or back up the machine.
 
-### What It Does
-
-This single script will automatically:
-
-- Install all essential system packages and development tools
-- Configure your desktop environment with GNOME preferences
-- Set up development environments with Nix and Home Manager
-- Install applications across all domains (browser, communication, media, utilities)
-- Configure your shell, Git, SSH keys, and development environment
-
-For domain-specific installations or customization options, see the [Domain-Specific Installation](#specific-installation) section below.
-
-### Specific Installation
-
-You can install specific domains or layers using tags. For example, to install only the system tools:
+Use it like this:
 
 ```sh
-wget -qO- "https://raw.githubusercontent.com/neilime/ubuntu-config/main/install.sh?$(date +%s)" | sh -s -- --env SETUP_TAGS=system
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup --dry-run
 ```
 
-## Architecture Overview
+`sh -s --` tells `sh` to read the script from standard input and pass the
+remaining arguments to it.
 
-This setup follows domain-driven design and three distinct layers:
+- no extra argument: run the `setup` action
+- `setup`: bootstrap dependencies and converge the workstation
+- `cleanup`: prune removable workstation artifacts, remove stale managed directories, and write a drift report under the managed user state directory
+- `backup`: create a user-state backup archive and standalone Chrome bookmark exports instead of applying configuration; prompts for the output directory when run interactively
+- `--dry-run`: preview the selected action in Ansible check mode
 
-### 🖥️ System Layer (Ubuntu + Ansible)
+`setup` and `setup --dry-run` both require Bitwarden-backed SSH/GPG restore. The
+playbook now always runs the SSH and GPG restore roles, so the resolved Ansible
+configuration must define `secrets.bitwarden.ssh_collection_id` and
+`secrets.bitwarden.gpg_collection_id`. `workstation.sh` uses API credentials when
+`BITWARDEN_CLIENT_ID`, `BITWARDEN_CLIENT_SECRET`, and `BITWARDEN_PASSWORD` are
+already provided in the environment, which is the intended CI and end-to-end
+automation path. End users are prompted for the Bitwarden email and vault
+password instead of exporting them in the shell.
 
-- **Purpose**: Essential system packages and core OS configuration
-- **Technology**: APT packages and system services via Ansible
-- **Scope**: System-wide, requires root access
-- **Domain**: System essentials managed by `setup_system` role
-- **Examples**: Core utilities, system services, hardware drivers, GNOME preferences
+The script bootstraps its own dependencies and applies the repository with
+`ansible-pull`. Running it again later is the normal way to re-apply the managed
+workstation state. It uses a hidden checkout internally; that repository clone
+is purged after each run and is an implementation detail, not part of the user
+workflow.
 
-### 🏠 User Layer (Home Manager)
+The public interface is intentionally small: setup, cleanup, backup, and help.
 
-- **Purpose**: User-specific configurations and dotfiles
-- **Technology**: Nix + Home Manager with templated configuration
-- **Scope**: User-specific, declarative configuration
-- **Domain**: User environment managed by `setup_home_manager` role
-- **Examples**: Shell configs, Git settings, development tools, fonts
+Setup and cleanup automatically fetch `ansible/private.override.yml` from the
+fixed `neilime/workstation-config` repository with Git and merge it as the
+private override layer.
 
-### 📁 Project Layer (Nix Flakes)
+The Chezmoi source is fixed to `neilime/workstation-config`.
 
-- **Purpose**: Project-specific development environments
-- **Technology**: Nix flakes + direnv
-- **Scope**: Per-repository, isolated environments
-- **Examples**: Node.js versions, Python environments, project dependencies
+Keep any non-secret workstation overrides you do not want in this public
+repository in that tracked file inside `neilime/workstation-config`.
 
-### Application Domains
+Suggested layout:
 
-The setup is organized by functional domains, each managed by dedicated roles:
-
-- **🛡️ System** (`setup_system`): Core system packages and services
-- **🌐 Browser** (`setup_browser`): Web browsers and browsing tools
-- **💬 Communication** (`setup_communication`): Messaging and collaboration apps
-- **⚙️ Development** (`setup_development`): Development tools and environments
-- **🎵 Media** (`setup_media`): Audio, video, and multimedia applications
-- **🛠️ Utility** (`setup_utility`): System utilities and security tools
-- **🏠 Home Manager** (`setup_home_manager`): User configuration management
-- **🔑 Keys Management** (`setup_keys`): SSH and GPG key handling
-
-## Domain Configuration
-
-All application domains are centrally configured in [`ansible/group_vars/all.yml`](./ansible/group_vars/all.yml) with a consistent structure:
-
-```yaml
-domain_name:
-  apt: # APT packages for the domain
-  flatpak: # Flatpak applications for the domain
-  repositories: # APT repositories needed for the domain
-  favorites: # Applications to pin to GNOME launcher
+```text
+workstation-config/
+  ansible/private.override.yml
+  dot_*
 ```
 
-This domain-driven approach provides:
+Keep actual secrets in Bitwarden rather than writing them into that local file.
 
-- **Separation of Concerns**: Each domain manages its own packages and configuration
-- **Centralized Management**: All configuration in one place for easy maintenance
-- **Selective Installation**: Install only the domains you need using tags
-- **Consistent Structure**: Predictable configuration format across all domains
+Because `neilime/workstation-config` is private, the bootstrap machine must be
+able to authenticate to that Git repository. CI and end-to-end automation can
+provide `WORKSTATION_MANAGER_GITHUB_TOKEN` for private GitHub repository access.
 
-## Project Structure
+If you want to run a backup interactively, the script prompts for the destination.
+CI and other non-interactive runs can still provide only
+`WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=/path/to/output-dir`.
 
-```txt
-ubuntu-config
-├── .github/
-│   └── workflows/          # GitHub Actions workflows for CI
-├── ansible/
-│   ├── roles/
-│   │   ├── setup_system/    # System layer: essential packages & configuration
-│   │   ├── setup_development/  # Development domain: dev tools & environment
-│   │   ├── setup_browser/   # Browser domain: web browsers
-│   │   ├── setup_communication/  # Communication domain: messaging apps
-│   │   ├── setup_media/     # Media domain: multimedia applications
-│   │   ├── setup_utility/   # Utility domain: system utilities & security tools
-│   │   ├── setup_home_manager/  # User layer: Home Manager setup
-│   │   ├── setup_keys/      # User layer: SSH/GPG key management
-│   │   └── gnome_favorites/ # Shared: GNOME launcher pinning
-│   ├── group_vars/          # Centralized domain-based configuration
-│   └── setup.yml            # Main playbook with domain architecture
-├── home/
-│   ├── flake.nix           # Home Manager Nix flake
-│   └── home.nix.j2         # User layer configuration template
-├── tests/                  # Domain-based TestInfra validation with Gherkin
-├── legacy/                 # Historical configurations and deprecated roles
-├── vm/                     # Lima VM configuration for testing
-└── docker/                # Development and CI containers
+The backup output includes the main archive, its manifest, and any discovered
+Chrome bookmark exports under `browser-bookmarks/` for selective restore.
+
+To preview changes without applying them:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
 ```
 
-## Features by Domain
+To preview cleanup drift and removable artifacts without applying changes:
 
-### System Layer
+```sh
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
+```
 
-- [Essential system packages](./ansible/group_vars/all.yml) (system.apt)
-- System services and core utilities
-- Timezone and locale configuration
-- GNOME desktop environment preferences
+To show the remote command help:
 
-### Development Domain
+```sh
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- help
+```
 
-- [Development tools via Nix](./ansible/group_vars/all.yml) (development.nix_packages)
-- [Development Flatpak applications](./ansible/group_vars/all.yml) (development.flatpak)
-- [APT repositories for development](./ansible/group_vars/all.yml) (development.repositories)
-- Projects directory setup
+## Browser First Run
 
-### Browser Domain
+The repository installs Google Chrome, sets it as the default browser, creates
+stable managed profile directories, and applies browser-wide policies such as
+baseline extensions, password-manager behavior, and startup defaults.
 
-- [Web browsers via Flatpak](./ansible/group_vars/all.yml) (browser.flatpak)
-- Browser application management
+The repository does not sign browser profiles in for you and does not restore
+profile-private state such as sessions, cookies, or client bookmarks.
 
-### Communication Domain
+After a fresh install:
 
-- [Communication apps via Flatpak](./ansible/group_vars/all.yml) (communication.flatpak)
-- Messaging and collaboration tools
+1. Launch Chrome.
+2. Open each declared profile and authenticate it with the correct browser-sync
+   or identity account.
+3. Sign in to the Bitwarden extension for each profile that needs password
+   access.
+4. Let browser sync restore bookmarks, extensions, and settings where sync is
+   approved.
+5. For manual or client profiles, restore only reviewed material such as an
+   encrypted bookmark export or approved onboarding notes.
 
-### Media Domain
+Treat browser recovery material as a secret. If you keep recovery notes in
+local notes, an encrypted export, or another private workflow that stays
+outside this repository. Do not commit raw browser databases, cookies,
+sessions, or client bookmark sets to this repository.
 
-- [Media applications via Flatpak](./ansible/group_vars/all.yml) (media.flatpak)
-- Audio and video players
+## Developer Toolchains
 
-### Utility Domain
+The workstation now manages ephemeral developer toolchains with `mise`.
 
-- [System utilities via APT and Flatpak](./ansible/group_vars/all.yml) (utility.apt, utility.flatpak)
-- [Security tools](./ansible/group_vars/all.yml) (Bitwarden password manager)
-- System maintenance and backup tools
+- Common workstation defaults live in `development.mise.tools` and are rendered
+  to `~/.config/mise/config.toml`.
+- Project-specific overrides should live in each project's own `mise.toml`,
+  restored with the rest of the home/project configuration rather than being
+  generated from Ansible state.
+- Shell activation is managed automatically for Bash and Zsh login and
+  interactive startup files.
 
-### User Layer
-
-- [Shell configuration (Zsh)](./home/home.nix.j2) via Home Manager template
-- [Git configuration](./ansible/group_vars/all.yml) (development.git) with signing and aliases
-- [Development environment variables](./ansible/group_vars/all.yml) (development.environment)
-- [SSH and GPG keys management](./ansible/roles/setup_keys/README.md)
-
-### Project Layer
-
-- Nix package manager with flakes support via Galaxy role
-- Per-project development environments
-- direnv integration for automatic environment activation
+See `ansible/vars/private.override.example.yml` for a private override example
+covering non-secret workstation data.
 
 ## Development
 
-### Prerequisites
+The `Makefile` is for repository development and validation only. It is not the
+public workstation-management interface.
 
-For local development, you'll need:
+### Host Requirements
 
-- Docker and Docker Compose
-- [Lima](https://github.com/lima-vm/lima) for VM testing (consistent with CI/CD)
-  - Installation guide: <https://lima-vm.io/docs/installation/>
-  - `qemu-img` (part of `qemu-utils` on Debian/Ubuntu) — Lima uses the qemu driver which relies on `qemu-img` to inspect and manage VM disk images.
-  - `qemu-system-x86_64` (QEMU system emulator) — required to run VMs with the qemu driver.
+Required for normal repository work:
 
-### Setup Development Environment
+- Docker Engine
+- Git
+- Make
 
-1. Clone the repository:
+Required only for end-to-end validation:
 
-```bash
-git clone https://github.com/neilime/ubuntu-config.git
-cd ubuntu-config
-```
+- cURL
+- Lima
+- `qemu-img`
+- `qemu-system-x86_64`
 
-2. Setup the development stack:
+### Quick Start
 
-```bash
+```sh
 make setup
-```
-
-### Local Testing
-
-#### VM Testing with Lima
-
-Local VM testing now uses Lima VMs:
-
-#### Run Validation Tests
-
-```bash
-# Setup Lima VM (first time or after vm-down)
-
-# Run the install script on VM
-make vm-install-script
-
-# (Optional) Run the install script with options
-make vm-install-script SETUP_TAGS=system,development SKIP_CLEANUP=true
-
-# Run tests on VM
-make vm-test
-
-# Access VM shell
-make vm-shell
-
-# Reset VM to clean state
-make vm-restore
-
-# Stop and remove VM
-make vm-down
-```
-
-### Using Home Manager (User Layer)
-
-After installation, you can manage user configurations with Home Manager. The configuration is generated from a template using centralized variables:
-
-```bash
-# Switch to new configuration
-cd ~/.config/home-manager
-home-manager switch --flake .#$(whoami)
-
-# Edit centralized configuration (affects template generation)
-vim /home/runner/work/ubuntu-config/ubuntu-config/ansible/group_vars/all.yml
-
-# Re-run setup to regenerate Home Manager configuration
-ansible-playbook setup.yml --tags "home-manager"
-home-manager switch --flake .#$(whoami)
-```
-
-### Creating Project Environments (Project Layer)
-
-For project-specific environments, use the provided templates:
-
-```bash
-# Copy template to your project
-cp -r ~/Documents/project-template/* /path/to/your/project/
-cd /path/to/your/project
-
-# Enable direnv (automatic environment activation)
-direnv allow
-
-# Customize flake.nix for your project needs
-vim flake.nix
-```
-
-### Linting
-
-To ensure code quality, you can run linting checks:
-
-```bash
 make lint
+make check-ansible
+make test
 ```
 
-Fix issues automatically with:
+### Static Validation
 
-```bash
-make lint-fix
+Repository-side validation is split into three layers:
+
+- `make lint` runs the repository lint surface
+- `make check-ansible` runs playbook syntax validation
+- `make test` runs `ansible-test sanity` and `ansible-test units`
+
+### End-to-End Validation
+
+The end-to-end flow runs a real user-setup-like process inside an Ubuntu VM.
+It fetches `workstation.sh` over HTTPS, executes the same remote setup path that a
+user runs, then verifies the workstation in three action-scoped phases:
+`backup`, `setup`, and `cleanup`. Each action runs first, then its matching
+assertion set runs before the next action starts.
+
+```sh
+make e2e-up
+make e2e-test
+make e2e-down
 ```
 
-## Continuous Integration
+### CI
 
-This project uses GitHub Actions to test the Ansible playbook with TestInfra using both Docker containers and Lima VMs. The workflows are defined in `.github/workflows/`.
+CI uses the same repository entry points as local development:
 
-### Test Workflows
+- `make setup`
+- `make lint`
+- `make check-ansible`
+- `make test`
+- `make e2e-up`
+- `make e2e-test`
 
-- `__tests-vm.yml` - Tests the setup in Lima virtual machines (matching local development)
-- `__shared-ci.yml` - Shared CI workflow that builds test images and orchestrates tests
-- `main-ci.yml` - Main CI workflow that triggers all tests
+The static and end-to-end layers stay separate in CI as well:
 
-Both local development and CI/CD use Lima VMs for consistency, ensuring that:
-
-- Local testing environment matches CI/CD exactly
-- Issues caught locally will be caught in CI/CD
-- VM configurations are shared between environments
-
-The TestInfra test suite runs in a dedicated Docker service and provides comprehensive validation using Gherkin syntax organized by domains:
-
-- **Domain Testing**: `test_system.py`, `test_development.py`, `test_browser.py`, `test_communication.py`, `test_media.py`, `test_utility.py`
-- **Layer Testing**: `test_home_manager.py`, `test_keys.py`
-- **Configuration Testing**: `test_configuration.py`, `test_shell.py`
-
-Each test file follows Gherkin scenarios to validate:
-
-- Package installation and configuration
-- Service status and functionality
-- File permissions and configurations
-- User environment setup
-- Domain-specific application installations
-
-Tests are triggered on every push to the repository and provide detailed reports on the system configuration status.
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to
-discuss what you would like to change.
-
-Please make sure to update tests as appropriate.
-
-## License
-
-[MIT](https://choosealicense.com/licenses/mit/)
+- static checks cover linting, Ansible syntax validation, and `ansible-test`
+- end-to-end validation covers the remote `setup`, `backup`, and `cleanup` paths plus VM-level assertions

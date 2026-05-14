@@ -1,0 +1,11 @@
+---
+- name: Backup workstation user state
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    workstation_action: backup
+
+  tasks:
+    - name: Run backup action tasks
+      ansible.builtin.import_tasks: tasks/backup_action.yml

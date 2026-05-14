@@ -1,13 +1,14 @@
+---
 name: Pull request - Continuous Integration
+
+"on":
+  pull_request:
+    branches:
+      - main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-on:
-  pull_request:
-    branches:
-      - main
 
 permissions: {}
 
@@ -18,13 +19,10 @@ jobs:
     permissions:
       actions: read
       contents: read
-      statuses: write
-      security-events: write
-      packages: write
-      issues: read
-      pull-requests: read
-      # FIXME: This is a workaround for having workflow actions. See https://github.com/orgs/community/discussions/38659
       id-token: write
-    with:
-      sign-images: false
+      issues: read
+      packages: write
+      pull-requests: read
+      security-events: write
+      statuses: write
     secrets: inherit

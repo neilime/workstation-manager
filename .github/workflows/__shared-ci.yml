@@ -1,57 +1,136 @@
 ---
-name: Shared - Continuous Integration for common tasks
+name: Shared - Continuous Integration
 
 "on":
   workflow_call:
-    inputs:
-      sign-images:
-        required: true
-        type: boolean
 
 permissions: {}
 
 jobs:
-  lint:
-    # yamllint disable-line rule:line-length
-    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@71b85947453f32b5d147ff3ab37351439a92d840 # 0.34.2
+  linter:
+    # yamllint disable rule:line-length
+    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@4c9d51717dc04d823dac2dc9ac2857e7b3069454 # 0.35.0
+    # yamllint enable rule:line-length
+    with:
+      linter-env: |
+        ANSIBLE_CONFIG_FILE=.ansible-lint
     permissions:
       actions: read
       contents: read
-      statuses: write
       security-events: write
+      statuses: write
 
-  build-test-image:
-    # yamllint disable-line rule:line-length
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@e4bf7a12228a2a4b5993d2d36b99b4dd0ec80bf5 # 0.32.1
+  build-tooling-image:
+    # yamllint disable rule:line-length
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@2b647ed6f11d50cb6beb6d56333e68ba2c804826 # 0.33.1
+    # yamllint enable rule:line-length
     permissions:
       contents: read
-      packages: write
-      issues: read
-      pull-requests: read
-      # FIXME: This is a workaround for having workflow actions.
-      # See https://github.com/orgs/community/discussions/38659
       id-token: write
+      issues: read
+      packages: write
+      pull-requests: read
     with:
-      oci-registry: ${{ vars.OCI_REGISTRY }}
-      sign: ${{ inputs.sign-images }}
+      oci-registry: ghcr.io
+      sign: false
       images: |
         [
           {
-            "name": "test-ci",
-            "context": "./docker/test",
-            "dockerfile": "Dockerfile",
+            "name": "tooling",
+            "context": ".",
+            "dockerfile": "./docker/tooling/Dockerfile",
             "platforms": ["linux/amd64"]
           }
         ]
     secrets:
       oci-registry-password: ${{ secrets.GITHUB_TOKEN }}
 
-  tests-vm:
-    needs: [lint, build-test-image]
-    uses: ./.github/workflows/__tests-vm.yml
-    with:
-      # yamllint disable-line rule:line-length
-      test-image: ${{ fromJSON(needs.build-test-image.outputs.built-images).test-ci.images[0] }}
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    needs: [linter, build-tooling-image]
     permissions:
       contents: read
-    secrets: inherit
+      packages: read
+    env:
+      TOOLING_IMAGE: >-
+        ${{ fromJSON(needs.build-tooling-image.outputs.built-images).tooling.images[0] }}
+      TOOLING_IMAGE_PULL: "1"
+    steps:
+      - name: Checkout
+        # yamllint disable rule:line-length
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        # yamllint enable rule:line-length
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup
+        run: make setup
+
+      - name: Run Ansible syntax checks
+        run: REPORTS_DIR=.reports make check-ansible
+
+      - name: Run Ansible sanity and unit tests
+        run: REPORTS_DIR=.reports make test
+
+      - name: Parse static reports
+        if: ${{ always() }}
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@71b85947453f32b5d147ff3ab37351439a92d840 # 0.34.2
+        with:
+          report-paths: .reports/tests/*.xml
+          report-name: Static Validation
+          path-mapping: /workspace:.
+
+  e2e:
+    name: E2E validation
+    needs: [static]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        # yamllint disable rule:line-length
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        # yamllint enable rule:line-length
+
+      - name: Set up Lima
+        id: lima-setup
+        # yamllint disable rule:line-length
+        uses: lima-vm/lima-actions/setup@55627e31b78637bf254a8b2a14da8ea7d12564e5 # v1.1.0
+        # yamllint enable rule:line-length
+
+      - name: Cache Lima
+        # yamllint disable rule:line-length
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        # yamllint enable rule:line-length
+        with:
+          path: ~/.cache/lima
+          key: lima-${{ steps.lima-setup.outputs.version }}
+
+      - name: Start e2e VM
+        run: make e2e-up
+
+      - name: Run phased e2e assertions
+        env:
+          E2E_REPOSITORY_REF: ${{ github.sha }}
+          UBUNTU_CONFIG_GITHUB_TOKEN: ${{ secrets.WORKSTATION_CONFIG_GITHUB_TOKEN }}
+          BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
+          BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
+          BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+        run: REPORTS_DIR=.reports make e2e-test
+
+      - name: Parse e2e reports
+        if: ${{ always() }}
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@71b85947453f32b5d147ff3ab37351439a92d840 # 0.34.2
+        with:
+          report-paths: .reports/tests/e2e-*.junit.xml
+          report-name: End-to-End Validation
+
+      - name: Stop e2e VM
+        if: ${{ always() }}
+        run: make e2e-down

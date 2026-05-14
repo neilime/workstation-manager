@@ -1,0 +1,38 @@
+---
+- name: Check whether a local private override file exists
+  ansible.builtin.stat:
+    path: "{{ workstation_private_override_file }}"
+  register: workstation_private_override_file_stat
+  when: workstation_private_override_file | length > 0
+
+- name: Load local private override values
+  ansible.builtin.include_vars:
+    file: "{{ workstation_private_override_file }}"
+    name: workstation_private_override
+  when:
+    - workstation_private_override_file | length > 0
+    - workstation_private_override_file_stat.stat.exists
+
+- name: Merge public defaults with local private overrides
+  ansible.builtin.set_fact:
+    workstation_effective: >-
+      {{
+        workstation_manager
+        | combine(
+            workstation_private_override | default({}),
+            recursive=True,
+            list_merge='replace'
+          )
+      }}
+
+- name: Normalize desired state schema
+  ansible.builtin.set_fact:
+    workstation_resolved: >-
+      {{ workstation_effective |
+      neilime.workstation_setup.normalized_workstation_manager(ansible_env) }}
+
+- name: Bridge workstation variables to collection compatibility facts
+  ansible.builtin.set_fact:
+    workstation_manager_use_become: "{{ workstation_use_become }}"
+    workstation_manager_effective: "{{ workstation_effective }}"
+    workstation_manager_resolved: "{{ workstation_resolved }}"

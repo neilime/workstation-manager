@@ -1,0 +1,25 @@
+---
+- name: Install Flatpak support package
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: flatpak
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Ensure configured Flatpak remote is present
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak_remote:
+    name: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+    state: present
+    method: system
+    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+
+- name: Install declared Flatpak applications
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak:
+    name: "{{ workstation_manager_resolved.desktop.flatpak.packages }}"
+    state: present
+    method: system
+    remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+  when: workstation_manager_resolved.desktop.flatpak.packages | length > 0
