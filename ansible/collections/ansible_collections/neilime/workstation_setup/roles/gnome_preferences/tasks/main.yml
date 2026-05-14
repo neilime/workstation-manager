@@ -1,0 +1,52 @@
+---
+- name: Compute GNOME task privilege requirements
+  ansible.builtin.set_fact:
+    workstation_manager_gnome_use_become_user: >-
+      {{ workstation_manager_use_become and ansible_user_id != workstation_manager_resolved.user.name }}
+  changed_when: false
+
+- name: Install GNOME preference dependencies
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name:
+      - dconf-cli
+      - gnome-shell-common
+      - python3-psutil
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Ensure target user dconf directory exists
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/dconf"
+    state: directory
+    mode: "0700"
+
+- name: Apply GNOME color scheme preference
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/desktop/interface/color-scheme
+    value: "{{ workstation_manager_gnome_color_scheme_value }}"
+    state: present
+  vars:
+    workstation_manager_gnome_color_scheme_value: >-
+      {{ "'prefer-dark'" if workstation_manager_resolved.desktop.gnome.dark_mode else "'default'" }}
+
+- name: Apply GNOME favorites
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/favorite-apps
+    value: "{{ workstation_manager_gnome_favorites_value }}"
+    state: present
+  vars:
+    workstation_manager_gnome_favorites_value: >-
+      {{
+        '@as []'
+        if workstation_manager_resolved.desktop.gnome.favorites | length == 0
+        else
+        workstation_manager_resolved.desktop.gnome.favorites | to_json
+      }}

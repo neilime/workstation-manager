@@ -1,0 +1,20 @@
+---
+namespace: neilime
+name: workstation_backup
+version: 1.0.0
+readme: README.md
+authors:
+  - Emilien
+description: Internal collection for workstation-manager backup workflows and tests.
+tags:
+  - linux
+  - storage
+  - tools
+license:
+  - MIT
+dependencies:
+  community.general: "*"
+repository: https://github.com/neilime/workstation-manager
+documentation: https://github.com/neilime/workstation-manager/blob/main/README.md
+homepage: https://github.com/neilime/workstation-manager
+issues: https://github.com/neilime/workstation-manager/issues

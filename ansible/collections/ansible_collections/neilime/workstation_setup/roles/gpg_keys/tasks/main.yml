@@ -1,0 +1,199 @@
+---
+- name: Ensure GPG tooling is installed
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name:
+      - gpg
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Read Bitwarden GPG key collection items
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.bitwarden_collection
+  vars:
+    bitwarden_collection_id: >-
+      {{ workstation_manager_resolved.secrets.bitwarden.gpg_collection_id }}
+    bitwarden_collection_purpose: Bitwarden GPG restore
+
+- name: Assert that the selected Bitwarden collection contains GPG key items
+  ansible.builtin.assert:
+    that:
+      - bitwarden_collection_items | length > 0
+    fail_msg: >-
+      The selected Bitwarden collection does not contain any GPG key items.
+
+- name: Build GPG key restore plans from Bitwarden collection items
+  ansible.builtin.set_fact:
+    gpg_keys_restore_plans: >-
+      {{
+        (gpg_keys_restore_plans | default([]))
+        + [item | neilime.workstation_setup.bitwarden_gpg_key_restore_plan]
+      }}
+  loop: "{{ bitwarden_collection_items }}"
+  loop_control:
+    label: "{{ item.name | default(item.id | default('unnamed-gpg-key')) }}"
+  no_log: true
+
+- name: Ensure the target GnuPG home directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+
+- name: Check whether secret GPG keys are already present
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --with-colons
+      - --list-secret-keys
+      - "{{ item.fingerprint }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: gpg_keys_secret_key_status
+  changed_when: false
+  failed_when: false
+  loop: "{{ gpg_keys_restore_plans | default([]) }}"
+  loop_control:
+    label: "{{ item.fingerprint }}"
+  no_log: true
+
+- name: Import missing secret GPG keys
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --import
+    stdin: "{{ item.item.private_key }}"
+    stdin_add_newline: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  loop: "{{ gpg_keys_secret_key_status.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.fingerprint }}"
+  when: item.stdout is not search('(?m)^sec:')
+  changed_when: true
+  no_log: true
+
+- name: Check whether public GPG keys are already present
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --with-colons
+      - --list-keys
+      - "{{ item.fingerprint }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: gpg_keys_public_key_status
+  changed_when: false
+  failed_when: false
+  loop: "{{ gpg_keys_restore_plans | default([]) }}"
+  loop_control:
+    label: "{{ item.fingerprint }}"
+  no_log: true
+
+- name: Import missing public GPG keys
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --import
+    stdin: "{{ item.item.public_key }}"
+    stdin_add_newline: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  loop: "{{ gpg_keys_public_key_status.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.fingerprint }}"
+  when: item.stdout is not search('(?m)^pub:')
+  changed_when: true
+  no_log: true
+
+- name: Read current GPG ownertrust entries
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --export-ownertrust
+      - "{{ item.fingerprint }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: gpg_keys_ownertrust_status
+  changed_when: false
+  failed_when: false
+  loop: >-
+    {{
+      (gpg_keys_restore_plans | default([]))
+      | selectattr('ownertrust', '!=', none)
+      | list
+    }}
+  loop_control:
+    label: "{{ item.fingerprint }}"
+  no_log: true
+
+- name: Import missing GPG ownertrust entries
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --import-ownertrust
+    stdin: "{{ item.item.ownertrust }}"
+    stdin_add_newline: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  loop: "{{ gpg_keys_ownertrust_status.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.fingerprint }}"
+  when: item.item.ownertrust | trim not in item.stdout
+  changed_when: true
+  no_log: true
+
+- name: Derive Git signing fingerprint from restored GPG keys
+  ansible.builtin.set_fact:
+    gpg_keys_signing_fingerprint: >-
+      {{
+        (gpg_keys_restore_plans | default([]))
+        | neilime.workstation_setup.gpg_git_signing_fingerprint
+      }}
+
+- name: Configure Git GPG signing settings from restored keys
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.git_config:
+    name: "{{ item.name }}"
+    scope: global
+    value: "{{ item.value }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+  loop:
+    - name: gpg.format
+      value: openpgp
+    - name: user.signingkey
+      value: "{{ gpg_keys_signing_fingerprint }}"
+    - name: commit.gpgsign
+      value: "true"
+    - name: tag.gpgsign
+      value: "true"
+  loop_control:
+    label: "{{ item.name }}"

@@ -1,0 +1,28 @@
+---
+- name: Ensure backup has at least one source path
+  ansible.builtin.fail:
+    msg: no backup sources found
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_include_paths | length == 0
+
+- name: Create backup archive
+  community.general.archive:
+    path: "{{ workstation_backup_include_paths }}"
+    dest: "{{ workstation_backup_archive_path }}"
+    format: gz
+    mode: "0600"
+    exclusion_patterns: "{{ workstation_backup_archive_exclusion_patterns }}"
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_include_paths | length > 0
+
+- name: Report backup archive path
+  ansible.builtin.debug:
+    msg: "backup archive written to {{ workstation_backup_archive_path }}"
+  when: not workstation_backup_dry_run
+
+- name: Report backup manifest path
+  ansible.builtin.debug:
+    msg: "backup manifest written to {{ workstation_backup_manifest_path }}"
+  when: not workstation_backup_dry_run

@@ -1,0 +1,12 @@
+title = "ubuntu-config gitleaks overrides"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore generated vendored Ansible collections"
+paths = [
+  '''ansible/vendor-collections/.*''',
+  '''ansible/collections/ansible_collections/community/.*''',
+  '''ansible/collections/ansible_collections/community\.general-.*\.info/.*''',
+]

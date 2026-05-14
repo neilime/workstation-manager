@@ -1,5 +1,0 @@
-# TestInfra and testing dependencies
-pytest>=7.0.0
-pytest-testinfra>=10.0.0
-pytest-xdist>=3.0.0  # For parallel test execution
-pytest-html>=4.0.0   # For HTML test reports

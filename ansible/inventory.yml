@@ -1,13 +1,5 @@
-personal_computer:
+---
+all:
   hosts:
     localhost:
       ansible_connection: local
-      ansible_host: localhost
-      ansible_user: root
-
-    ubuntu-config-test:
-      ansible_user: ubuntu
-      ansible_host: "{{ ANSIBLE_HOST }}"
-      ansible_port: "{{ ansible_port }}"
-      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o ControlMaster=no -o ControlPath=none"
-      ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file }}"

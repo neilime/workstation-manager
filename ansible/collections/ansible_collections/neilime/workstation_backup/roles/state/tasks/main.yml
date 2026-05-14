@@ -1,0 +1,33 @@
+---
+- name: Ensure backup output directory is provided
+  ansible.builtin.fail:
+    msg: WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR is required
+  when: workstation_backup_output_dir | length == 0
+
+- name: Ensure backup output directory exists
+  ansible.builtin.file:
+    path: "{{ workstation_backup_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Initialize backup execution context
+  ansible.builtin.set_fact:
+    workstation_backup_include_paths: []
+    workstation_backup_manifest_lines: []
+    workstation_backup_browser_bookmark_exports: []
+
+- name: Collect filesystem backup sources
+  ansible.builtin.import_role:
+    name: neilime.workstation_backup.path_sources
+
+- name: Collect browser bookmark exports
+  ansible.builtin.import_role:
+    name: neilime.workstation_backup.browser_bookmarks
+
+- name: Write backup manifest
+  ansible.builtin.import_role:
+    name: neilime.workstation_backup.manifest
+
+- name: Create backup archive
+  ansible.builtin.import_role:
+    name: neilime.workstation_backup.archive

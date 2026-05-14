@@ -1,0 +1,374 @@
+---
+- name: Resolve cleanup managed paths
+  ansible.builtin.set_fact:
+    workstation_manager_cleanup_browser_profiles_root_dir: >-
+      {{
+        workstation_manager_resolved.user.home
+        | neilime.workstation_setup.browser_profiles_root_dir
+      }}
+    workstation_manager_cleanup_expected_browser_profile_ids: >-
+      {{
+        workstation_manager_resolved.desktop.browser.profiles
+        | map(attribute='id')
+        | list
+        | sort
+      }}
+    workstation_manager_cleanup_managed_config_root: >-
+      {{ workstation_manager_resolved.user.home ~ '/.config/workstation-manager' }}
+    workstation_manager_cleanup_expected_system_state_paths:
+      - "{{ workstation_manager_resolved.system.state_dir }}/system.json"
+    workstation_manager_cleanup_expected_user_state_paths:
+      - "{{ workstation_manager_resolved.user.state_dir }}/state.json"
+      - "{{ workstation_manager_resolved.user.state_dir }}/cleanup-report.json"
+      - "{{ workstation_manager_resolved.user.state_dir }}/mise-install.sh"
+    workstation_manager_cleanup_expected_managed_config_paths:
+      - "{{ workstation_manager_resolved.user.home }}/.config/workstation-manager/mise.sh"
+
+- name: Ensure cleanup report directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.state_dir }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+- name: Check whether the managed system state marker exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.system.state_dir }}/system.json"
+  register: workstation_manager_cleanup_system_state_stat
+
+- name: Load the managed system state marker
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.slurp:
+    path: "{{ workstation_manager_resolved.system.state_dir }}/system.json"
+  register: workstation_manager_cleanup_system_state_slurp
+  when: workstation_manager_cleanup_system_state_stat.stat.exists
+
+- name: Parse the managed system state marker
+  ansible.builtin.set_fact:
+    workstation_manager_cleanup_system_state: >-
+      {{ workstation_manager_cleanup_system_state_slurp.content | b64decode | from_json }}
+  when: workstation_manager_cleanup_system_state_stat.stat.exists
+
+- name: Capture current manual APT packages
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - apt-mark
+      - showmanual
+  register: workstation_manager_cleanup_manual_apt_packages
+  changed_when: false
+  check_mode: false
+
+- name: Capture current Flatpak applications
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - flatpak
+      - list
+      - --system
+      - --app
+      - --columns=application
+  register: workstation_manager_cleanup_flatpak_packages
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check whether the browser profiles root exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_cleanup_browser_profiles_root_dir }}"
+  register: workstation_manager_cleanup_browser_profiles_root_stat
+
+- name: Find current browser profile directories
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.find:
+    paths: "{{ workstation_manager_cleanup_browser_profiles_root_dir }}"
+    file_type: directory
+    recurse: false
+  register: workstation_manager_cleanup_browser_profile_directories
+  when: workstation_manager_cleanup_browser_profiles_root_stat.stat.exists
+
+- name: Check whether the managed user config root exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_cleanup_managed_config_root }}"
+  register: workstation_manager_cleanup_managed_config_root_stat
+
+- name: Find managed user config root entries
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.find:
+    paths: "{{ workstation_manager_cleanup_managed_config_root }}"
+    recurse: false
+    hidden: true
+  register: workstation_manager_cleanup_managed_config_entries
+  when: workstation_manager_cleanup_managed_config_root_stat.stat.exists
+
+- name: Find system state directory entries
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.find:
+    paths: "{{ workstation_manager_resolved.system.state_dir }}"
+    recurse: false
+    hidden: true
+  register: workstation_manager_cleanup_system_state_entries
+  when: workstation_manager_cleanup_system_state_stat.stat.exists
+
+- name: Find user state directory entries
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.find:
+    paths: "{{ workstation_manager_resolved.user.state_dir }}"
+    recurse: false
+    hidden: true
+  register: workstation_manager_cleanup_user_state_entries
+
+- name: Build cleanup drift report
+  ansible.builtin.set_fact:
+    workstation_manager_cleanup_has_package_baseline: >-
+      {{
+        workstation_manager_cleanup_system_state_stat.stat.exists
+        and (workstation_manager_cleanup_system_state.baseline is defined)
+      }}
+    workstation_manager_cleanup_unexpected_manual_apt_packages: >-
+      {{
+        (
+          workstation_manager_cleanup_manual_apt_packages.stdout_lines
+          | default([])
+          | reject('equalto', '')
+          | list
+          | difference(
+              workstation_manager_cleanup_system_state.baseline.manual_apt_packages
+              | default([])
+            )
+          | sort
+        )
+        if (
+          workstation_manager_cleanup_system_state_stat.stat.exists
+          and (workstation_manager_cleanup_system_state.baseline is defined)
+        )
+        else []
+      }}
+    workstation_manager_cleanup_unexpected_flatpak_packages: >-
+      {{
+        (
+          workstation_manager_cleanup_flatpak_packages.stdout_lines
+          | default([])
+          | reject('equalto', '')
+          | list
+          | difference(
+              workstation_manager_cleanup_system_state.baseline.flatpak_packages
+              | default([])
+            )
+          | sort
+        )
+        if (
+          workstation_manager_cleanup_flatpak_packages.rc == 0
+          and workstation_manager_cleanup_system_state_stat.stat.exists
+          and (workstation_manager_cleanup_system_state.baseline is defined)
+        )
+        else []
+      }}
+    workstation_manager_cleanup_unmanaged_browser_profile_directories: >-
+      {{
+        (
+          workstation_manager_cleanup_browser_profile_directories.files
+          | map(attribute='path')
+          | list
+          | difference(
+              workstation_manager_cleanup_expected_browser_profile_ids
+              | map('regex_replace', '^(.*)$', workstation_manager_cleanup_browser_profiles_root_dir ~ '/\\1')
+              | list
+            )
+          | sort
+        )
+        if workstation_manager_cleanup_browser_profiles_root_stat.stat.exists
+        else []
+      }}
+    workstation_manager_cleanup_unexpected_system_state_paths: >-
+      {{
+        (
+          workstation_manager_cleanup_system_state_entries.files
+          | map(attribute='path')
+          | list
+          | difference(workstation_manager_cleanup_expected_system_state_paths)
+          | sort
+        )
+        if workstation_manager_cleanup_system_state_stat.stat.exists
+        else []
+      }}
+    workstation_manager_cleanup_unexpected_user_state_paths: >-
+      {{
+        workstation_manager_cleanup_user_state_entries.files
+        | map(attribute='path')
+        | list
+        | difference(workstation_manager_cleanup_expected_user_state_paths)
+        | sort
+      }}
+    workstation_manager_cleanup_unexpected_managed_config_paths: >-
+      {{
+        (
+          workstation_manager_cleanup_managed_config_entries.files
+          | map(attribute='path')
+          | list
+          | difference(workstation_manager_cleanup_expected_managed_config_paths)
+          | sort
+        )
+        if workstation_manager_cleanup_managed_config_root_stat.stat.exists
+        else []
+      }}
+
+- name: Check whether Docker is available for cleanup
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - sh
+      - -lc
+      - command -v docker
+  register: workstation_manager_cleanup_docker_command
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check whether ucaresystem-core is available for cleanup
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - sh
+      - -lc
+      - command -v ucaresystem-core
+  register: workstation_manager_cleanup_ucaresystem_command
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Remove cached mise installer
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.state_dir }}/mise-install.sh"
+    state: absent
+  when: not ansible_check_mode
+
+- name: Remove unmanaged browser profile directories
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ workstation_manager_cleanup_unmanaged_browser_profile_directories }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when:
+    - not ansible_check_mode
+    - workstation_manager_cleanup_unmanaged_browser_profile_directories | length > 0
+
+- name: Prune Docker data
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - docker
+      - system
+      - prune
+      - --all
+      - --force
+      - --volumes
+  register: workstation_manager_cleanup_docker_prune
+  changed_when: >-
+    {{ 'Total reclaimed space:' in workstation_manager_cleanup_docker_prune.stdout }}
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - workstation_manager_cleanup_docker_command.rc == 0
+
+- name: Update and tidy packages with ucaresystem-core
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - ucaresystem-core
+      - -u
+  register: workstation_manager_cleanup_ucaresystem_update
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - workstation_manager_cleanup_ucaresystem_command.rc == 0
+
+- name: Remove orphaned APT dependencies and clean package cache
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    autoremove: true
+    autoclean: true
+    purge: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  when: not ansible_check_mode
+
+- name: Build cleanup report payload
+  ansible.builtin.set_fact:
+    workstation_manager_cleanup_report:
+      generated_at: "{{ ansible_date_time.iso8601 }}"
+      package_baseline_available: "{{ workstation_manager_cleanup_has_package_baseline }}"
+      cleanup_mode: "{{ 'check' if ansible_check_mode else 'apply' }}"
+      drift:
+        unexpected_manual_apt_packages: >-
+          {{ workstation_manager_cleanup_unexpected_manual_apt_packages }}
+        unexpected_flatpak_packages: >-
+          {{ workstation_manager_cleanup_unexpected_flatpak_packages }}
+        unmanaged_browser_profile_directories: >-
+          {{ workstation_manager_cleanup_unmanaged_browser_profile_directories }}
+        unexpected_system_state_paths: >-
+          {{ workstation_manager_cleanup_unexpected_system_state_paths }}
+        unexpected_user_state_paths: >-
+          {{ workstation_manager_cleanup_unexpected_user_state_paths }}
+        unexpected_managed_config_paths: >-
+          {{ workstation_manager_cleanup_unexpected_managed_config_paths }}
+      actions:
+        docker_prune_available: "{{ workstation_manager_cleanup_docker_command.rc == 0 }}"
+        docker_prune_exit_code: >-
+          {{ workstation_manager_cleanup_docker_prune.rc | default(None) }}
+        ucaresystem_available: >-
+          {{ workstation_manager_cleanup_ucaresystem_command.rc == 0 }}
+        ucaresystem_exit_code: >-
+          {{ workstation_manager_cleanup_ucaresystem_update.rc | default(None) }}
+        apt_autoremove_requested: "{{ not ansible_check_mode }}"
+        removed_browser_profile_directories: >-
+          {{
+            workstation_manager_cleanup_unmanaged_browser_profile_directories
+            if not ansible_check_mode
+            else []
+          }}
+
+- name: Persist cleanup report
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: "{{ workstation_manager_resolved.user.state_dir }}/cleanup-report.json"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+    content: "{{ workstation_manager_cleanup_report | to_nice_json }}\n"
+
+- name: Warn when package drift baseline is unavailable
+  ansible.builtin.debug:
+    msg: >-
+      Cleanup baseline is unavailable on this workstation. Re-run workstation.sh to
+      seed the managed package snapshot before relying on package drift
+      suggestions.
+  when: not workstation_manager_cleanup_has_package_baseline
+
+- name: Summarize cleanup results
+  ansible.builtin.debug:
+    msg:
+      - >-
+        Cleanup report saved to
+        {{ workstation_manager_resolved.user.state_dir }}/cleanup-report.json
+      - >-
+        Unexpected manual APT packages since the last managed apply:
+        {{ workstation_manager_cleanup_unexpected_manual_apt_packages | join(', ') or 'none' }}
+      - >-
+        Unexpected Flatpak apps since the last managed apply:
+        {{ workstation_manager_cleanup_unexpected_flatpak_packages | join(', ') or 'none' }}
+      - >-
+        Unmanaged browser profile directories under the managed root:
+        {{ workstation_manager_cleanup_unmanaged_browser_profile_directories | join(', ') or 'none' }}
+      - >-
+        Unexpected managed config paths:
+        {{ workstation_manager_cleanup_unexpected_managed_config_paths | join(', ') or 'none' }}

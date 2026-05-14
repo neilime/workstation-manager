@@ -1,14 +1,16 @@
-.env
-ansible/.ansible
-
-# Ignore local VM secrets
-vm/id_rsa
-vm/id_rsa.pub
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
 .pytest_cache/
-tests/.pytest_cache/
+__pycache__/
 .mypy_cache/
+*.pyc
+.reports/
+.tmp/
+.env
+ansible/vars/private.override.yml
+ansible/collections/ansible_collections/neilime/*/tests/output/
+ansible/vendor-collections/
+ansible/collections/ansible_collections/community/
+ansible/collections/ansible_collections/community.general-*.info/
+.reports-check-ansible
+.reports-test
+venvs/
+.github/linters/.ansible/.lock

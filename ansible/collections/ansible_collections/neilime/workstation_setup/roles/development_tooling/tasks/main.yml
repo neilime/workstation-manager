@@ -1,0 +1,359 @@
+---
+- name: Validate development APT repository declarations
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.assert:
+    that:
+      - item.name is string
+      - item.source is string
+      - item.keyring is mapping
+      - item.keyring.url is string
+      - item.keyring.path is string
+    fail_msg: >-
+      Declared development APT repository {{ item | to_nice_json }} must include
+      name, source, and keyring.url/keyring.path fields.
+  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed-repository') }}"
+  when: workstation_manager_resolved.development.repositories.apt | length > 0
+
+- name: Ensure development APT keyring directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item.keyring.path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: workstation_manager_resolved.development.repositories.apt | length > 0
+
+- name: Download development APT repository keyrings
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: "{{ item.keyring.url }}"
+    dest: "{{ item.keyring.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.keyring.mode | default('0644') }}"
+  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: workstation_manager_resolved.development.repositories.apt | length > 0
+
+- name: Configure declared development vendor APT repositories
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt_repository:
+    repo: "{{ item.source }}"
+    filename: "{{ item.filename | default(item.name) }}"
+    state: "{{ item.state | default('present') }}"
+    update_cache: false
+  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: workstation_manager_development_apt_repositories
+  when: workstation_manager_resolved.development.repositories.apt | length > 0
+
+- name: Refresh APT cache after development repository changes
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+  when:
+    - workstation_manager_resolved.development.repositories.apt | length > 0
+    - workstation_manager_development_apt_repositories is changed
+
+- name: Install declared development APT packages
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: "{{ workstation_manager_resolved.development.packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+  when: workstation_manager_resolved.development.packages | length > 0
+
+- name: Install declared editor packages
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak:
+    name: "{{ workstation_manager_resolved.development.editor_packages }}"
+    state: present
+    method: system
+    remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+  when: workstation_manager_resolved.development.editor_packages | length > 0
+
+- name: Validate declared GitHub CLI extensions
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | length > 0
+      - item is match('^[^/]+/[^/]+$')
+    fail_msg: >-
+      Declared GitHub CLI extension {{ item | to_nice_json }} must use the
+      OWNER/REPOSITORY format.
+  loop: "{{ workstation_manager_resolved.development.mise.gh_extensions }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Validate declared Docker CLI plugins
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.command is string
+      - item.command | length > 0
+      - item.tool is string
+      - item.tool | length > 0
+    fail_msg: >-
+      Declared Docker CLI plugin {{ item | to_nice_json }} must include
+      non-empty command and tool fields.
+  loop: "{{ workstation_manager_resolved.development.mise.docker_cli_plugins }}"
+  loop_control:
+    label: "{{ item.command | default('unnamed-plugin') }}"
+
+- name: Ensure mise user directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  loop:
+    - "{{ workstation_manager_resolved.user.home }}/.local/bin"
+    - "{{ workstation_manager_resolved.user.state_dir }}"
+    - "{{ workstation_manager_resolved.user.home }}/.config"
+    - "{{ workstation_manager_resolved.user.home }}/.config/mise"
+    - "{{ workstation_manager_resolved.user.home }}/.config/workstation-manager"
+
+- name: Check whether mise is already installed
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+  register: workstation_manager_development_mise_binary
+
+- name: Download the official mise installer
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: https://mise.run
+    dest: "{{ workstation_manager_resolved.user.state_dir }}/mise-install.sh"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+- name: Install mise for the managed user
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - sh
+      - "{{ workstation_manager_resolved.user.state_dir }}/mise-install.sh"
+    creates: "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+
+- name: Render global mise tool configuration
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: mise.toml.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/mise/config.toml"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+  vars:
+    workstation_manager_mise_config_tools: "{{ workstation_manager_resolved.development.mise.tools }}"
+  register: workstation_manager_development_mise_global_config
+
+- name: Render mise shell activation fragment
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: mise-activate.sh.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/workstation-manager/mise.sh"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install globally configured mise tools
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+      - install
+  args:
+    chdir: "{{ workstation_manager_resolved.user.home }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    MISE_BACKENDS_PHP: vfox:mise-plugins/vfox-php
+  changed_when: false
+  when:
+    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
+
+- name: Read installed GitHub CLI extensions
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        . "$HOME/.config/workstation-manager/mise.sh"
+        gh extension list
+  register: workstation_manager_development_gh_extensions
+  changed_when: false
+  failed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  when:
+    - workstation_manager_resolved.development.mise.gh_extensions | length > 0
+    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
+
+- name: Install declared GitHub CLI extensions
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        . "$HOME/.config/workstation-manager/mise.sh"
+        gh extension install {{ item | quote }}
+  changed_when: true
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  loop: "{{ workstation_manager_resolved.development.mise.gh_extensions }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - workstation_manager_resolved.development.mise.gh_extensions | length > 0
+    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
+    - item not in (workstation_manager_development_gh_extensions.stdout | default(''))
+
+- name: Ensure Docker CLI plugin directory exists
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.docker/cli-plugins"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  when: workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
+
+- name: Resolve declared Docker CLI plugin install directories
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        . "$HOME/.config/workstation-manager/mise.sh"
+        "$HOME/.local/bin/mise" where {{ item.tool | quote }}
+  register: workstation_manager_development_docker_cli_plugin_commands
+  changed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  loop: "{{ workstation_manager_resolved.development.mise.docker_cli_plugins }}"
+  loop_control:
+    label: "{{ item.command }}"
+  when:
+    - workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
+    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
+
+- name: Link Docker CLI plugins from mise-managed binaries
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    src: "{{ item.stdout }}/bin/{{ item.item.command }}"
+    dest: >-
+      {{ workstation_manager_resolved.user.home }}/.docker/cli-plugins/{{ item.item.command }}
+    state: link
+    force: true
+  loop: >-
+    {{ workstation_manager_development_docker_cli_plugin_commands.results | default([]) }}
+  loop_control:
+    label: "{{ item.item.command }}"
+  when:
+    - workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
+    - item.stdout | length > 0
+
+- name: Read managed development sysctl configuration
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.slurp:
+    src: /etc/sysctl.d/99-workstation-manager.conf
+  register: workstation_manager_development_managed_sysctl_file
+  failed_when: false
+  changed_when: false
+
+- name: Compute managed development sysctl configuration keys
+  ansible.builtin.set_fact:
+    workstation_manager_development_managed_sysctl_keys: >-
+      {{
+        (
+          workstation_manager_development_managed_sysctl_file.content | default('') | b64decode
+        )
+        | regex_findall('(?m)^([A-Za-z0-9_.]+)\\s*=')
+      }}
+    workstation_manager_development_desired_sysctl_keys: >-
+      {{ workstation_manager_resolved.development.settings.sysctl.keys() | list }}
+  changed_when: false
+
+- name: Remove managed development sysctl configuration when no values are declared
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: /etc/sysctl.d/99-workstation-manager.conf
+    state: absent
+  when: workstation_manager_resolved.development.settings.sysctl | length == 0
+
+- name: Initialize managed development sysctl configuration
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-workstation-manager.conf
+    mode: "0644"
+    content: |
+      # Managed by workstation-manager.
+  when: workstation_manager_resolved.development.settings.sysctl | length > 0
+
+- name: Remove stale managed development sysctl entries
+  become: "{{ workstation_manager_use_become }}"
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    state: absent
+    sysctl_file: /etc/sysctl.d/99-workstation-manager.conf
+    reload: false
+  loop: >-
+    {{
+      workstation_manager_development_managed_sysctl_keys
+      | difference(workstation_manager_development_desired_sysctl_keys)
+      | sort
+    }}
+  loop_control:
+    label: "{{ item }}"
+  when: workstation_manager_resolved.development.settings.sysctl | length > 0
+
+- name: Apply managed development sysctl entries
+  become: "{{ workstation_manager_use_become }}"
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value | string }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-workstation-manager.conf
+    sysctl_set: true
+    reload: false
+  loop: >-
+    {{
+      workstation_manager_resolved.development.settings.sysctl
+      | dict2items
+      | sort(attribute='key')
+    }}
+  loop_control:
+    label: "{{ item.key }}"
+  when: workstation_manager_resolved.development.settings.sysctl | length > 0

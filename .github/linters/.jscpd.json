@@ -1,6 +1,0 @@
-{
-  "absolute": true,
-  "ignore": ["**/ansible/.ansible"],
-  "reporters": ["consoleFull"],
-  "threshold": 0
-}

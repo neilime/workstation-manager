@@ -1,92 +1,20 @@
 ---
-- name: Setup personal computer
-  hosts: personal_computer
-  become: true
+- name: Apply workstation setup
+  hosts: localhost
+  connection: local
+  gather_facts: true
   vars:
-    ansible_config_dir: "/home/ansible/config"
+    workstation_action: setup
+    workstation_use_become: >-
+      {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
+      default('true', true) | bool }}
+    workstation_private_override_file: >-
+      {{ lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') |
+      default('', true) }}
 
   tasks:
-    - name: Setup system
-      ansible.builtin.import_role:
-        name: setup_system
-      vars:
-        setup_system_apt: "{{ system.apt }}"
-        setup_system_locale: "{{ system.locale }}"
-        setup_system_timezone: "{{ system.timezone }}"
-        setup_system_favorites: "{{ system.favorites }}"
-      tags: [system]
+    - name: Resolve workstation config inputs
+      ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml
 
-    # DESKTOP LAYER - Domain-based GUI applications and desktop environment
-    - name: Setup browser
-      ansible.builtin.import_role:
-        name: setup_browser
-      vars:
-        setup_browser_flatpak: "{{ browser.flatpak }}"
-        setup_browser_favorites: "{{ browser.favorites }}"
-      tags: [browser, desktop]
-
-    - name: Setup communication
-      ansible.builtin.import_role:
-        name: setup_communication
-      vars:
-        setup_communication_flatpak: "{{ communication.flatpak }}"
-        setup_communication_favorites: "{{ communication.favorites }}"
-      tags: [communication, desktop]
-
-    - name: Setup development
-      ansible.builtin.import_role:
-        name: setup_development
-      vars:
-        setup_development_repositories: "{{ development.repositories }}"
-        setup_development_apt: "{{ development.apt }}"
-        setup_development_flatpak: "{{ development.flatpak }}"
-        setup_development_projects_directory: >-
-          {{ development.projects_directory }}
-        setup_development_favorites: "{{ development.favorites }}"
-      tags: [development, desktop]
-
-    - name: Setup media
-      ansible.builtin.import_role:
-        name: setup_media
-      vars:
-        setup_media_flatpak: "{{ media.flatpak }}"
-        setup_media_favorites: "{{ media.favorites }}"
-      tags: [media, desktop]
-
-    - name: Setup utility
-      ansible.builtin.import_role:
-        name: setup_utility
-      vars:
-        setup_utility_apt: "{{ utility.apt }}"
-        setup_utility_flatpak: "{{ utility.flatpak }}"
-        setup_utility_favorites: "{{ utility.favorites }}"
-      tags: [utility, desktop]
-
-    - name: Setup Home Manager for user configurations
-      ansible.builtin.import_role:
-        name: setup_home_manager
-      vars:
-        setup_home_manager_git: "{{ development.git }}"
-        setup_home_manager_shell: "{{ development.shell }}"
-        setup_home_manager_nix_packages: "{{ development.nix_packages }}"
-        setup_home_manager_environment: "{{ development.environment }}"
-        setup_home_manager_projects_directory: >-
-          {{ development.projects_directory }}
-      tags: [home-manager, user]
-      become: false
-
-    # USER LAYER - User-specific configurations
-    - name: Setup keys
-      ansible.builtin.import_role:
-        name: setup_keys
-      tags: [keys, user]
-      vars:
-        setup_keys_bitwarden_server: "{{ bitwarden.server }}"
-        setup_keys_bitwarden_email: "{{ bitwarden.email }}"
-        setup_keys_bitwarden_password: "{{ bitwarden.password }}"
-        setup_keys_bitwarden_client_id: "{{ bitwarden.client_id }}"
-        setup_keys_bitwarden_client_secret: "{{ bitwarden.client_secret }}"
-        setup_keys_bitwarden_ssh_keys_collection_id: >-
-          {{ bitwarden.sshKeysCollectionId }}
-        setup_keys_bitwarden_gpg_keys_collection_id: >-
-          {{ bitwarden.gpgKeysCollectionId }}
+    - name: Run setup action tasks
+      ansible.builtin.import_tasks: tasks/setup_action.yml

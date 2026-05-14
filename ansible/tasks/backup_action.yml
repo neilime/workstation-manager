@@ -1,0 +1,4 @@
+---
+- name: Run backup workflow
+  ansible.builtin.import_role:
+    name: neilime.workstation_backup.state

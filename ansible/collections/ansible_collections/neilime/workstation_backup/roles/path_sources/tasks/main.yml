@@ -1,0 +1,32 @@
+---
+- name: Initialize requested backup paths
+  ansible.builtin.set_fact:
+    workstation_backup_requested_paths: >-
+      {{
+        workstation_backup_default_paths |
+        neilime.workstation_backup.backup_requested_paths(
+          workstation_backup_extra_paths_raw,
+          ansible_env.HOME
+        )
+      }}
+
+- name: Inspect requested backup paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ workstation_backup_requested_paths }}"
+  register: workstation_backup_path_stats
+
+- name: Build backup path plan
+  ansible.builtin.set_fact:
+    workstation_backup_path_plan: >-
+      {{
+        workstation_backup_path_stats.results |
+        neilime.workstation_backup.backup_path_plan(workstation_backup_tab)
+      }}
+
+- name: Merge backup path plan into execution context
+  ansible.builtin.set_fact:
+    workstation_backup_include_paths: >-
+      {{ workstation_backup_include_paths + workstation_backup_path_plan.include_paths }}
+    workstation_backup_manifest_lines: >-
+      {{ workstation_backup_manifest_lines + workstation_backup_path_plan.manifest_lines }}

@@ -1,0 +1,55 @@
+---
+workstation_backup_timestamp: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}" # noqa: var-naming[no-role-prefix]
+workstation_backup_tab: "{{ '%c' | format(9) }}" # noqa: var-naming[no-role-prefix]
+workstation_backup_newline: "{{ '%c' | format(10) }}" # noqa: var-naming[no-role-prefix]
+workstation_backup_output_dir: >- # noqa: var-naming[no-role-prefix]
+  {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR') |
+  default('', true) }}
+workstation_backup_archive_path: >- # noqa: var-naming[no-role-prefix]
+  {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+  default(
+    workstation_backup_output_dir ~
+    '/workstation-manager-backup-' ~
+    workstation_backup_timestamp ~
+    '.tar.gz',
+    true
+  ) }}
+workstation_backup_manifest_path: >- # noqa: var-naming[no-role-prefix]
+  {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_MANIFEST') |
+  default(
+    workstation_backup_archive_path |
+    regex_replace('\\.tar\\.gz$', '.manifest.txt'),
+    true
+  ) }}
+workstation_backup_dry_run: >- # noqa: var-naming[no-role-prefix]
+  {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_DRY_RUN') |
+  default('0', true) | bool }}
+workstation_backup_extra_paths_raw: >- # noqa: var-naming[no-role-prefix]
+  {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS') | default('', true) }}
+workstation_backup_chrome_config_dir: >- # noqa: var-naming[no-role-prefix]
+  {{ ansible_env.HOME }}/.config/google-chrome
+workstation_backup_bookmarks_export_dir: >- # noqa: var-naming[no-role-prefix]
+  {{ workstation_backup_output_dir }}/browser-bookmarks
+workstation_backup_default_paths: # noqa: var-naming[no-role-prefix]
+  - label: chrome-config
+    path: "{{ workstation_backup_chrome_config_dir }}"
+  - label: managed-browser-profiles
+    path: "{{ ansible_env.HOME }}/.local/share/workstation-manager/browser-profiles"
+  - label: dev-projects
+    path: "{{ ansible_env.HOME }}/Documents/dev-projects"
+  - label: workstation-manager-user-config
+    path: "{{ ansible_env.HOME }}/.config/workstation-manager"
+workstation_backup_archive_exclusion_patterns: # noqa: var-naming[no-role-prefix]
+  - "*/Cache/*"
+  - "*/Code Cache/*"
+  - "*/GPUCache/*"
+  - "*/GrShaderCache/*"
+  - "*/node_modules/*"
+  - "*/.venv/*"
+  - "*/.pytest_cache/*"
+  - "*/__pycache__/*"
+  - "*/dist/*"
+  - "*/build/*"
+  - "*/.next/*"
+  - "*/coverage/*"
+  - "*/target/*"

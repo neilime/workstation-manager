@@ -1,0 +1,31 @@
+---
+# Example private override values.
+#
+# Keep this file in ansible/private.override.yml in the fixed
+# neilime/workstation-config repository. workstation.sh setup and cleanup fetch
+# that file automatically with Git. Set WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE
+# only when you need an explicit non-standard source during development,
+# testing, or bootstrap without Git access to the private repository.
+#
+# Keep actual secrets in Bitwarden or another secret manager. This file is for
+# private but non-secret workstation data.
+desktop:
+  browser:
+    # Add only your real local browser profile names here.
+    profiles:
+      - id: personal
+        label: Personal
+        sync: browser
+      - id: professional
+        label: Professional
+        sync: browser
+      - id: client-example
+        label: Client Example
+        sync: manual
+
+secrets:
+  bitwarden:
+    # Override these locally when collection IDs should not live in tracked
+    # Ansible defaults. The collection contents remain in Bitwarden.
+    ssh_collection_id: "<your-ssh-collection-uuid>"
+    gpg_collection_id: "<your-gpg-collection-uuid>"

@@ -1,0 +1,72 @@
+---
+- name: Capture manual APT package baseline after convergence
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - apt-mark
+      - showmanual
+  register: workstation_manager_managed_state_manual_apt_packages
+  changed_when: false
+  check_mode: false
+
+- name: Capture installed Flatpak application baseline after convergence
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - flatpak
+      - list
+      - --system
+      - --app
+      - --columns=application
+  register: workstation_manager_managed_state_flatpak_packages
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Build managed cleanup baseline snapshot
+  ansible.builtin.set_fact:
+    workstation_manager_managed_state_system_baseline:
+      manual_apt_packages: >-
+        {{ workstation_manager_managed_state_manual_apt_packages.stdout_lines | default([]) }}
+      flatpak_packages: >-
+        {{
+          workstation_manager_managed_state_flatpak_packages.stdout_lines
+          if workstation_manager_managed_state_flatpak_packages.rc == 0
+          else []
+        }}
+
+- name: Ensure system state directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.system.state_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write system state marker
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: "{{ workstation_manager_resolved.system.state_dir }}/system.json"
+    mode: "0644"
+    content: >-
+      {{
+        'v1'
+        | neilime.workstation_state.managed_system_state(
+            workstation_manager_managed_state_system_baseline
+          )
+      }}
+
+- name: Ensure user state directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.state_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write user state marker
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: "{{ workstation_manager_resolved.user.state_dir }}/state.json"
+    mode: "0644"
+    content: >-
+      {{ workstation_manager_resolved.user.name |
+      neilime.workstation_state.managed_user_state }}

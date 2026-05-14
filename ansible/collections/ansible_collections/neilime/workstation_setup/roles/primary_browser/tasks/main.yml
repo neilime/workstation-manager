@@ -1,0 +1,106 @@
+---
+- name: Validate primary browser repository declaration
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_resolved.desktop.browser.repository.name is string
+      - workstation_manager_resolved.desktop.browser.repository.source is string
+      - workstation_manager_resolved.desktop.browser.repository.keyring is mapping
+      - workstation_manager_resolved.desktop.browser.repository.keyring.url is string
+      - workstation_manager_resolved.desktop.browser.repository.keyring.path is string
+    fail_msg: >-
+      Declared primary browser repository must include name, source, and
+      keyring.url/keyring.path fields.
+
+- name: Ensure primary browser APT keyring directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.desktop.browser.repository.keyring.path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download primary browser APT repository keyring
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: "{{ workstation_manager_resolved.desktop.browser.repository.keyring.url }}"
+    dest: "{{ workstation_manager_resolved.desktop.browser.repository.keyring.path }}"
+    owner: root
+    group: root
+    mode: >-
+      {{ workstation_manager_resolved.desktop.browser.repository.keyring.mode | default('0644') }}
+
+- name: Configure primary browser vendor APT repository
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt_repository:
+    repo: "{{ workstation_manager_resolved.desktop.browser.repository.source }}"
+    filename: >-
+      {{
+        workstation_manager_resolved.desktop.browser.repository.filename
+        | default(workstation_manager_resolved.desktop.browser.repository.name)
+      }}
+    state: "{{ workstation_manager_resolved.desktop.browser.repository.state | default('present') }}"
+    update_cache: true
+
+- name: Install primary browser package
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: "{{ workstation_manager_resolved.desktop.browser.package }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Ensure target user XDG config directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  when: workstation_manager_resolved.desktop.browser.default
+
+- name: Apply primary browser default associations
+  become: "{{ workstation_manager_use_become }}"
+  community.general.ini_file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/mimeapps.list"
+    section: Default Applications
+    option: "{{ item }}"
+    value: google-chrome.desktop
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+    no_extra_spaces: true
+  loop:
+    - x-scheme-handler/http
+    - x-scheme-handler/https
+    - text/html
+  loop_control:
+    label: "{{ item }}"
+  when: workstation_manager_resolved.desktop.browser.default
+
+- name: Ensure primary browser managed policy directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: /etc/opt/chrome/policies/managed
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: (workstation_manager_resolved.desktop.browser.policies | length) > 0
+
+- name: Write primary browser managed policy file
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: /etc/opt/chrome/policies/managed/workstation-manager.json
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{
+        workstation_manager_resolved.desktop.browser.policies
+        | neilime.workstation_setup.primary_browser_policy_payload
+        | to_nice_json
+      }}
+  when: (workstation_manager_resolved.desktop.browser.policies | length) > 0

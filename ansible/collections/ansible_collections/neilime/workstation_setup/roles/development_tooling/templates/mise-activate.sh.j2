@@ -1,0 +1,17 @@
+# Managed by workstation-manager.
+if [ -x "$HOME/.local/bin/mise" ]; then
+  if [ -z "${MISE_BACKENDS_PHP:-}" ]; then
+    export MISE_BACKENDS_PHP="vfox:mise-plugins/vfox-php"
+  fi
+
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) export PATH="$HOME/.local/bin:$PATH" ;;
+  esac
+
+  if [ -n "${ZSH_VERSION:-}" ]; then
+    eval "$("$HOME/.local/bin/mise" activate zsh)"
+  elif [ -n "${BASH_VERSION:-}" ]; then
+    eval "$("$HOME/.local/bin/mise" activate bash)"
+  fi
+fi

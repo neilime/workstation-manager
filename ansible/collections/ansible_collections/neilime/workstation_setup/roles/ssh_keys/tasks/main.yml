@@ -1,0 +1,66 @@
+---
+- name: Read Bitwarden SSH key collection items
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.bitwarden_collection
+  vars:
+    bitwarden_collection_id: >-
+      {{ workstation_manager_resolved.secrets.bitwarden.ssh_collection_id }}
+    bitwarden_collection_purpose: Bitwarden SSH restore
+
+- name: Assert that the selected Bitwarden collection contains SSH key items
+  ansible.builtin.assert:
+    that:
+      - bitwarden_collection_items | length > 0
+    fail_msg: >-
+      The selected Bitwarden collection does not contain any SSH key items.
+
+- name: Build SSH key restore plans from Bitwarden collection items
+  ansible.builtin.set_fact:
+    workstation_manager_bitwarden_ssh_restore_plans: >-
+      {{
+        (workstation_manager_bitwarden_ssh_restore_plans | default([]))
+        + [
+            item | neilime.workstation_setup.bitwarden_ssh_key_restore_plan(
+              workstation_manager_resolved.user.home
+            )
+          ]
+      }}
+  loop: "{{ bitwarden_collection_items }}"
+  loop_control:
+    label: "{{ item.name | default(item.id | default('unnamed-ssh-key')) }}"
+  no_log: true
+
+- name: Ensure SSH key parent directories exist
+  ansible.builtin.file:
+    path: "{{ item.private.dest | dirname }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+  loop: "{{ workstation_manager_bitwarden_ssh_restore_plans | default([]) }}"
+  loop_control:
+    label: "{{ item.private.dest | dirname }}"
+
+- name: Write restored SSH private keys
+  ansible.builtin.copy:
+    dest: "{{ item.private.dest }}"
+    content: "{{ item.private.content }}"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "{{ item.private.mode }}"
+  loop: "{{ workstation_manager_bitwarden_ssh_restore_plans | default([]) }}"
+  loop_control:
+    label: "{{ item.private.dest }}"
+  no_log: true
+
+- name: Write restored SSH public keys
+  ansible.builtin.copy:
+    dest: "{{ item.public.dest }}"
+    content: "{{ item.public.content }}"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "{{ item.public.mode }}"
+  loop: "{{ workstation_manager_bitwarden_ssh_restore_plans | default([]) }}"
+  loop_control:
+    label: "{{ item.public.dest }}"
+  no_log: true

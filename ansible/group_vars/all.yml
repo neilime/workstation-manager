@@ -1,145 +1,189 @@
 ---
-# System configuration and packages - Essential host layer components
-system:
-  locale: en_US.UTF-8
-  timezone: Europe/Paris
-  apt:
-    - apt-transport-https
-    - ca-certificates
-    - gnupg-agent
-    - software-properties-common
-    - util-linux-extra
-    - systemd
-    - dconf-cli
-    - python3-psutil
-    - curl
-    - wget
-    - unzip
-    - cron
-    - htop
-    - flatpak
-  favorites:
-    - gnome-control-center.desktop
-    - org.gnome.Nautilus.desktop
+workstation_manager:
+  user:
+    # Default: current sudo user, then USER, then root.
+    name:
+    # Default: /home/<name>.
+    home:
+    # Default: <home>/Documents/dev-projects.
+    projects_directory:
+  system:
+    # Default workstation locale.
+    locale: en_US.UTF-8
+    # Default workstation timezone.
+    timezone: Europe/Paris
+    packages:
+      # Base packages needed before higher-level package stories run.
+      prerequisites:
+        - locales
+        - tzdata
+      # Ubuntu repository packages and vendor-managed APT packages.
+      apt:
+        - htop
+        - ucaresystem-core
+        - xdg-utils
+      # Refresh APT metadata when the cache is older than this many seconds.
+      cache_valid_time: 86400
+    repositories:
+      # Vendor APT repository declarations include explicit source and keyrings.
+      apt:
+        - name: utappia-stable
+          source: >-
+            deb [signed-by=/usr/share/keyrings/utappia-archive-keyring.asc]
+            https://ppa.launchpadcontent.net/utappia/stable/ubuntu {{ ansible_distribution_release }} main
+          keyring:
+            url: >-
+              https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xCEA1EBAF65B1043E244021E1A726F660EBC8F9FD
+            path: /usr/share/keyrings/utappia-archive-keyring.asc
+    # Extra system directories managed with root ownership by default.
+    directories: []
+    services:
+      # Services to enable when later stories require them.
+      enabled: []
+      # Services to disable when later stories require them.
+      disabled: []
+  desktop:
+    flatpak:
+      # Default remote for managed Flatpak applications.
+      remote: flathub
+      packages:
+        - org.torproject.torbrowser-launcher
+        - com.slack.Slack
+        - com.usebruno.Bruno
+        - com.spotify.Client
+        - org.videolan.VLC
+        - org.jdownloader.JDownloader
+        - com.github.hluk.copyq
+        - org.gnome.SimpleScan
+        - org.gnome.DejaDup
+        - org.libreoffice.LibreOffice
+        - com.bitwarden.desktop
+    browser:
+      # Install the primary browser from the vendor APT package.
+      package: google-chrome-stable
+      # Vendor repository declaration for the primary browser package.
+      repository:
+        name: google-chrome
+        source: >-
+          deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-key.asc]
+          https://dl.google.com/linux/chrome/deb/ stable main
+        keyring:
+          url: https://dl.google.com/linux/linux_signing_key.pub
+          path: /usr/share/keyrings/google-linux-signing-key.asc
+      # The primary browser is expected to become the default browser.
+      default: true
+      # Declared profiles for the single primary browser workflow.
+      profiles:
+        - id: personal
+          label: Personal
+          sync: browser
+        - id: escemi
+          label: Escemi
+          sync: browser
+      # Bookmarks stay profile-scoped and should be restored through sync or export.
+      # Generated browser-wide policy inputs for the primary browser.
+      policies:
+        baseline_extensions:
+          - id: nngceckbapebfimnlniiiahkandclblb
+            installation_mode: force_installed
+            update_url: https://clients2.google.com/service/update2/crx
+        password_manager:
+          enabled: false
+        third_party_password_manager:
+          extension_id: nngceckbapebfimnlniiiahkandclblb
+          installation_mode: force_installed
+          update_url: https://clients2.google.com/service/update2/crx
+          policy: {}
+        startup:
+          bookmark_bar_enabled: true
+          restore_on_startup: 1
+    gnome:
+      # Apply dark style preference when GNOME settings are implemented.
+      dark_mode: true
+      favorites:
+        - gnome-control-center.desktop
+        - org.gnome.Nautilus.desktop
+        - com.slack.Slack.desktop
+        - com.visualstudio.code.desktop
+        - org.gnome.Terminal.desktop
+        - com.spotify.Client.desktop
+        - com.github.hluk.copyq.desktop
+        - com.bitwarden.desktop.desktop
+  development:
+    # Core developer packages installed globally from APT.
+    packages:
+      - git
+      - zsh
+      - starship
+      - make
+      - jq
+      - fonts-firacode
+      - build-essential
+      - autoconf
+      - bison
+      - re2c
+      - pkg-config
+      - libxml2-dev
+      - libssl-dev
+      - libicu-dev
+      - libzip-dev
+      - libonig-dev
+      - libcurl4-openssl-dev
+      - libpng-dev
+      - libgd-dev
+      - libjpeg-dev
+      - libfreetype6-dev
+      - libwebp-dev
+      - libgmp-dev
+      - libsodium-dev
+      - libreadline-dev
+      - libbz2-dev
+      - libsqlite3-dev
+    repositories:
+      apt: []
+    # Optional GUI editor packages, usually delivered by Flatpak.
+    editor_packages:
+      - com.visualstudio.code
+    mise:
+      # Common workstation-wide tool defaults. Child folders can override these
+      # with their own restored mise.toml files.
+      tools:
+        node: lts
+        php: "8.4.20"
+        "aqua:cli/cli": latest
+        "aqua:docker/cli": latest
+        "aqua:docker/compose": latest
+        "aqua:helm/helm": "4"
+        "aqua:wagoodman/dive": latest
+      gh_extensions:
+        - nektos/gh-act
+      docker_cli_plugins:
+        - command: docker-compose
+          tool: aqua:docker/compose
+    settings:
+      # Development tooling often needs a higher filesystem watch limit.
+      sysctl:
+        fs.inotify.max_user_watches: "524288"
+    runtimes: {}
+  home_environment:
+    # Manage user-home dotfiles through the built-in Chezmoi integration.
+    chezmoi:
+      # Fixed dotfiles source for the workstation home environment.
+      source: "neilime/workstation-config"
+      # Pin a stable Chezmoi release for reproducible workstation bootstrap.
+      version: "2.70.4"
+      # Apply dotfiles after init.
+      apply: true
+      # Install the Chezmoi binary to this global path.
+      bin_path: /usr/local/bin/chezmoi
+      # This repo owns the Chezmoi machine-data config file.
+      config_path: .config/chezmoi/chezmoi.yaml
 
-# Browser domain
-browser:
-  flatpak:
-    - org.chromium.Chromium
-    - org.torproject.torbrowser-launcher
-  favorites:
-    - org.chromium.Chromium.desktop
-    - org.torproject.torbrowser-launcher.desktop
-
-# Communication domain
-communication:
-  flatpak:
-    - com.slack.Slack
-  favorites:
-    - com.slack.Slack.desktop
-
-# Development domain
-development:
-  projects_directory: "/home/{{ ansible_user }}/Documents/dev-projects"
-  flatpak:
-    - com.visualstudio.code
-    - com.usebruno.Bruno
-  favorites:
-    - com.visualstudio.code.desktop
-    - org.gnome.Terminal.desktop
-  # Git configuration
-  git:
-    user_name: "Emilien Escalle"
-    user_email: "emilien.escalle@escemi.com"
-    default_branch: "main"
-    push_default: "simple"
-    pull_rebase: false
-    editor: "nvim"
-    gpg_sign: true
-  # Shell configuration
-  shell:
-    aliases:
-      cat: "bat --style=plain"
-      ll: "ls -alF"
-      la: "ls -A"
-      l: "ls -CF"
-      # Security aliases to prevent dangerous git operations
-      ggl: "echo '\\e[31mUse \\e[1;31mggfl\\e[0m!' && return 1"
-      gcam: "echo '\\e[31mUse \\e[1;31mgcasm\\e[0m!' && return 1"
-      "gcan!": "echo '\\e[31mUse \\e[1;31mgcans!\\e[0m!' && return 1"
-    oh_my_zsh:
-      plugins:
-        - git
-        - docker
-        - docker-compose
-        - yarn
-        - npm
-        - php
-        - aws
-        - command-not-found
-        - pre-commit
-      theme: "robbyrussell"
-  # Nix packages for development
-  nix_packages:
-    # Tools
-    - gnumake
-    - git
-    - act
-    - jq
-    - gh
-    - just
-    - fira-code
-    - fira-code-symbols
-    - bitwarden-cli
-    - lima
-    # PHP
-    - php
-    # JS
-    - fnm
-    - yarn
-    - pnpm
-    # Docker and Kubernetes
-    - docker
-    - docker-compose
-    - dive
-    - helm
-  # Environment variables
-  environment:
-    EDITOR: "nvim"
-    BROWSER: "chromium"
-    TERMINAL: "gnome-terminal"
-
-# Media domain
-media:
-  flatpak:
-    - com.spotify.Client
-    - org.videolan.VLC
-  favorites:
-    - com.spotify.Client.desktop
-
-# Utility domain
-utility:
-  apt:
-    - ucaresystem-core
-  flatpak:
-    - org.jdownloader.JDownloader
-    - com.github.hluk.copyq
-    - org.gnome.SimpleScan
-    - org.gnome.DejaDup
-    - com.bitwarden.desktop
-    - org.libreoffice.LibreOffice
-  favorites:
-    - com.github.hluk.copyq.desktop
-    - com.bitwarden.desktop.desktop
-
-# Secrets management
-bitwarden:
-  server: "https://vault.bitwarden.eu"
-  email: "{{ BITWARDEN_EMAIL | default('') }}"
-  password: "{{ BITWARDEN_PASSWORD | default('') }}"
-  client_id: "{{ BITWARDEN_CLIENT_ID | default('') }}"
-  client_secret: "{{ BITWARDEN_CLIENT_SECRET | default('') }}"
-  # yamllint disable-line rule:comments rule:line-length
-  sshKeysCollectionId: "7ac0c067-9d61-49c0-b01e-b10d0135372a" # gitleaks:allow - it is an ID
-  # yamllint disable-line rule:comments rule:line-length
-  gpgKeysCollectionId: "9ff2a152-3c88-44cd-a04b-b11d00c8b267" # gitleaks:allow - it is an ID
+  secrets:
+    # Secret restoration is driven by declared Bitwarden collection IDs.
+    bitwarden:
+      server: https://vault.bitwarden.eu
+      # Bitwarden collection UUID for SSH key items.
+      ssh_collection_id:
+      # Bitwarden collection UUID for GPG key items.
+      gpg_collection_id:

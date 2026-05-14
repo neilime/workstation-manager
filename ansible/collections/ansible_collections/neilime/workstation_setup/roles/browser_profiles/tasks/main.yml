@@ -1,0 +1,51 @@
+---
+- name: Compute browser profiles root directory
+  ansible.builtin.set_fact:
+    workstation_manager_browser_profiles_root_dir: >-
+      {{
+        workstation_manager_resolved.user.home
+        | neilime.workstation_setup.browser_profiles_root_dir
+      }}
+  changed_when: false
+  when: (workstation_manager_resolved.desktop.browser.profiles | length) > 0
+
+- name: Validate browser profile declarations
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - item.id is defined
+      - item.id | neilime.workstation_setup.has_valid_browser_profile_id
+    fail_msg: >-
+      Browser profiles must declare a non-empty lowercase slug id using only
+      letters, numbers, and dashes.
+  loop: "{{ workstation_manager_resolved.desktop.browser.profiles }}"
+  loop_control:
+    label: "{{ item.id | default('<missing-id>') }}"
+  when: (workstation_manager_resolved.desktop.browser.profiles | length) > 0
+
+- name: Ensure browser profiles root directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_browser_profiles_root_dir }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+  when: (workstation_manager_resolved.desktop.browser.profiles | length) > 0
+
+- name: Ensure declared browser profile directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: >-
+      {{
+        workstation_manager_browser_profiles_root_dir
+        | neilime.workstation_setup.browser_profile_directory(item.id)
+      }}
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+  loop: "{{ workstation_manager_resolved.desktop.browser.profiles }}"
+  loop_control:
+    label: "{{ item.id }}"
+  when: (workstation_manager_resolved.desktop.browser.profiles | length) > 0
