@@ -9,7 +9,7 @@ permissions: {}
 jobs:
   linter:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@4c9d51717dc04d823dac2dc9ac2857e7b3069454 # 0.35.0
+    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@b553a696531fbd36743ccbb0c76c717971b8acdb # 0.35.4
     # yamllint enable rule:line-length
     with:
       linter-env: |
@@ -22,7 +22,7 @@ jobs:
 
   build-tooling-image:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@2b647ed6f11d50cb6beb6d56333e68ba2c804826 # 0.33.1
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@77f98ab8773b824eca7ed3f94e3e9c8b8af5875c # 0.36.1
     # yamllint enable rule:line-length
     permissions:
       contents: read
@@ -63,7 +63,7 @@ jobs:
         # yamllint enable rule:line-length
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Parse static reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@71b85947453f32b5d147ff3ab37351439a92d840 # 0.34.2
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@b553a696531fbd36743ccbb0c76c717971b8acdb # 0.35.4
         with:
           report-paths: .reports/tests/*.xml
           report-name: Static Validation
@@ -126,7 +126,7 @@ jobs:
 
       - name: Parse e2e reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@71b85947453f32b5d147ff3ab37351439a92d840 # 0.34.2
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@b553a696531fbd36743ccbb0c76c717971b8acdb # 0.35.4
         with:
           report-paths: .reports/tests/e2e-*.junit.xml
           report-name: End-to-End Validation
