@@ -10,8 +10,40 @@
     state: directory
     mode: "0755"
 
+- name: Resolve backup timestamp
+  ansible.builtin.set_fact:
+    workstation_backup_timestamp: "{{ workstation_backup_timestamp }}"
+
 - name: Initialize backup execution context
   ansible.builtin.set_fact:
+    workstation_backup_archive_path: >-
+      {{
+        lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+        default(
+          workstation_backup_output_dir ~
+          '/workstation-manager-backup-' ~
+          workstation_backup_timestamp ~
+          '.tar.gz',
+          true
+        )
+      }}
+    workstation_backup_manifest_path: >-
+      {{
+        lookup('env', 'WORKSTATION_MANAGER_BACKUP_MANIFEST') |
+        default(
+          (
+            lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+            default(
+              workstation_backup_output_dir ~
+              '/workstation-manager-backup-' ~
+              workstation_backup_timestamp ~
+              '.tar.gz',
+              true
+            )
+          ) | regex_replace('\.tar\.gz$', '.manifest.txt'),
+          true
+        )
+      }}
     workstation_backup_include_paths: []
     workstation_backup_manifest_lines: []
     workstation_backup_browser_bookmark_exports: []

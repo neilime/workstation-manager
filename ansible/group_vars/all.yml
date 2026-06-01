@@ -114,7 +114,6 @@ workstation_manager:
     packages:
       - git
       - zsh
-      - starship
       - make
       - jq
       - fonts-firacode
@@ -150,6 +149,7 @@ workstation_manager:
       tools:
         node: lts
         php: "8.4.20"
+        "aqua:starship/starship": latest
         "aqua:cli/cli": latest
         "aqua:docker/cli": latest
         "aqua:docker/compose": latest

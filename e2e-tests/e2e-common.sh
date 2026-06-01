@@ -120,6 +120,9 @@ run_e2e_workstation_action() {
 	shift
 
 	env_args+=("$@")
+	if [[ -n "${WORKSTATION_MANAGER_GITHUB_TOKEN:-}" ]]; then
+		env_args+=("WORKSTATION_MANAGER_GITHUB_TOKEN=${WORKSTATION_MANAGER_GITHUB_TOKEN}")
+	fi
 
 	stream_e2e_entrypoint_script |
 		limactl shell --workdir / "$E2E_VM_NAME" \

@@ -11,15 +11,26 @@ def test_cleanup_report_is_written(host) -> None:
     cleanup_report = host.file(
         f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
     )
+    cleanup_report_path = (
+        f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
+    )
 
     # Act
-    has_apply_mode = cleanup_report.contains(r'"cleanup_mode":\s+"apply"')
+    cleanup_mode_result = host.run(
+        "python3 -c %s %s",
+        (
+            "import json,sys; "
+            "report=json.load(open(sys.argv[1], encoding='utf-8')); "
+            "raise SystemExit(0 if report['cleanup_mode'] == 'apply' else 1)"
+        ),
+        cleanup_report_path,
+    )
 
     # Assert
     assert cleanup_report.exists
     assert cleanup_report.is_file
     assert cleanup_report.user == host.check_output("whoami")
-    assert has_apply_mode
+    assert cleanup_mode_result.succeeded
 
 
 def test_cleanup_removes_unmanaged_browser_profile_directories(host) -> None:

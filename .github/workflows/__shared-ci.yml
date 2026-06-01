@@ -118,7 +118,7 @@ jobs:
       - name: Run phased e2e assertions
         env:
           E2E_REPOSITORY_REF: ${{ github.sha }}
-          UBUNTU_CONFIG_GITHUB_TOKEN: ${{ secrets.WORKSTATION_CONFIG_GITHUB_TOKEN }}
+          WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
           BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
           BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
           BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}

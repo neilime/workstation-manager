@@ -190,6 +190,70 @@
   when:
     - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
 
+- name: Resolve starship install directory
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        . "$HOME/.config/workstation-manager/mise.sh"
+        "$HOME/.local/bin/mise" where "aqua:starship/starship"
+  register: workstation_manager_development_starship_install_dir
+  changed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  when:
+    - '"aqua:starship/starship" in workstation_manager_resolved.development.mise.tools'
+    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
+
+- name: Link starship binary from mise-managed installation
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    src: "{{ workstation_manager_development_starship_install_dir.stdout }}/bin/starship"
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/starship"
+    state: link
+    force: true
+  when:
+    - '"aqua:starship/starship" in workstation_manager_resolved.development.mise.tools'
+    - workstation_manager_development_starship_install_dir.stdout | length > 0
+
+- name: Resolve GitHub CLI install directory
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        . "$HOME/.config/workstation-manager/mise.sh"
+        "$HOME/.local/bin/mise" where "aqua:cli/cli"
+  register: workstation_manager_development_github_cli_install_dir
+  changed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  when:
+    - '"aqua:cli/cli" in workstation_manager_resolved.development.mise.tools'
+    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
+
+- name: Link GitHub CLI binary from mise-managed installation
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    src: "{{ workstation_manager_development_github_cli_install_dir.stdout }}/bin/gh"
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/gh"
+    state: link
+    force: true
+  when:
+    - '"aqua:cli/cli" in workstation_manager_resolved.development.mise.tools'
+    - workstation_manager_development_github_cli_install_dir.stdout | length > 0
+
 - name: Read installed GitHub CLI extensions
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"

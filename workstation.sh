@@ -336,6 +336,10 @@ run_ansible_pull() {
 	initialize_target_context
 	authenticated_repository_url="$(resolve_authenticated_repository_url "$REPOSITORY_URL")"
 
+	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
+		set -- "WORKSTATION_MANAGER_GITHUB_TOKEN=$GITHUB_TOKEN_VALUE" "$@"
+	fi
+
 	case "$runner_kind" in
 	root)
 		set -- \
@@ -367,7 +371,7 @@ run_ansible_pull() {
 		"$playbook_path"
 
 	if [ "$include_private_override" = "1" ] && [ -n "$PRIVATE_OVERRIDE_LOCAL_FILE" ]; then
-		set -- "$@" -e "workstation_manager_private_override_file=$PRIVATE_OVERRIDE_LOCAL_FILE"
+		set -- "$@" -e "workstation_private_override_file=$PRIVATE_OVERRIDE_LOCAL_FILE"
 	fi
 
 	if [ "$dry_run" = "1" ]; then

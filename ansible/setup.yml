@@ -9,8 +9,14 @@
       {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
       default('true', true) | bool }}
     workstation_private_override_file: >-
-      {{ lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') |
-      default('', true) }}
+      {{
+        workstation_manager_private_override_file |
+        default(
+          lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') |
+          default('', true),
+          true
+        )
+      }}
 
   tasks:
     - name: Resolve workstation config inputs

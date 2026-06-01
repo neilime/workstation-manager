@@ -5,13 +5,20 @@
   gather_facts: true
   vars:
     workstation_action: cleanup
+    # jscpd:ignore-start
     workstation_use_become: >-
       {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
       default('true', true) | bool }}
     workstation_private_override_file: >-
-      {{ lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') |
-      default('', true) }}
-
+      {{
+        workstation_manager_private_override_file |
+        default(
+          lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') |
+          default('', true),
+          true
+        )
+      }}
+  # jscpd:ignore-end
   tasks:
     - name: Resolve workstation config inputs
       ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml

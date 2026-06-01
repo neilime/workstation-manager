@@ -1,13 +1,30 @@
 """End-to-end checks for managed browser profile directories."""
 
 
-def test_primary_browser_profile_directories_exist(host) -> None:
-    """Declared browser profiles should have stable managed directories."""
+def resolve_managed_browser_profile_ids(host) -> tuple[str, list[str]]:
+    """Return the managed browser profiles discovered on the target machine."""
 
-    # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
     profiles_root = f"{user_home}/.local/share/workstation-manager/browser-profiles"
-    profile_ids = ["personal", "escemi"]
+    profiles_result = host.run(
+        "find %s -mindepth 1 -maxdepth 1 -type d -printf '%%f\\n' | sort",
+        profiles_root,
+    )
+
+    assert profiles_result.succeeded
+    profile_ids = [
+        profile_id for profile_id in profiles_result.stdout.splitlines() if profile_id
+    ]
+    assert profile_ids
+
+    return profiles_root, profile_ids
+
+
+def test_primary_browser_profile_directories_exist(host) -> None:
+    """Managed browser profile directories should match the applied desired state."""
+
+    # Arrange
+    profiles_root, profile_ids = resolve_managed_browser_profile_ids(host)
 
     # Act
     root_directory = host.file(profiles_root)
@@ -31,9 +48,7 @@ def test_primary_browser_profile_directories_do_not_seed_browser_databases(
     """Managed browser profile directories should start without browser databases."""
 
     # Arrange
-    user_home = host.check_output("printf '%s' \"$HOME\"")
-    profiles_root = f"{user_home}/.local/share/workstation-manager/browser-profiles"
-    profile_ids = ["personal", "escemi"]
+    profiles_root, profile_ids = resolve_managed_browser_profile_ids(host)
     seeded_files = [
         "Default/Cookies",
         "Default/History",

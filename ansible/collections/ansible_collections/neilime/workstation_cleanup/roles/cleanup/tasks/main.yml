@@ -292,12 +292,19 @@
     - not ansible_check_mode
     - workstation_manager_cleanup_ucaresystem_command.rc == 0
 
-- name: Remove orphaned APT dependencies and clean package cache
+- name: Remove orphaned APT dependencies
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     autoremove: true
-    autoclean: true
     purge: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  when: not ansible_check_mode
+
+- name: Clean APT package cache
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    autoclean: true
   environment:
     DEBIAN_FRONTEND: noninteractive
   when: not ansible_check_mode

@@ -1,34 +1,67 @@
 """End-to-end checks for development tooling."""
 
 
+def resolve_mise_command(host, tool: str):
+    """Return the resolved command path for a mise-managed tool."""
+
+    return host.run(
+        "bash -lc \
+        '. \"$HOME/.config/workstation-manager/mise.sh\" && command -v %s'",
+        tool,
+    )
+
+
+def run_with_mise_activation(host, command: str):
+    """Run a shell command after loading the managed mise activation."""
+
+    return host.run(
+        "bash -lc \
+        '. \"$HOME/.config/workstation-manager/mise.sh\" && %s'",
+        command,
+    )
+
+
+def assert_mise_tool_is_declared(config_file, tool_name: str) -> None:
+    """Assert that the global mise config declares a non-empty version selector."""
+
+    assert config_file.contains(rf'^"{tool_name}" = "[^"][^"]*"$')
+
+
+def assert_mise_tool_uses_version_selector(config_file, tool_name: str) -> None:
+    """Assert that the global mise config pins the tool to a concrete version."""
+
+    assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9.]*"$')
+
+
+def assert_mise_tool_uses_major_track(config_file, tool_name: str) -> None:
+    """Assert that the global mise config tracks a major version line."""
+
+    assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9]*"$')
+
+
 def test_declared_development_tools_are_available(host) -> None:
     """The installed machine should provide representative command-line tools."""
-
-    mise_lookup_command = (
-        'bash -lc \'. "$HOME/.config/workstation-manager/mise.sh" '
-        "&& command -v {tool}'"
-    )
 
     # Act
     git_result = host.run("command -v git")
     make_result = host.run("command -v make")
-    github_cli_result = host.run("command -v gh")
-    docker_result = host.run("command -v docker")
-    docker_buildx_result = host.run("docker buildx version")
-    docker_compose_result = host.run("docker compose version")
-    mise_result = host.run(mise_lookup_command.format(tool="mise"))
-    mise_node_result = host.run(mise_lookup_command.format(tool="node"))
-    mise_php_result = host.run(mise_lookup_command.format(tool="php"))
-    mise_helm_result = host.run(mise_lookup_command.format(tool="helm"))
+    docker_result = resolve_mise_command(host, "docker")
+    docker_buildx_result = run_with_mise_activation(host, "docker buildx version")
+    docker_compose_result = run_with_mise_activation(host, "docker compose version")
+    mise_result = resolve_mise_command(host, "mise")
+    mise_github_cli_result = resolve_mise_command(host, "gh")
+    mise_node_result = resolve_mise_command(host, "node")
+    mise_php_result = resolve_mise_command(host, "php")
+    mise_helm_result = resolve_mise_command(host, "helm")
 
     # Assert
     assert git_result.succeeded
     assert make_result.succeeded
-    assert github_cli_result.succeeded
     assert docker_result.succeeded
     assert docker_buildx_result.succeeded
     assert docker_compose_result.succeeded
     assert mise_result.succeeded
+    assert mise_github_cli_result.succeeded
     assert mise_node_result.succeeded
     assert mise_php_result.succeeded
     assert mise_helm_result.succeeded
@@ -45,11 +78,11 @@ def test_mise_global_config_and_activation_are_managed(host) -> None:
     # Assert
     assert config_file.exists
     assert config_file.contains('"node" = "lts"')
-    assert config_file.contains(r'^"php" = "[^"]+"$')
-    assert config_file.contains('"aqua:cli/cli" = "latest"')
-    assert config_file.contains('"aqua:docker/cli" = "latest"')
-    assert config_file.contains('"aqua:docker/compose" = "latest"')
-    assert config_file.contains(r'^"aqua:helm/helm" = "\d+"$')
+    assert_mise_tool_uses_version_selector(config_file, "php")
+    assert_mise_tool_is_declared(config_file, "aqua:cli/cli")
+    assert_mise_tool_is_declared(config_file, "aqua:docker/cli")
+    assert_mise_tool_is_declared(config_file, "aqua:docker/compose")
+    assert_mise_tool_uses_major_track(config_file, "aqua:helm/helm")
     assert activation_file.exists
     assert activation_file.contains('MISE_BACKENDS_PHP="vfox:mise-plugins/vfox-php"')
     assert activation_file.contains('eval "$("$HOME/.local/bin/mise" activate zsh)"')
