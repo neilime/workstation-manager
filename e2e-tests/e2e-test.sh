@@ -3,6 +3,9 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=e2e-common.sh
+source "$script_dir/e2e-common.sh"
+
 vm_name="${1:-workstation-manager-v1}"
 ssh_host="lima-${vm_name}"
 tooling_image="${TOOLING_IMAGE:-workstation-manager-tooling:local}"
@@ -12,6 +15,8 @@ ssh_config_path="${host_home}/.lima/${vm_name}/ssh.config"
 report_dir="${REPORTS_DIR:-}"
 setup_test_paths=()
 
+E2E_VM_NAME="$vm_name"
+
 for test_path in e2e-tests/test_*.py; do
 	case "$(basename "$test_path")" in
 	test_backup.py | test_cleanup.py) ;;
@@ -20,6 +25,33 @@ for test_path in e2e-tests/test_*.py; do
 		;;
 	esac
 done
+
+capture_phase_screenshot() {
+	local phase_name="$1"
+	local screenshot_dir=""
+	local screenshot_name=""
+	local screenshot_path=""
+	local status_path=""
+
+	if [[ -z "$report_dir" ]]; then
+		return 0
+	fi
+
+	screenshot_dir="$report_dir/screenshots"
+	screenshot_name="e2e-${phase_name}-desktop"
+	screenshot_path="$screenshot_dir/${screenshot_name}.png"
+	status_path="$screenshot_dir/${screenshot_name}.txt"
+	mkdir -p "$screenshot_dir"
+
+	if capture_e2e_vm_desktop "$screenshot_name" "$screenshot_dir" && [[ -s "$screenshot_path" ]]; then
+		printf '%s\n' "Captured ${screenshot_name}.png" >"$status_path"
+		return 0
+	fi
+
+	printf '%s\n' "Desktop screenshot capture failed for phase ${phase_name}. See ${screenshot_name}.log for details." >"$status_path"
+	return 1
+}
+
 run_phase_tests() {
 	phase_name="$1"
 	shift
@@ -60,6 +92,8 @@ pytest "$@"
 bash "$script_dir/e2e-backup.sh" "$vm_name"
 run_phase_tests backup e2e-tests/test_backup.py
 bash "$script_dir/e2e-setup.sh" "$vm_name"
+capture_phase_screenshot setup
 run_phase_tests setup "${setup_test_paths[@]}"
 bash "$script_dir/e2e-cleanup.sh" "$vm_name"
+capture_phase_screenshot cleanup
 run_phase_tests cleanup e2e-tests/test_cleanup.py

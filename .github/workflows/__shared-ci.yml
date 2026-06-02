@@ -117,7 +117,8 @@ jobs:
 
       - name: Run phased e2e assertions
         env:
-          E2E_REPOSITORY_REF: ${{ github.sha }}
+          E2E_REPOSITORY_URL: ${{ github.event.pull_request.head.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}
+          E2E_REPOSITORY_REF: ${{ github.event.pull_request.head.sha || github.sha }}
           WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
           BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
           BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
@@ -130,6 +131,14 @@ jobs:
         with:
           report-paths: .reports/tests/e2e-*.junit.xml
           report-name: End-to-End Validation
+
+      - name: Upload e2e desktop screenshots
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-desktop-screenshots
+          path: .reports/screenshots/
+          if-no-files-found: warn
 
       - name: Stop e2e VM
         if: ${{ always() }}
