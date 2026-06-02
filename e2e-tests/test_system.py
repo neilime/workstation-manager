@@ -45,3 +45,15 @@ def test_system_state_file(host) -> None:
     # Assert
     assert system_state.exists
     assert is_managed
+
+
+def test_lima_network_uses_networkd_renderer(host) -> None:
+    """Desktop installation must not replace Lima's network renderer."""
+
+    # Act
+    renderer = host.check_output("sudo netplan get network.renderer")
+    networkd = host.service("systemd-networkd")
+
+    # Assert
+    assert renderer == "networkd"
+    assert networkd.is_running

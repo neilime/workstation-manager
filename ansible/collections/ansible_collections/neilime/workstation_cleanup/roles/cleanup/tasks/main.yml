@@ -177,7 +177,11 @@
           | list
           | difference(
               workstation_manager_cleanup_expected_browser_profile_ids
-              | map('regex_replace', '^(.*)$', workstation_manager_cleanup_browser_profiles_root_dir ~ '/\\1')
+              | map(
+                  'regex_replace',
+                  '^',
+                  workstation_manager_cleanup_browser_profiles_root_dir ~ '/'
+                )
               | list
             )
           | sort
@@ -249,6 +253,21 @@
     state: absent
   when: not ansible_check_mode
 
+- name: Ensure declared browser profiles are never removed
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          workstation_manager_cleanup_unmanaged_browser_profile_directories
+          | map('basename')
+          | list
+          | intersect(workstation_manager_cleanup_expected_browser_profile_ids)
+          | length
+        ) == 0
+    fail_msg: >-
+      Refusing to remove browser profiles declared in the effective workstation
+      configuration.
+
 - name: Remove unmanaged browser profile directories
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
@@ -284,7 +303,9 @@
   ansible.builtin.command:
     argv:
       - ucaresystem-core
-      - -u
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+    NEEDRESTART_MODE: a
   register: workstation_manager_cleanup_ucaresystem_update
   changed_when: false
   failed_when: false
@@ -311,38 +332,43 @@
 
 - name: Build cleanup report payload
   ansible.builtin.set_fact:
-    workstation_manager_cleanup_report:
-      generated_at: "{{ ansible_date_time.iso8601 }}"
-      package_baseline_available: "{{ workstation_manager_cleanup_has_package_baseline }}"
-      cleanup_mode: "{{ 'check' if ansible_check_mode else 'apply' }}"
-      drift:
-        unexpected_manual_apt_packages: >-
-          {{ workstation_manager_cleanup_unexpected_manual_apt_packages }}
-        unexpected_flatpak_packages: >-
-          {{ workstation_manager_cleanup_unexpected_flatpak_packages }}
-        unmanaged_browser_profile_directories: >-
-          {{ workstation_manager_cleanup_unmanaged_browser_profile_directories }}
-        unexpected_system_state_paths: >-
-          {{ workstation_manager_cleanup_unexpected_system_state_paths }}
-        unexpected_user_state_paths: >-
-          {{ workstation_manager_cleanup_unexpected_user_state_paths }}
-        unexpected_managed_config_paths: >-
-          {{ workstation_manager_cleanup_unexpected_managed_config_paths }}
-      actions:
-        docker_prune_available: "{{ workstation_manager_cleanup_docker_command.rc == 0 }}"
-        docker_prune_exit_code: >-
-          {{ workstation_manager_cleanup_docker_prune.rc | default(None) }}
-        ucaresystem_available: >-
-          {{ workstation_manager_cleanup_ucaresystem_command.rc == 0 }}
-        ucaresystem_exit_code: >-
-          {{ workstation_manager_cleanup_ucaresystem_update.rc | default(None) }}
-        apt_autoremove_requested: "{{ not ansible_check_mode }}"
-        removed_browser_profile_directories: >-
-          {{
-            workstation_manager_cleanup_unmanaged_browser_profile_directories
-            if not ansible_check_mode
-            else []
-          }}
+    # Build the complete mapping in one Jinja expression. Rendering individual
+    # scalar leaves turns integer values into strings with Ansible Core 2.16.
+    workstation_manager_cleanup_report: >-
+      {{
+        {
+          'generated_at': ansible_date_time.iso8601,
+          'package_baseline_available': workstation_manager_cleanup_has_package_baseline,
+          'cleanup_mode': 'check' if ansible_check_mode else 'apply',
+          'drift': {
+            'unexpected_manual_apt_packages':
+              workstation_manager_cleanup_unexpected_manual_apt_packages,
+            'unexpected_flatpak_packages':
+              workstation_manager_cleanup_unexpected_flatpak_packages,
+            'unmanaged_browser_profile_directories':
+              workstation_manager_cleanup_unmanaged_browser_profile_directories,
+            'unexpected_system_state_paths':
+              workstation_manager_cleanup_unexpected_system_state_paths,
+            'unexpected_user_state_paths':
+              workstation_manager_cleanup_unexpected_user_state_paths,
+            'unexpected_managed_config_paths':
+              workstation_manager_cleanup_unexpected_managed_config_paths
+          },
+          'actions': {
+            'docker_prune_available': workstation_manager_cleanup_docker_command.rc == 0,
+            'docker_prune_exit_code':
+              workstation_manager_cleanup_docker_prune.rc | default(None),
+            'ucaresystem_available': workstation_manager_cleanup_ucaresystem_command.rc == 0,
+            'ucaresystem_exit_code':
+              workstation_manager_cleanup_ucaresystem_update.rc | default(None),
+            'apt_autoremove_requested': not ansible_check_mode,
+            'removed_browser_profile_directories':
+              workstation_manager_cleanup_unmanaged_browser_profile_directories
+              if not ansible_check_mode
+              else []
+          }
+        }
+      }}
 
 - name: Persist cleanup report
   become: "{{ workstation_manager_use_become }}"

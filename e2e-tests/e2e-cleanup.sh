@@ -17,5 +17,5 @@ mkdir -p '$stale_profile_dir/Default'
 printf '%s\n' 'e2e-stale-profile' >'$stale_profile_dir/Default/First Run'
 "
 
-run_e2e_workstation_action \
+run_e2e_detached_workstation_action \
 	cleanup

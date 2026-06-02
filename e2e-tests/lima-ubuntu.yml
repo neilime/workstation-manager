@@ -1,8 +1,11 @@
 ---
 vmType: qemu
 cpus: 2
-memory: "4GiB"
-disk: "20GiB"
+memory: "6GiB"
+disk: "40GiB"
+
+video:
+  display: "vnc"
 
 # yamllint disable rule:line-length
 images:
@@ -19,9 +22,108 @@ mounts:
     mountPoint: "/workspace"
     writable: false
 
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      desktop_user="{{.User}}"
+
+      if ! getent passwd "$desktop_user" >/dev/null; then
+        echo "desktop user does not exist: $desktop_user" >&2
+        exit 1
+      fi
+
+      # ubuntu-desktop-minimal installs a default NetworkManager renderer.
+      # Keep Lima's cloud-init interface on networkd so a service restart
+      # during system maintenance cannot leave the VM without networking.
+      install -d -m 0755 /etc/netplan
+      cat >/etc/netplan/99-lima-networkd.yaml <<'EOF'
+      network:
+        version: 2
+        renderer: networkd
+      EOF
+      chmod 0600 /etc/netplan/99-lima-networkd.yaml
+
+      printf '%s\n' \
+        'gdm3 shared/default-x-display-manager select gdm3' \
+        'gdm3 gdm3/daemon_name string /usr/sbin/gdm3' \
+        | debconf-set-selections
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        dconf-cli \
+        gdm3 \
+        ubuntu-desktop-minimal
+
+      netplan generate
+      netplan apply
+      test "$(netplan get network.renderer)" = "networkd"
+
+      cat >/etc/gdm3/custom.conf <<EOF
+      [daemon]
+      WaylandEnable=false
+      AutomaticLoginEnable=true
+      AutomaticLogin=$desktop_user
+
+      [security]
+
+      [xdmcp]
+
+      [chooser]
+
+      [debug]
+      EOF
+
+      # The setup phase is deliberately long enough for GNOME's default idle
+      # timer to disable the virtio-gpu scanout. QEMU then captures its
+      # "Display output is not active" placeholder instead of the desktop.
+      # Install E2E-only system defaults before starting the login session so
+      # the virtual display remains active for the post-setup screenshot.
+      install -d -m 0755 /etc/dconf/profile /etc/dconf/db/local.d
+      cat >/etc/dconf/profile/user <<'EOF'
+      user-db:user
+      system-db:local
+      EOF
+      cat >/etc/dconf/db/local.d/00-e2e-display <<'EOF'
+      [org/gnome/desktop/session]
+      idle-delay=uint32 0
+
+      [org/gnome/desktop/screensaver]
+      lock-enabled=false
+
+      [org/gnome/settings-daemon/plugins/power]
+      sleep-inactive-ac-type='nothing'
+      EOF
+      dconf update
+
+      systemctl enable gdm3
+      systemctl set-default graphical.target
+      systemctl restart gdm3
+
 probes:
   - mode: readiness
     description: "sudo is available on the base Ubuntu image"
     script: |
       #!/bin/bash
       command -v sudo
+  - mode: readiness
+    description: "Lima networking is rendered by systemd-networkd"
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      test "$(sudo netplan get network.renderer)" = "networkd"
+      systemctl is-active --quiet systemd-networkd
+  - mode: readiness
+    description: "desktop session is available"
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      desktop_user="{{.User}}"
+      systemctl is-active --quiet gdm3
+      pgrep --euid "$desktop_user" --exact gnome-shell >/dev/null
+      test "$(gsettings get org.gnome.desktop.session idle-delay)" = "uint32 0"
+    hint: |
+      GNOME did not start for the Lima guest user.
+      See /var/log/cloud-init-output.log and run `systemctl status gdm3`
+      in the guest.
