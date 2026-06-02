@@ -72,21 +72,13 @@ e2e-up: ## Start the Lima end-to-end test VM
 	@set -e; \
 	config_file="$(CURDIR)/e2e-tests/lima-ubuntu.yml"; \
 	runtime_config_file="$$(mktemp "/tmp/workstation-manager-lima-XXXXXX.yml")"; \
+	trap 'rm -f "$$runtime_config_file"' EXIT; \
 	sed 's|location: "."|location: "$(CURDIR)"|' "$$config_file" >"$$runtime_config_file"; \
-	attempt=0; \
-	if limactl list $(VM_NAME) 2>/dev/null | grep -q "$(VM_NAME)"; then \
-		limactl start $(VM_NAME) || true; \
+	if limactl list --format '{{.Name}}' 2>/dev/null | grep -Fxq "$(VM_NAME)"; then \
+		limactl start --timeout=20m $(VM_NAME); \
 	else \
-		limactl start -y --containerd=none --name=$(VM_NAME) "$$runtime_config_file" || true; \
-	fi; \
-	rm -f "$$runtime_config_file"; \
-	until limactl shell --workdir / $(VM_NAME) true 2>/dev/null; do \
-		attempt=$$((attempt + 1)); \
-		if [ $$attempt -ge 60 ]; then \
-			echo "e2e VM did not become reachable" >&2; \
-			exit 1; \
-		fi; \
-	done
+		limactl start --timeout=20m -y --containerd=none --name=$(VM_NAME) "$$runtime_config_file"; \
+	fi
 
 e2e-setup: ## Run workstation.sh setup inside the Lima end-to-end test VM
 	$(call check_lima)
@@ -114,9 +106,9 @@ define run_linter
 	DEFAULT_WORKSPACE="$(CURDIR)"; \
 	LINTER_IMAGE="linter:latest"; \
 	VOLUME="$$DEFAULT_WORKSPACE:$$DEFAULT_WORKSPACE"; \
-	docker build --platform linux/amd64 --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) --tag $$LINTER_IMAGE .; \
+	docker build --platform=linux/amd64 --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) --tag $$LINTER_IMAGE .; \
 	docker run \
-		--platform linux/amd64 \
+		--platform=linux/amd64 \
 		-v $$VOLUME \
 		--rm \
 		-e ANSIBLE_CONFIG_FILE=.ansible-lint \
@@ -169,6 +161,11 @@ define test_command
 		ansible-galaxy collection install -r /workspace/ansible/collections/requirements.yml -p /workspace/ansible/vendor-collections >/dev/null; \
 	fi; \
 	if [ -n "$(REPORTS_DIR)" ]; then \
+		/workspace/ci/run-with-junit.sh \
+			"/workspace/$(REPORTS_DIR)/tests/e2e-host-tools.junit.xml" \
+			"e2e-host-tools" \
+			"unit" \
+			python3 -m unittest discover -s /workspace/e2e-tests/unit -p "test_*.py"; \
 		for collection_dir in $(FIRST_PARTY_COLLECTION_DIRS); do \
 			collection_name="$$(basename "$$collection_dir")"; \
 			/workspace/ci/run-with-junit.sh \
@@ -185,6 +182,7 @@ define test_command
 			fi; \
 		done; \
 	else \
+		python3 -m unittest discover -s /workspace/e2e-tests/unit -p "test_*.py"; \
 		for collection_dir in $(FIRST_PARTY_COLLECTION_DIRS); do \
 			cd "$$collection_dir"; \
 			ansible-test sanity --python 3.12; \

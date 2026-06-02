@@ -185,6 +185,10 @@ user runs, then verifies the workstation in three action-scoped phases:
 `backup`, `setup`, and `cleanup`. Each action runs first, then its matching
 assertion set runs before the next action starts.
 
+After setup, the QEMU desktop is captured to
+`.reports/screenshots/e2e-setup-desktop.png`. Set `SCREENSHOTS_DIR` to override
+that location. CI uploads the screenshot and its capture log as an artifact.
+
 ```sh
 make e2e-up
 make e2e-test

@@ -1,6 +1,6 @@
 """End-to-end checks for the cleanup workflow."""
 
-import re
+import json
 
 
 def test_cleanup_report_is_written(host) -> None:
@@ -29,32 +29,61 @@ def test_cleanup_report_is_written(host) -> None:
     assert cleanup_mode_result.succeeded
 
 
-def test_cleanup_removes_unmanaged_browser_profile_directories(host) -> None:
-    """Cleanup should delete unmanaged browser profile directories under the managed root."""
+def test_cleanup_runs_system_maintenance(host) -> None:
+    """Cleanup should complete its uCareSystem and APT maintenance actions."""
+
+    # Arrange
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    cleanup_report_path = f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
+
+    # Act
+    cleanup_report = json.loads(host.file(cleanup_report_path).content_string)
+    actions = cleanup_report["actions"]
+
+    # Assert
+    assert actions["ucaresystem_available"] is True
+    assert actions["ucaresystem_exit_code"] == 0
+    assert actions["apt_autoremove_requested"] is True
+
+
+def test_cleanup_report_preserves_json_scalar_types(host) -> None:
+    """Cleanup report scalars should retain their machine-readable JSON types."""
+
+    # Arrange
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    cleanup_report_path = f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
+
+    # Act
+    cleanup_report = json.loads(host.file(cleanup_report_path).content_string)
+    actions = cleanup_report["actions"]
+
+    # Assert
+    assert isinstance(cleanup_report["package_baseline_available"], bool)
+    assert isinstance(actions["docker_prune_available"], bool)
+    assert actions["docker_prune_exit_code"] is None or (
+        isinstance(actions["docker_prune_exit_code"], int) and not isinstance(actions["docker_prune_exit_code"], bool)
+    )
+    assert isinstance(actions["ucaresystem_available"], bool)
+    assert isinstance(actions["ucaresystem_exit_code"], int)
+    assert not isinstance(actions["ucaresystem_exit_code"], bool)
+    assert isinstance(actions["apt_autoremove_requested"], bool)
+
+
+def test_cleanup_removes_only_unmanaged_browser_profile_directories(host) -> None:
+    """Cleanup should delete the stale profile while preserving declared profiles."""
 
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
     stale_profile_dir = f"{user_home}/.local/share/workstation-manager/browser-profiles/e2e-stale"
     cleanup_report_path = f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
-    cleanup_report = host.file(cleanup_report_path)
 
     # Act
     stale_profile = host.file(stale_profile_dir)
-    removed_profile_recorded = cleanup_report.contains(re.escape(stale_profile_dir))
-    cleanup_result = host.run(
-        "python3 -c %s %s %s",
-        (
-            "import json,sys; "
-            "report=json.load(open(sys.argv[1], encoding='utf-8')); "
-            "removed=report['actions']['removed_browser_profile_directories']; "
-            "drift=report['drift']['unmanaged_browser_profile_directories']; "
-            "raise SystemExit(0 if sys.argv[2] in removed and sys.argv[2] in drift else 1)"
-        ),
-        cleanup_report_path,
-        stale_profile_dir,
-    )
+    cleanup_report = json.loads(host.file(cleanup_report_path).content_string)
+    removed_profiles = cleanup_report["actions"]["removed_browser_profile_directories"]
+    unmanaged_profiles = cleanup_report["drift"]["unmanaged_browser_profile_directories"]
 
     # Assert
     assert not stale_profile.exists
-    assert removed_profile_recorded
-    assert cleanup_result.succeeded
+    assert removed_profiles == [stale_profile_dir]
+    assert unmanaged_profiles == [stale_profile_dir]

@@ -1,22 +1,43 @@
 """End-to-end checks for the primary browser."""
 
 
+def resolve_primary_browser_source_file(host):
+    """Return the active Chrome APT source in legacy or Deb822 format."""
+
+    source_paths = (
+        "/etc/apt/sources.list.d/google-chrome.sources",
+        "/etc/apt/sources.list.d/google-chrome.list",
+    )
+    for source_path in source_paths:
+        source_file = host.file(source_path)
+        if source_file.exists:
+            return source_file
+
+    raise AssertionError(f"Chrome APT source not found in: {', '.join(source_paths)}")
+
+
 def test_primary_browser_vendor_repository_is_configured(host) -> None:
     """The installed machine should persist the primary browser vendor repository."""
 
     # Arrange
-    keyring_file = host.file("/usr/share/keyrings/google-linux-signing-key.asc")
-    source_file = host.file("/etc/apt/sources.list.d/google-chrome.list")
+    source_file = resolve_primary_browser_source_file(host)
+    repository_urls = (
+        "https://dl.google.com/linux/chrome-stable/deb/",
+        "https://dl.google.com/linux/chrome/deb/",
+    )
+    keyring_paths = (
+        "/usr/share/keyrings/google-chrome.gpg",
+        "/usr/share/keyrings/google-linux-signing-key.asc",
+    )
 
     # Act
-    has_repository_url = source_file.contains("https://dl.google.com/linux/chrome/deb/")
-    has_signed_by = source_file.contains("signed-by=/usr/share/keyrings/google-linux-signing-key.asc")
+    source_content = source_file.content_string.lower()
+    configured_keyrings = [path for path in keyring_paths if path.lower() in source_content]
 
     # Assert
-    assert keyring_file.exists
-    assert source_file.exists
-    assert has_repository_url
-    assert has_signed_by
+    assert any(url in source_content for url in repository_urls)
+    assert configured_keyrings
+    assert all(host.file(path).exists for path in configured_keyrings)
 
 
 def test_primary_browser_is_installed_and_default(host) -> None:
