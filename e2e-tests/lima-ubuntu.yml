@@ -1,8 +1,8 @@
 ---
 vmType: qemu
 cpus: 2
-memory: "4GiB"
-disk: "20GiB"
+memory: "6GiB"
+disk: "40GiB"
 
 # yamllint disable rule:line-length
 images:
@@ -19,9 +19,66 @@ mounts:
     mountPoint: "/workspace"
     writable: false
 
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      desktop_user="$(getent passwd 1000 | cut -d: -f1)"
+
+      if [[ -z "$desktop_user" ]]; then
+        echo "failed to resolve desktop user from uid 1000" >&2
+        exit 1
+      fi
+
+      printf '%s\n' 'gdm3 shared/default-x-display-manager select gdm3' | debconf-set-selections
+      printf '%s\n' 'gdm3 gdm3/daemon_name string /usr/sbin/gdm3' | debconf-set-selections
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        dbus-x11 \
+        gdm3 \
+        gnome-screenshot \
+        imagemagick \
+        ubuntu-desktop-minimal \
+        xauth \
+        x11-apps
+
+      cat >/etc/gdm3/custom.conf <<EOF
+      [daemon]
+      WaylandEnable=false
+      AutomaticLoginEnable=true
+      AutomaticLogin=$desktop_user
+
+      [security]
+
+      [xdmcp]
+
+      [chooser]
+
+      [debug]
+      EOF
+
+      systemctl enable gdm3
+      systemctl set-default graphical.target
+      systemctl restart gdm3
+
 probes:
   - mode: readiness
     description: "sudo is available on the base Ubuntu image"
     script: |
       #!/bin/bash
       command -v sudo
+  - mode: readiness
+    description: "desktop capture tools are installed"
+    script: |
+      #!/bin/bash
+      desktop_user="$(getent passwd 1000 | cut -d: -f1)"
+      command -v dbus-run-session
+      command -v gnome-screenshot >/dev/null || command -v import >/dev/null
+      systemctl is-active --quiet gdm3
+      pgrep -u "$desktop_user" -x gnome-shell >/dev/null \
+        || pgrep -u "$desktop_user" -x gnome-session-binary >/dev/null \
+        || pgrep -u "$desktop_user" -x gnome-session >/dev/null \
+        || pgrep -u "$desktop_user" -x Xorg >/dev/null \
+        || pgrep -u "$desktop_user" -x Xwayland >/dev/null

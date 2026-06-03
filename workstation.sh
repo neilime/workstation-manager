@@ -233,6 +233,17 @@ resolve_authenticated_repository_url() {
 	printf '%s\n' "$repository_url"
 }
 
+is_full_git_commit_sha() {
+	case "$1" in
+	[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+		return 0
+		;;
+	*)
+		return 1
+		;;
+	esac
+}
+
 download_github_file() {
 	repository_path="$1"
 	ref_name="$2"
@@ -369,6 +380,10 @@ run_ansible_pull() {
 		-i "localhost," \
 		-c local \
 		"$playbook_path"
+
+	if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
+		set -- "$@" --full
+	fi
 
 	if [ "$include_private_override" = "1" ] && [ -n "$PRIVATE_OVERRIDE_LOCAL_FILE" ]; then
 		set -- "$@" -e "workstation_private_override_file=$PRIVATE_OVERRIDE_LOCAL_FILE"
