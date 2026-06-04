@@ -9,7 +9,7 @@ permissions: {}
 jobs:
   linter:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@b553a696531fbd36743ccbb0c76c717971b8acdb # 0.35.4
+    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
     # yamllint enable rule:line-length
     with:
       linter-env: |
@@ -22,7 +22,7 @@ jobs:
 
   build-tooling-image:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@77f98ab8773b824eca7ed3f94e3e9c8b8af5875c # 0.36.1
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@5396e1258d209f9af18e55da8692361508e3338c # 0.36.2
     # yamllint enable rule:line-length
     permissions:
       contents: read
@@ -59,7 +59,7 @@ jobs:
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         # yamllint enable rule:line-length
 
       - name: Login to GitHub Container Registry
@@ -80,7 +80,7 @@ jobs:
 
       - name: Parse static reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@b553a696531fbd36743ccbb0c76c717971b8acdb # 0.35.4
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
         with:
           report-paths: .reports/tests/*.xml
           report-name: Static Validation
@@ -95,7 +95,7 @@ jobs:
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         # yamllint enable rule:line-length
 
       - name: Set up Lima
@@ -126,7 +126,7 @@ jobs:
 
       - name: Parse e2e reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@b553a696531fbd36743ccbb0c76c717971b8acdb # 0.35.4
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
         with:
           report-paths: .reports/tests/e2e-*.junit.xml
           report-name: End-to-End Validation
