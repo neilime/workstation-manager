@@ -15,7 +15,7 @@ permissions: {}
 
 jobs:
   clean:
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/prune-pull-requests-images-tags.yml@5396e1258d209f9af18e55da8692361508e3338c # v0.36.2
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/prune-pull-requests-images-tags.yml@c9088e8447c5a8be45157e17701023fc50ccb1c0 # v0.37.2
     permissions:
       contents: read
       id-token: write
