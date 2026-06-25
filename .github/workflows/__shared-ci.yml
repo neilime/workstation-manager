@@ -9,7 +9,7 @@ permissions: {}
 jobs:
   linter:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
+    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@2334d395217f9811699dbd4ace9d8559e4d99e0d # 0.37.3
     # yamllint enable rule:line-length
     with:
       linter-env: |
@@ -22,7 +22,7 @@ jobs:
 
   build-tooling-image:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@5396e1258d209f9af18e55da8692361508e3338c # 0.36.2
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@c9088e8447c5a8be45157e17701023fc50ccb1c0 # 0.37.2
     # yamllint enable rule:line-length
     permissions:
       contents: read
@@ -59,7 +59,7 @@ jobs:
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         # yamllint enable rule:line-length
 
       - name: Login to GitHub Container Registry
@@ -80,7 +80,7 @@ jobs:
 
       - name: Parse static reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@2334d395217f9811699dbd4ace9d8559e4d99e0d # 0.37.3
         with:
           report-paths: .reports/tests/*.xml
           report-name: Static Validation
@@ -95,7 +95,7 @@ jobs:
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         # yamllint enable rule:line-length
 
       - name: Set up Lima
@@ -106,7 +106,7 @@ jobs:
 
       - name: Cache Lima
         # yamllint disable rule:line-length
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         # yamllint enable rule:line-length
         with:
           path: ~/.cache/lima
@@ -126,7 +126,7 @@ jobs:
 
       - name: Parse e2e reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@2334d395217f9811699dbd4ace9d8559e4d99e0d # 0.37.3
         with:
           report-paths: .reports/tests/e2e-*.junit.xml
           report-name: End-to-End Validation
