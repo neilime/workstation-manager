@@ -10,9 +10,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 
 
 # pylint: disable=too-few-public-methods
-class SecretsSectionNormalizer(
-    desired_state_support.DesiredStateDefaultsSectionNormalizer
-):
+class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the secrets section of the desired-state schema."""
 
     _UUID_PATTERN = re.compile(
@@ -20,15 +18,9 @@ class SecretsSectionNormalizer(
         r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     )
 
-    def _normalize(
-        self, config: dict[str, object], defaults: dict[str, object]
-    ) -> dict[str, object]:
-        secrets = self._resolver.mapping(
-            config.get("secrets"), "workstation_manager.secrets"
-        )
-        bitwarden = self._resolver.mapping(
-            secrets.get("bitwarden"), "workstation_manager.secrets.bitwarden"
-        )
+    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+        secrets = self._resolver.mapping(config.get("secrets"), "workstation_manager.secrets")
+        bitwarden = self._resolver.mapping(secrets.get("bitwarden"), "workstation_manager.secrets.bitwarden")
         default_bitwarden = self._resolver.mapping(
             defaults.get("bitwarden"), "workstation_manager.secrets.defaults.bitwarden"
         )
@@ -56,9 +48,7 @@ class SecretsSectionNormalizer(
         has_declared_collection = bool(ssh_collection_id or gpg_collection_id)
 
         if has_declared_collection and not server:
-            raise ValueError(
-                "workstation_manager.secrets.bitwarden.server must not be empty"
-            )
+            raise ValueError("workstation_manager.secrets.bitwarden.server must not be empty")
 
         return {
             "bitwarden": {

@@ -69,10 +69,7 @@ def test_backup_manifest_records_expected_entries(host) -> None:
     dry_run_line = host.run("grep -Fx 'dry_run\t0' %s", manifest_path)
     managed_profiles_line = host.run(
         "grep -Fx %s %s",
-        (
-            "include\tmanaged-browser-profiles\t"
-            f"{user_home}/.local/share/workstation-manager/browser-profiles"
-        ),
+        (f"include\tmanaged-browser-profiles\t{user_home}/.local/share/workstation-manager/browser-profiles"),
         manifest_path,
     )
     bookmark_export_line = host.run(
@@ -109,14 +106,10 @@ def test_backup_exports_chrome_bookmarks_as_standalone_json(host) -> None:
     """The backup flow should export bookmark JSON separately from raw Chrome data."""
 
     # Arrange
-    bookmark_export = host.file(
-        f"{BACKUP_ROOT}/browser-bookmarks/Default/Bookmarks.json"
-    )
+    bookmark_export = host.file(f"{BACKUP_ROOT}/browser-bookmarks/Default/Bookmarks.json")
 
     # Act
-    has_repo_bookmark = bookmark_export.contains(
-        '"url": "https://github.com/neilime/workstation-manager"'
-    )
+    has_repo_bookmark = bookmark_export.contains('"url": "https://github.com/neilime/workstation-manager"')
 
     # Assert
     assert bookmark_export.exists

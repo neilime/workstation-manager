@@ -14,9 +14,7 @@ def test_normalize_returns_default_flatpak_desktop_configuration() -> None:
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    raw_config: dict[str, object] = {
-        "home_environment": {"chezmoi": {"source": DEFAULT_CHEZMOI_SOURCE}}
-    }
+    raw_config: dict[str, object] = {"home_environment": {"chezmoi": {"source": DEFAULT_CHEZMOI_SOURCE}}}
     environment = {"USER": "emilien"}
 
     # Act

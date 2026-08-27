@@ -126,9 +126,7 @@ def test_development_sysctl_configuration(host) -> None:
     sysctl_file = host.file("/etc/sysctl.d/99-workstation-manager.conf")
 
     # Act
-    has_watch_limit = sysctl_file.contains(
-        r"^fs\.inotify\.max_user_watches\s*=\s*524288$"
-    )
+    has_watch_limit = sysctl_file.contains(r"^fs\.inotify\.max_user_watches\s*=\s*524288$")
     configured_watch_limit = host.check_output("sysctl -n fs.inotify.max_user_watches")
 
     # Assert

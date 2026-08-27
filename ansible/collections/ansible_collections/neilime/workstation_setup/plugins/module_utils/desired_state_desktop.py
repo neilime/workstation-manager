@@ -8,35 +8,21 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 
 
 # pylint: disable=too-few-public-methods
-class DesktopSectionNormalizer(
-    desired_state_support.DesiredStateDefaultsSectionNormalizer
-):
+class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the desktop section of the desired-state schema."""
 
-    def _normalize(
-        self, config: dict[str, object], defaults: dict[str, object]
-    ) -> dict[str, object]:
-        desktop = self._resolver.mapping(
-            config.get("desktop"), "workstation_manager.desktop"
-        )
-        flatpak = self._resolver.mapping(
-            desktop.get("flatpak"), "workstation_manager.desktop.flatpak"
-        )
-        browser = self._resolver.mapping(
-            desktop.get("browser"), "workstation_manager.desktop.browser"
-        )
-        gnome = self._resolver.mapping(
-            desktop.get("gnome"), "workstation_manager.desktop.gnome"
-        )
+    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+        desktop = self._resolver.mapping(config.get("desktop"), "workstation_manager.desktop")
+        flatpak = self._resolver.mapping(desktop.get("flatpak"), "workstation_manager.desktop.flatpak")
+        browser = self._resolver.mapping(desktop.get("browser"), "workstation_manager.desktop.browser")
+        gnome = self._resolver.mapping(desktop.get("gnome"), "workstation_manager.desktop.gnome")
         default_flatpak = self._resolver.mapping(
             defaults.get("flatpak"), "workstation_manager.desktop.defaults.flatpak"
         )
         default_browser = self._resolver.mapping(
             defaults.get("browser"), "workstation_manager.desktop.defaults.browser"
         )
-        default_gnome = self._resolver.mapping(
-            defaults.get("gnome"), "workstation_manager.desktop.defaults.gnome"
-        )
+        default_gnome = self._resolver.mapping(defaults.get("gnome"), "workstation_manager.desktop.defaults.gnome")
 
         return {
             "flatpak": {

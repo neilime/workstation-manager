@@ -12,9 +12,7 @@ def resolve_managed_browser_profile_ids(host) -> tuple[str, list[str]]:
     )
 
     assert profiles_result.succeeded
-    profile_ids = [
-        profile_id for profile_id in profiles_result.stdout.splitlines() if profile_id
-    ]
+    profile_ids = [profile_id for profile_id in profiles_result.stdout.splitlines() if profile_id]
     assert profile_ids
 
     return profiles_root, profile_ids
@@ -28,10 +26,7 @@ def test_primary_browser_profile_directories_exist(host) -> None:
 
     # Act
     root_directory = host.file(profiles_root)
-    profile_directories = {
-        profile_id: host.file(f"{profiles_root}/{profile_id}")
-        for profile_id in profile_ids
-    }
+    profile_directories = {profile_id: host.file(f"{profiles_root}/{profile_id}") for profile_id in profile_ids}
 
     # Assert
     assert root_directory.exists
@@ -58,9 +53,7 @@ def test_primary_browser_profile_directories_do_not_seed_browser_databases(
 
     # Act
     profile_seed_files = {
-        f"{profile_id}:{seeded_file}": host.file(
-            f"{profiles_root}/{profile_id}/{seeded_file}"
-        )
+        f"{profile_id}:{seeded_file}": host.file(f"{profiles_root}/{profile_id}/{seeded_file}")
         for profile_id in profile_ids
         for seeded_file in seeded_files
     }

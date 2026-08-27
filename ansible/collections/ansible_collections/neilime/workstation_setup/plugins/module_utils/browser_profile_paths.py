@@ -15,9 +15,7 @@ class BrowserProfilePathsPlanner:
         """Return the stable root directory for managed browser profiles."""
 
         normalized_user_home = self._normalize_required_value(user_home, "user_home")
-        return (
-            f"{normalized_user_home}/.local/share/workstation-manager/browser-profiles"
-        )
+        return f"{normalized_user_home}/.local/share/workstation-manager/browser-profiles"
 
     def build_profile_directory(self, profiles_root_dir: str, profile_id: str) -> str:
         """Return the stable path for one declared browser profile."""
@@ -47,9 +45,7 @@ class BrowserProfilePathsPlanner:
 
         normalized_profile_id = self._normalize_required_value(profile_id, "profile_id")
         if not self.has_valid_profile_id(normalized_profile_id):
-            raise ValueError(
-                "profile_id must use only lowercase letters, numbers, and dashes"
-            )
+            raise ValueError("profile_id must use only lowercase letters, numbers, and dashes")
 
         return normalized_profile_id
 

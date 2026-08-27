@@ -20,9 +20,13 @@ jobs:
       actions: read
       contents: read
       id-token: write
-      issues: read
+      issues: write
       packages: write
-      pull-requests: read
+      pull-requests: write
       security-events: write
       statuses: write
-    secrets: inherit
+    secrets:
+      BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
+      BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
+      BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+      WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}

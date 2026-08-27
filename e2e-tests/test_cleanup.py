@@ -8,12 +8,8 @@ def test_cleanup_report_is_written(host) -> None:
 
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
-    cleanup_report = host.file(
-        f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
-    )
-    cleanup_report_path = (
-        f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
-    )
+    cleanup_report = host.file(f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json")
+    cleanup_report_path = f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
 
     # Act
     cleanup_mode_result = host.run(
@@ -38,12 +34,8 @@ def test_cleanup_removes_unmanaged_browser_profile_directories(host) -> None:
 
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
-    stale_profile_dir = (
-        f"{user_home}/.local/share/workstation-manager/browser-profiles/e2e-stale"
-    )
-    cleanup_report_path = (
-        f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
-    )
+    stale_profile_dir = f"{user_home}/.local/share/workstation-manager/browser-profiles/e2e-stale"
+    cleanup_report_path = f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
     cleanup_report = host.file(cleanup_report_path)
 
     # Act

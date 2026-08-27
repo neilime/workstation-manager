@@ -12,9 +12,7 @@ class GitGpgSigningPlanner:
 
         plans = self._restore_plans(restore_plans)
         if len(plans) != 1:
-            raise ValueError(
-                "Git signing integration requires exactly one restored GPG key"
-            )
+            raise ValueError("Git signing integration requires exactly one restored GPG key")
 
         return self._fingerprint(plans[0].get("fingerprint"))
 

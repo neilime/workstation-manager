@@ -137,14 +137,7 @@ def test_build_plan_normalizes_flattened_openpgp_armor_and_appends_subkey() -> N
         "=sub\n"
         f"{end_private}\n"
     )
-    assert plan["public_key"] == (
-        f"{begin_public}\n"
-        "\n"
-        "public-body-1\n"
-        "public-body-2\n"
-        "=pub\n"
-        f"{end_public}\n"
-    )
+    assert plan["public_key"] == (f"{begin_public}\n\npublic-body-1\npublic-body-2\n=pub\n{end_public}\n")
 
 
 def test_build_plan_rejects_missing_fingerprint() -> None:

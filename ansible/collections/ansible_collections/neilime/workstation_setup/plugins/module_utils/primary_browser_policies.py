@@ -9,14 +9,10 @@ class PrimaryBrowserPoliciesPlanner:
 
     _default_extension_update_url = "https://clients2.google.com/service/update2/crx"
 
-    def build_policy_payload(
-        self, policy_inputs: dict[str, object] | None
-    ) -> dict[str, object]:
+    def build_policy_payload(self, policy_inputs: dict[str, object] | None) -> dict[str, object]:
         """Return the managed policy payload for the primary browser."""
 
-        normalized_policy_inputs = self._normalize_mapping(
-            policy_inputs or {}, "policy_inputs"
-        )
+        normalized_policy_inputs = self._normalize_mapping(policy_inputs or {}, "policy_inputs")
         policy_payload: dict[str, object] = {}
 
         extension_settings = self._build_extension_settings(normalized_policy_inputs)
@@ -73,15 +69,11 @@ class PrimaryBrowserPoliciesPlanner:
                 third_party_password_manager.get("policy") or {},
                 "policy_inputs.third_party_password_manager.policy",
             )
-            policy_payload["3rdparty"] = {
-                "extensions": {extension_id: extension_policy}
-            }
+            policy_payload["3rdparty"] = {"extensions": {extension_id: extension_policy}}
 
         return policy_payload
 
-    def _build_extension_settings(
-        self, policy_inputs: dict[str, object]
-    ) -> dict[str, dict[str, str]]:
+    def _build_extension_settings(self, policy_inputs: dict[str, object]) -> dict[str, dict[str, str]]:
         """Build Chrome ExtensionSettings entries from repository inputs."""
 
         extension_settings: dict[str, dict[str, str]] = {}

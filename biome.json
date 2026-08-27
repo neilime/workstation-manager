@@ -1,0 +1,33 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!!.env*",
+      "!!.git",
+      "!!.mypy_cache",
+      "!!.pytest_cache",
+      "!!.reports*",
+      "!!.tmp",
+      "!!__pycache__",
+      "!!venvs",
+      "!!ansible/vars/private.override.yml",
+      "!!ansible/vendor-collections",
+      "!!ansible/collections/ansible_collections/community",
+      "!!ansible/collections/ansible_collections/community.general-*.info",
+      "!!ansible/collections/ansible_collections/neilime/*/tests/output"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "lineWidth": 120
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  }
+}
