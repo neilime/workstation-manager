@@ -1,0 +1,13 @@
+[MASTER]
+
+# Match Super-Linter's Ruff configuration so formatting and linting agree.
+jobs=0
+
+[FORMAT]
+
+max-line-length=120
+
+[MESSAGES CONTROL]
+
+# Super-Linter does not install the project's Python dependencies.
+disable=import-error

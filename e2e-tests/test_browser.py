@@ -10,9 +10,7 @@ def test_primary_browser_vendor_repository_is_configured(host) -> None:
 
     # Act
     has_repository_url = source_file.contains("https://dl.google.com/linux/chrome/deb/")
-    has_signed_by = source_file.contains(
-        "signed-by=/usr/share/keyrings/google-linux-signing-key.asc"
-    )
+    has_signed_by = source_file.contains("signed-by=/usr/share/keyrings/google-linux-signing-key.asc")
 
     # Assert
     assert keyring_file.exists
@@ -31,12 +29,8 @@ def test_primary_browser_is_installed_and_default(host) -> None:
 
     # Act
     browser_result = host.run(browser_command)
-    has_http_default = mimeapps_file.contains(
-        "x-scheme-handler/http=google-chrome.desktop"
-    )
-    has_https_default = mimeapps_file.contains(
-        "x-scheme-handler/https=google-chrome.desktop"
-    )
+    has_http_default = mimeapps_file.contains("x-scheme-handler/http=google-chrome.desktop")
+    has_https_default = mimeapps_file.contains("x-scheme-handler/https=google-chrome.desktop")
     has_html_default = mimeapps_file.contains("text/html=google-chrome.desktop")
 
     # Assert

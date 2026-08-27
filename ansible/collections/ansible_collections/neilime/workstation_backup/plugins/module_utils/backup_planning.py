@@ -27,11 +27,7 @@ class BackupRequestedPathsBuilder:
             requested_paths.append(
                 {
                     "label": "extra",
-                    "path": (
-                        raw_path.replace("~", home_directory, 1)
-                        if raw_path.startswith("~")
-                        else raw_path
-                    ),
+                    "path": (raw_path.replace("~", home_directory, 1) if raw_path.startswith("~") else raw_path),
                 }
             )
 
@@ -59,9 +55,7 @@ class BackupPathPlanBuilder:
 
             if exists:
                 include_paths.append(path)
-                manifest_lines.append(
-                    f"include{tab_character}{label}{tab_character}{path}"
-                )
+                manifest_lines.append(f"include{tab_character}{label}{tab_character}{path}")
                 continue
 
             manifest_lines.append(f"missing{tab_character}{label}{tab_character}{path}")
@@ -98,9 +92,7 @@ class BrowserBookmarkPlanBuilder:
             destination_path = f"{bookmarks_export_dir}/{relative_path}.json"
 
             exports.append({"source": source_path, "dest": destination_path})
-            manifest_lines.append(
-                f"export{tab_character}chrome-bookmarks{tab_character}{destination_path}"
-            )
+            manifest_lines.append(f"export{tab_character}chrome-bookmarks{tab_character}{destination_path}")
 
         return {
             "exports": exports,

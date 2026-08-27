@@ -9,7 +9,7 @@ exclude_paths:
 - ansible/collections/ansible_collections/community.general-\*.info/
 - collections/ansible_collections/community.general-\*.info/
 
-warn_list:
+skip_list:
 
 - jinja[spacing]
 - var-naming[no-role-prefix]

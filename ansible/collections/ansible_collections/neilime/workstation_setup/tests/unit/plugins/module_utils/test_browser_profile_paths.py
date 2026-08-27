@@ -20,10 +20,7 @@ def test_build_profiles_root_dir_returns_stable_path() -> None:
     profiles_root_dir = planner.build_profiles_root_dir("/home/emilien")
 
     # Assert
-    assert (
-        profiles_root_dir
-        == "/home/emilien/.local/share/workstation-manager/browser-profiles"
-    )
+    assert profiles_root_dir == "/home/emilien/.local/share/workstation-manager/browser-profiles"
 
 
 def test_build_profiles_root_dir_rejects_empty_user_home() -> None:
@@ -42,9 +39,7 @@ def test_build_profile_directory_returns_stable_profile_path() -> None:
 
     # Arrange
     planner = BrowserProfilePathsPlanner()
-    profiles_root_dir = (
-        "/home/emilien/.local/share/workstation-manager/browser-profiles"
-    )
+    profiles_root_dir = "/home/emilien/.local/share/workstation-manager/browser-profiles"
 
     # Act
     profile_directory = planner.build_profile_directory(
@@ -53,10 +48,7 @@ def test_build_profile_directory_returns_stable_profile_path() -> None:
     )
 
     # Assert
-    assert (
-        profile_directory
-        == "/home/emilien/.local/share/workstation-manager/browser-profiles/client-2"
-    )
+    assert profile_directory == "/home/emilien/.local/share/workstation-manager/browser-profiles/client-2"
 
 
 def test_build_profile_directory_rejects_invalid_profile_id() -> None:
@@ -64,9 +56,7 @@ def test_build_profile_directory_rejects_invalid_profile_id() -> None:
 
     # Arrange
     planner = BrowserProfilePathsPlanner()
-    profiles_root_dir = (
-        "/home/emilien/.local/share/workstation-manager/browser-profiles"
-    )
+    profiles_root_dir = "/home/emilien/.local/share/workstation-manager/browser-profiles"
 
     # Act / Assert
     with pytest.raises(

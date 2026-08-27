@@ -8,9 +8,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 
 
 # pylint: disable=too-few-public-methods
-class HomeEnvironmentSectionNormalizer(
-    desired_state_support.DesiredStateDefaultsSectionNormalizer
-):
+class HomeEnvironmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the home_environment section of the desired-state schema."""
 
     def _string_or_default(self, value: object, default: object, name: str) -> str:
@@ -19,17 +17,13 @@ class HomeEnvironmentSectionNormalizer(
             raise ValueError(f"{name} must be a string")
         return resolved
 
-    def _required_non_empty_string(
-        self, value: object, default: object, name: str
-    ) -> str:
+    def _required_non_empty_string(self, value: object, default: object, name: str) -> str:
         try:
             return self._resolver.first_non_empty_string(value, default)
         except ValueError as exc:
             raise ValueError(f"{name} must be a non-empty string") from exc
 
-    def _normalize(
-        self, config: dict[str, object], defaults: dict[str, object]
-    ) -> dict[str, object]:
+    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
         home_environment = self._resolver.mapping(
             config.get("home_environment"), "workstation_manager.home_environment"
         )
@@ -37,9 +31,7 @@ class HomeEnvironmentSectionNormalizer(
             home_environment.get("chezmoi"),
             "workstation_manager.home_environment.chezmoi",
         )
-        default_home_environment = self._resolver.mapping(
-            defaults, "workstation_manager.home_environment.defaults"
-        )
+        default_home_environment = self._resolver.mapping(defaults, "workstation_manager.home_environment.defaults")
         default_chezmoi = self._resolver.mapping(
             default_home_environment.get("chezmoi"),
             "workstation_manager.home_environment.defaults.chezmoi",

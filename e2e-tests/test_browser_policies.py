@@ -8,9 +8,7 @@ def test_primary_browser_managed_policy_file_exists(host) -> None:
     policy_file = host.file("/etc/opt/chrome/policies/managed/workstation-manager.json")
 
     # Act
-    mode = host.check_output(
-        "stat -c '%a' /etc/opt/chrome/policies/managed/workstation-manager.json"
-    )
+    mode = host.check_output("stat -c '%a' /etc/opt/chrome/policies/managed/workstation-manager.json")
 
     # Assert
     assert policy_file.exists
@@ -27,9 +25,7 @@ def test_primary_browser_managed_policy_file_contains_expected_entries(host) -> 
 
     # Act
     has_bitwarden_extension = policy_file.contains('"nngceckbapebfimnlniiiahkandclblb"')
-    has_password_manager_policy = policy_file.contains(
-        '"PasswordManagerEnabled": false'
-    )
+    has_password_manager_policy = policy_file.contains('"PasswordManagerEnabled": false')
     has_bookmark_bar_policy = policy_file.contains('"BookmarkBarEnabled": true')
     has_startup_policy = policy_file.contains('"RestoreOnStartup": 1')
 

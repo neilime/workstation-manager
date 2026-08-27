@@ -5,9 +5,7 @@ def test_desktop_dark_mode_preference(host) -> None:
     """The installed machine should persist the configured GNOME color scheme."""
 
     # Arrange
-    color_scheme_command = (
-        "dbus-run-session -- gsettings get org.gnome.desktop.interface color-scheme"
-    )
+    color_scheme_command = "dbus-run-session -- gsettings get org.gnome.desktop.interface color-scheme"
 
     # Act
     color_scheme = host.check_output(color_scheme_command)
@@ -20,9 +18,7 @@ def test_desktop_favorites_preference(host) -> None:
     """The installed machine should persist the configured GNOME favorites."""
 
     # Act
-    favorites = host.check_output(
-        "dbus-run-session -- gsettings get org.gnome.shell favorite-apps"
-    )
+    favorites = host.check_output("dbus-run-session -- gsettings get org.gnome.shell favorite-apps")
 
     # Assert
     assert favorites == (

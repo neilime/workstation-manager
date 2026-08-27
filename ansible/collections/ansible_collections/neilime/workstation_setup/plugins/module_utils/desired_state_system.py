@@ -25,27 +25,15 @@ class SystemSectionNormalizer:
     ) -> dict[str, object]:
         """Return the normalized system section."""
 
-        system = self._resolver.mapping(
-            config.get("system"), "workstation_manager.system"
-        )
-        packages = self._resolver.mapping(
-            system.get("packages"), "workstation_manager.system.packages"
-        )
-        repositories = self._resolver.mapping(
-            system.get("repositories"), "workstation_manager.system.repositories"
-        )
-        services = self._resolver.mapping(
-            system.get("services"), "workstation_manager.system.services"
-        )
-        settings = self._resolver.mapping(
-            system.get("settings"), "workstation_manager.system.settings"
-        )
+        system = self._resolver.mapping(config.get("system"), "workstation_manager.system")
+        packages = self._resolver.mapping(system.get("packages"), "workstation_manager.system.packages")
+        repositories = self._resolver.mapping(system.get("repositories"), "workstation_manager.system.repositories")
+        services = self._resolver.mapping(system.get("services"), "workstation_manager.system.services")
+        settings = self._resolver.mapping(system.get("settings"), "workstation_manager.system.settings")
         default_packages = self._resolver.mapping(
             defaults.get("packages"), "workstation_manager.system.defaults.packages"
         )
-        default_cache_valid_time = self._resolver.int_value(
-            default_packages.get("cache_valid_time"), 86400
-        )
+        default_cache_valid_time = self._resolver.int_value(default_packages.get("cache_valid_time"), 86400)
         default_repositories = self._resolver.mapping(
             defaults.get("repositories"),
             "workstation_manager.system.defaults.repositories",

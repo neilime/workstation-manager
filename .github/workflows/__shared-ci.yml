@@ -3,13 +3,22 @@ name: Shared - Continuous Integration
 
 "on":
   workflow_call:
+    secrets:
+      BITWARDEN_CLIENT_ID:
+        required: true
+      BITWARDEN_CLIENT_SECRET:
+        required: true
+      BITWARDEN_PASSWORD:
+        required: true
+      WORKSTATION_MANAGER_GITHUB_TOKEN:
+        required: true
 
 permissions: {}
 
 jobs:
   linter:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
+    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@3a27d31e9ccefbe9609cc9165017ed100ff34a22 # 0.38.0
     # yamllint enable rule:line-length
     with:
       linter-env: |
@@ -17,12 +26,15 @@ jobs:
     permissions:
       actions: read
       contents: read
+      issues: write
+      packages: read
+      pull-requests: write
       security-events: write
       statuses: write
 
   build-tooling-image:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@5396e1258d209f9af18e55da8692361508e3338c # 0.36.2
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@f8255a6a37eb141fa331527f5aed9b9e1d598c77 # 0.38.0
     # yamllint enable rule:line-length
     permissions:
       contents: read
@@ -59,11 +71,13 @@ jobs:
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         # yamllint enable rule:line-length
+        with:
+          persist-credentials: false
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -80,7 +94,7 @@ jobs:
 
       - name: Parse static reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@3a27d31e9ccefbe9609cc9165017ed100ff34a22 # 0.38.0
         with:
           report-paths: .reports/tests/*.xml
           report-name: Static Validation
@@ -90,13 +104,16 @@ jobs:
     name: E2E validation
     needs: [static]
     runs-on: ubuntu-latest
+    environment: ci
     permissions:
       contents: read
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         # yamllint enable rule:line-length
+        with:
+          persist-credentials: false
 
       - name: Set up Lima
         id: lima-setup
@@ -106,7 +123,7 @@ jobs:
 
       - name: Cache Lima
         # yamllint disable rule:line-length
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         # yamllint enable rule:line-length
         with:
           path: ~/.cache/lima
@@ -126,7 +143,7 @@ jobs:
 
       - name: Parse e2e reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@66578f5b9aec4ac5558b5dad750c4c74dfcb65c5 # 0.35.5
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@3a27d31e9ccefbe9609cc9165017ed100ff34a22 # 0.38.0
         with:
           report-paths: .reports/tests/e2e-*.junit.xml
           report-name: End-to-End Validation

@@ -28,53 +28,37 @@ class DesiredStateConfigNormalizer:
         """Return a normalized workstation_manager mapping with safe defaults."""
 
         resolver = desired_state_support.DesiredStateValueResolver()
-        defaults_factory = desired_state_support.DesiredStateDefaultsFactory(
-            self._state_slug
-        )
+        defaults_factory = desired_state_support.DesiredStateDefaultsFactory(self._state_slug)
         config = resolver.mapping(raw_config, "workstation_manager")
         environment = env or {}
         defaults = defaults_factory.build()
 
         return {
-            "user": desired_state_user.UserSectionNormalizer(
-                resolver, self._state_slug
-            ).normalize(config, environment),
+            "user": desired_state_user.UserSectionNormalizer(resolver, self._state_slug).normalize(config, environment),
             "system": desired_state_system.SystemSectionNormalizer(resolver).normalize(
                 config,
                 environment,
-                resolver.mapping(
-                    defaults.get("system"), "workstation_manager.system.defaults"
-                ),
+                resolver.mapping(defaults.get("system"), "workstation_manager.system.defaults"),
             ),
-            "desktop": desired_state_desktop.DesktopSectionNormalizer(
-                resolver
-            ).normalize(
+            "desktop": desired_state_desktop.DesktopSectionNormalizer(resolver).normalize(
                 config,
-                resolver.mapping(
-                    defaults.get("desktop"), "workstation_manager.desktop.defaults"
-                ),
+                resolver.mapping(defaults.get("desktop"), "workstation_manager.desktop.defaults"),
             ),
-            "development": desired_state_development.DevelopmentSectionNormalizer(
-                resolver
-            ).normalize(
+            "development": desired_state_development.DevelopmentSectionNormalizer(resolver).normalize(
                 config,
                 resolver.mapping(
                     defaults.get("development"),
                     "workstation_manager.development.defaults",
                 ),
             ),
-            "home_environment": desired_state_home_environment.HomeEnvironmentSectionNormalizer(
-                resolver
-            ).normalize(
+            "home_environment": desired_state_home_environment.HomeEnvironmentSectionNormalizer(resolver).normalize(
                 config,
                 resolver.mapping(
                     defaults.get("home_environment"),
                     "workstation_manager.home_environment.defaults",
                 ),
             ),
-            "secrets": desired_state_secrets.SecretsSectionNormalizer(
-                resolver
-            ).normalize(
+            "secrets": desired_state_secrets.SecretsSectionNormalizer(resolver).normalize(
                 config,
                 resolver.mapping(
                     defaults.get("secrets"),

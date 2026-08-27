@@ -84,9 +84,7 @@ def test_normalize_returns_complete_shape_with_required_chezmoi_source() -> None
     assert normalized["system"]["packages"]["cache_valid_time"] == 86400
     assert normalized["system"]["repositories"]["apt"] == []
     assert_empty_optional_system_collections(normalized)
-    assert normalized["development"]["settings"]["sysctl"] == {
-        "fs.inotify.max_user_watches": "524288"
-    }
+    assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "flathub"
     assert normalized["desktop"]["browser"]["package"] == "google-chrome-stable"
     assert normalized["desktop"]["browser"]["repository"]["name"] == "google-chrome"
@@ -111,8 +109,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
     github_cli_source = (
-        "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] "
-        "https://cli.github.com/packages stable main"
+        "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
     )
     github_cli_repository = {
         "name": "github-cli",
@@ -125,8 +122,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     docker_repository = {
         "name": "docker",
         "source": (
-            "deb [signed-by=/etc/apt/keyrings/docker.asc] "
-            "https://download.docker.com/linux/ubuntu noble stable"
+            "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable"
         ),
         "keyring": {
             "url": "https://download.docker.com/linux/ubuntu/gpg",
@@ -150,9 +146,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
                 "cache_valid_time": 3600,
             },
             "repositories": {"apt": [github_cli_repository]},
-            "directories": [
-                {"path": "/var/lib/workstation-manager/cache", "mode": "0750"}
-            ],
+            "directories": [{"path": "/var/lib/workstation-manager/cache", "mode": "0750"}],
             "services": {
                 "enabled": ["systemd-timesyncd"],
                 "disabled": ["apache2"],
@@ -219,24 +213,18 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     assert normalized["system"]["packages"]["apt"] == ["git"]
     assert normalized["system"]["packages"]["cache_valid_time"] == 3600
     assert normalized["system"]["repositories"]["apt"] == [github_cli_repository]
-    assert normalized["system"]["directories"] == [
-        {"path": "/var/lib/workstation-manager/cache", "mode": "0750"}
-    ]
+    assert normalized["system"]["directories"] == [{"path": "/var/lib/workstation-manager/cache", "mode": "0750"}]
     assert normalized["system"]["services"]["enabled"] == ["systemd-timesyncd"]
     assert normalized["system"]["services"]["disabled"] == ["apache2"]
     assert normalized["system"]["settings"]["sysctl"] == {}
-    assert normalized["development"]["settings"]["sysctl"] == {
-        "fs.inotify.max_user_watches": "524288"
-    }
+    assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "custom"
     assert normalized["desktop"]["flatpak"]["packages"] == ["com.brave.Browser"]
     assert normalized["desktop"]["browser"]["package"] == "google-chrome-stable"
     assert normalized["desktop"]["browser"]["repository"]["name"] == "google-chrome"
     assert normalized["desktop"]["browser"]["default"] is False
     assert normalized["desktop"]["browser"]["profiles"] == [{"id": "personal"}]
-    assert normalized["desktop"]["browser"]["policies"] == {
-        "PasswordManagerEnabled": False
-    }
+    assert normalized["desktop"]["browser"]["policies"] == {"PasswordManagerEnabled": False}
     assert normalized["desktop"]["gnome"]["dark_mode"] is False
     assert normalized["desktop"]["gnome"]["favorites"] == ["org.gnome.Terminal.desktop"]
     assert normalized["development"]["packages"] == [
@@ -255,20 +243,12 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
         "gh_extensions": ["nektos/gh-act"],
         "docker_cli_plugins": DECLARED_DOCKER_CLI_PLUGINS,
     }
-    assert normalized["development"]["settings"]["sysctl"] == {
-        "fs.inotify.max_user_watches": "524288"
-    }
+    assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["development"]["runtimes"] == {"node": {"manager": "fnm"}}
     assert normalized["home_environment"] == DECLARED_HOME_ENVIRONMENT
     assert normalized["secrets"]["bitwarden"]["server"] == "https://vault.example.test"
-    assert (
-        normalized["secrets"]["bitwarden"]["ssh_collection_id"]
-        == "11111111-1111-1111-1111-111111111111"
-    )
-    assert (
-        normalized["secrets"]["bitwarden"]["gpg_collection_id"]
-        == "22222222-2222-2222-2222-222222222222"
-    )
+    assert normalized["secrets"]["bitwarden"]["ssh_collection_id"] == "11111111-1111-1111-1111-111111111111"
+    assert normalized["secrets"]["bitwarden"]["gpg_collection_id"] == "22222222-2222-2222-2222-222222222222"
 
 
 def test_normalize_rejects_invalid_section_types() -> None:
@@ -280,9 +260,7 @@ def test_normalize_rejects_invalid_section_types() -> None:
     environment = {"USER": "emilien"}
 
     # Act / Assert
-    with pytest.raises(
-        ValueError, match="workstation_manager.desktop must be a mapping"
-    ):
+    with pytest.raises(ValueError, match="workstation_manager.desktop must be a mapping"):
         normalizer.normalize(invalid_config, environment)
 
 

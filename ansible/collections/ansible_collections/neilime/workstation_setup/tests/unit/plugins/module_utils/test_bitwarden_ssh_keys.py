@@ -38,7 +38,7 @@ def test_build_plan_uses_notes_and_public_key_field_defaults() -> None:
     assert plan["private"] == {
         "dest": "/home/emilien/.ssh/id_rsa_escemi",
         "mode": "0600",
-        "content": ("ssh-private-material-line-1\n" "ssh-private-material-line-2\n"),
+        "content": ("ssh-private-material-line-1\nssh-private-material-line-2\n"),
     }
     assert plan["public"] == {
         "dest": "/home/emilien/.ssh/id_rsa_escemi.pub",

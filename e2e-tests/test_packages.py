@@ -19,12 +19,8 @@ def test_system_vendor_apt_repository_is_configured(host) -> None:
     source_file = host.file("/etc/apt/sources.list.d/utappia-stable.list")
 
     # Act
-    has_repository_url = source_file.contains(
-        "https://ppa.launchpadcontent.net/utappia/stable/ubuntu"
-    )
-    has_signed_by = source_file.contains(
-        "signed-by=/usr/share/keyrings/utappia-archive-keyring.asc"
-    )
+    has_repository_url = source_file.contains("https://ppa.launchpadcontent.net/utappia/stable/ubuntu")
+    has_signed_by = source_file.contains("signed-by=/usr/share/keyrings/utappia-archive-keyring.asc")
 
     # Assert
     assert keyring_file.exists

@@ -27,9 +27,7 @@ class BitwardenGpgKeyRestorePlanner:
         """Return the import plan for a Bitwarden GPG-key item."""
 
         ownertrust = self._reader.optional_field_value(item_payload, "ownertrust")
-        sub_private_key = self._reader.optional_field_value(
-            item_payload, "sub_private_key"
-        )
+        sub_private_key = self._reader.optional_field_value(item_payload, "sub_private_key")
 
         return {
             "item_id": self._reader.required_string(item_payload.get("id"), "item.id"),
@@ -81,9 +79,7 @@ class BitwardenGpgKeyRestorePlanner:
     ) -> str:
         """Return the normalized secret-key import payload."""
 
-        secret_blocks = [
-            self._armored_content_with_trailing_newline(private_key, "private_key")
-        ]
+        secret_blocks = [self._armored_content_with_trailing_newline(private_key, "private_key")]
         if sub_private_key is not None:
             secret_blocks.append(
                 self._armored_content_with_trailing_newline(
@@ -112,9 +108,7 @@ class BitwardenGpgKeyRestorePlanner:
             return value
 
         header, body, footer = armor_match.groups()
-        normalized_body = "\n".join(
-            segment for segment in re.split(r"\s+", body) if segment
-        )
+        normalized_body = "\n".join(segment for segment in re.split(r"\s+", body) if segment)
         return f"{header}\n\n{normalized_body}\n{footer}\n"
 
     def _fingerprint(self, value: str) -> str:

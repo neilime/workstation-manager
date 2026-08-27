@@ -79,11 +79,7 @@ def test_build_policy_payload_rejects_managed_bookmarks() -> None:
         match="policy_inputs.managed_bookmarks is not supported",
     ):
         planner.build_policy_payload(
-            {
-                "managed_bookmarks": [
-                    {"name": "workstation-manager", "url": "https://github.com"}
-                ]
-            }
+            {"managed_bookmarks": [{"name": "workstation-manager", "url": "https://github.com"}]}
         )
 
 
@@ -96,15 +92,8 @@ def test_build_policy_payload_rejects_missing_third_party_extension_id() -> None
     # Act / Assert
     with pytest.raises(
         ValueError,
-        match=(
-            "policy_inputs.third_party_password_manager.extension_id "
-            "must not be empty"
-        ),
+        match=("policy_inputs.third_party_password_manager.extension_id must not be empty"),
     ):
         planner.build_policy_payload(
-            {
-                "third_party_password_manager": {
-                    "policy": {"serverUrl": "https://vault.example.test"}
-                }
-            }
+            {"third_party_password_manager": {"policy": {"serverUrl": "https://vault.example.test"}}}
         )

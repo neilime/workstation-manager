@@ -42,15 +42,14 @@ lint: ## Run static checks inside the tooling container
 
 lint-fix: ## Execute linting and fix
 	$(call run_linter, \
-		-e FIX_JSON_PRETTIER=true \
-		-e FIX_JAVASCRIPT_PRETTIER=true \
-		-e FIX_YAML_PRETTIER=true \
+		-e FIX_BIOME_FORMAT=true \
+		-e FIX_BIOME_LINT=true \
+		-e FIX_SPELL_CODESPELL=true \
 		-e FIX_MARKDOWN=true \
 		-e FIX_MARKDOWN_PRETTIER=true \
+		-e FIX_YAML_PRETTIER=true \
 		-e FIX_NATURAL_LANGUAGE=true \
-		-e FIX_CSS_PRETTIER=true \
 		-e FIX_SHELL_SHFMT=true \
-		-e FIX_PYTHON_BLACK=true \
 		-e FIX_PYTHON_ISORT=true \
 		-e FIX_PYTHON_RUFF=true \
 		-e FIX_PYTHON_RUFF_FORMAT=true \
@@ -113,26 +112,20 @@ e2e-reset: e2e-down e2e-up ## Recreate the Lima end-to-end test VM
 
 define run_linter
 	DEFAULT_WORKSPACE="$(CURDIR)"; \
-	DEFAULT_USERNAME="$(shell id -un)"; \
 	LINTER_IMAGE="linter:latest"; \
 	VOLUME="$$DEFAULT_WORKSPACE:$$DEFAULT_WORKSPACE"; \
-	docker build --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) --tag $$LINTER_IMAGE .; \
+	docker build --platform linux/amd64 --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) --tag $$LINTER_IMAGE .; \
 	docker run \
-		-e DEFAULT_WORKSPACE="$$DEFAULT_WORKSPACE" \
-		-e LOGNAME="$$DEFAULT_USERNAME" \
-		-e ANSIBLE_CONFIG_FILE=.ansible-lint \
-		-e FILTER_REGEX_INCLUDE="$(filter-out $@,$(MAKECMDGOALS))" \
-		-e IGNORE_GITIGNORED_FILES=true \
-		-e USER="$$DEFAULT_USERNAME" \
-		-e USERNAME="$$DEFAULT_USERNAME" \
-		-e VALIDATE_GIT_COMMITLINT=false \
-        -e VALIDATE_TYPESCRIPT_ES=false \
-        -e VALIDATE_TYPESCRIPT_PRETTIER=false \
-        -e VALIDATE_JAVASCRIPT_ES=false \
-        -e VALIDATE_TSX=false \
-		$(1) \
+		--platform linux/amd64 \
 		-v $$VOLUME \
 		--rm \
+		-e ANSIBLE_CONFIG_FILE=.ansible-lint \
+		-e DEFAULT_WORKSPACE="$$DEFAULT_WORKSPACE" \
+		-e FILTER_REGEX_EXCLUDE="(^|.*/)(\.env|\.git|\.mypy_cache|\.pytest_cache|\.reports[^/]*|\.tmp|__pycache__|venvs|ansible/vars/private\.override\.yml|ansible/vendor-collections|ansible/collections/ansible_collections/community|ansible/collections/ansible_collections/community\.general-[^/]*|ansible/collections/ansible_collections/neilime/[^/]+/tests/output)(/.*)?$$" \
+		-e FILTER_REGEX_INCLUDE="$(filter-out $@,$(MAKECMDGOALS))" \
+		-e IGNORE_GITIGNORED_FILES=false \
+		-e VALIDATE_GIT_COMMITLINT=false \
+		$(1) \
 		$$LINTER_IMAGE
 endef
 

@@ -8,30 +8,18 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 
 
 # pylint: disable=too-few-public-methods
-class DevelopmentSectionNormalizer(
-    desired_state_support.DesiredStateDefaultsSectionNormalizer
-):
+class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the development section of the desired-state schema."""
 
-    def _normalize(
-        self, config: dict[str, object], defaults: dict[str, object]
-    ) -> dict[str, object]:
-        development = self._resolver.mapping(
-            config.get("development"), "workstation_manager.development"
-        )
+    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+        development = self._resolver.mapping(config.get("development"), "workstation_manager.development")
         repositories = self._resolver.mapping(
             development.get("repositories"),
             "workstation_manager.development.repositories",
         )
-        mise = self._resolver.mapping(
-            development.get("mise"), "workstation_manager.development.mise"
-        )
-        settings = self._resolver.mapping(
-            development.get("settings"), "workstation_manager.development.settings"
-        )
-        default_mise = self._resolver.mapping(
-            defaults.get("mise"), "workstation_manager.development.defaults.mise"
-        )
+        mise = self._resolver.mapping(development.get("mise"), "workstation_manager.development.mise")
+        settings = self._resolver.mapping(development.get("settings"), "workstation_manager.development.settings")
+        default_mise = self._resolver.mapping(defaults.get("mise"), "workstation_manager.development.defaults.mise")
         default_repositories = self._resolver.mapping(
             defaults.get("repositories"),
             "workstation_manager.development.defaults.repositories",
@@ -63,9 +51,7 @@ class DevelopmentSectionNormalizer(
             ),
             "mise": {
                 "tools": self._resolver.mapping(
-                    self._resolver.value_or_default(
-                        mise.get("tools"), default_mise.get("tools")
-                    ),
+                    self._resolver.value_or_default(mise.get("tools"), default_mise.get("tools")),
                     "workstation_manager.development.mise.tools",
                 ),
                 "gh_extensions": self._resolver.list_value(

@@ -13,9 +13,7 @@ def test_secret_restore_permissions(host) -> None:
     """Bitwarden-backed SSH restore should write at least one keypair securely."""
 
     # Arrange
-    public_key_listing = host.check_output(
-        "find \"$HOME/.ssh\" -maxdepth 1 -type f -name '*.pub' | sort"
-    )
+    public_key_listing = host.check_output("find \"$HOME/.ssh\" -maxdepth 1 -type f -name '*.pub' | sort")
     public_key_paths = [line for line in public_key_listing.splitlines() if line]
 
     # Assert
@@ -60,8 +58,7 @@ def test_git_gpg_signing_configuration(host) -> None:
     tag_sign_result = host.run("git config --global --get tag.gpgsign")
     gpg_format_result = host.run("git config --global --get gpg.format")
     secret_key_result = host.run(
-        "gpg --batch --with-colons --list-secret-keys "
-        '"$(git config --global --get user.signingkey)"'
+        'gpg --batch --with-colons --list-secret-keys "$(git config --global --get user.signingkey)"'
     )
 
     # Assert
