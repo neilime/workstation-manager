@@ -53,7 +53,9 @@ provision:
       apt-get update
       apt-get install -y --no-install-recommends \
         dconf-cli \
+        flatpak \
         gdm3 \
+        gnome-terminal \
         ubuntu-desktop-minimal
 
       netplan generate
@@ -121,7 +123,10 @@ probes:
       set -euo pipefail
       desktop_user="{{.User}}"
       systemctl is-active --quiet gdm3
-      pgrep --euid "$desktop_user" --exact gnome-shell >/dev/null
+      gnome_shell_pid="$(pgrep --euid "$desktop_user" --oldest --exact gnome-shell)"
+      test -n "$gnome_shell_pid"
+      tr '\0' '\n' <"/proc/$gnome_shell_pid/environ" \
+        | grep -F '/var/lib/flatpak/exports/share' >/dev/null
       test "$(gsettings get org.gnome.desktop.session idle-delay)" = "uint32 0"
     hint: |
       GNOME did not start for the Lima guest user.

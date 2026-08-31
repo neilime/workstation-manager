@@ -1,6 +1,15 @@
 """End-to-end checks for managed Flatpak applications."""
 
 
+def test_gnome_software_uses_flatpak_without_snap(host) -> None:
+    """GNOME Software should provide the app center without its Snap plugin."""
+
+    # Assert
+    assert host.package("gnome-software").is_installed
+    assert host.package("gnome-software-plugin-flatpak").is_installed
+    assert not host.package("gnome-software-plugin-snap").is_installed
+
+
 def test_flathub_remote_is_configured(host) -> None:
     """The installed machine should configure the declared Flatpak remote."""
 

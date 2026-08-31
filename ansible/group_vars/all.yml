@@ -98,17 +98,19 @@ workstation_manager:
           bookmark_bar_enabled: true
           restore_on_startup: 1
     gnome:
-      # Apply dark style preference when GNOME settings are implemented.
+      # Apply the workstation's GNOME appearance and Ubuntu Dock layout.
       dark_mode: true
+      show_trash: true
       favorites:
-        - gnome-control-center.desktop
         - org.gnome.Nautilus.desktop
-        - com.slack.Slack.desktop
+        - org.gnome.Software.desktop
         - com.visualstudio.code.desktop
-        - org.gnome.Terminal.desktop
+        - google-chrome.desktop
+        - com.slack.Slack.desktop
         - com.spotify.Client.desktop
         - com.github.hluk.copyq.desktop
         - com.bitwarden.desktop.desktop
+        - org.gnome.Terminal.desktop
   development:
     # Core developer packages installed globally from APT.
     packages:

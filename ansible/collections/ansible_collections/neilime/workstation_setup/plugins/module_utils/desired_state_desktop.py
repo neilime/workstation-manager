@@ -74,6 +74,10 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                     gnome.get("dark_mode"),
                     self._resolver.bool_value(default_gnome.get("dark_mode"), True),
                 ),
+                "show_trash": self._resolver.bool_value(
+                    gnome.get("show_trash"),
+                    self._resolver.bool_value(default_gnome.get("show_trash"), True),
+                ),
                 "favorites": self._resolver.list_value(
                     self._resolver.value_or_default(
                         gnome.get("favorites"),

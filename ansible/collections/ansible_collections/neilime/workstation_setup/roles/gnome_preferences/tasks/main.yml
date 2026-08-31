@@ -50,3 +50,11 @@
         else
         workstation_manager_resolved.desktop.gnome.favorites | to_json
       }}
+
+- name: Apply Ubuntu Dock trash visibility
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/extensions/dash-to-dock/show-trash
+    value: "{{ workstation_manager_resolved.desktop.gnome.show_trash | ternary('true', 'false') }}"
+    state: present

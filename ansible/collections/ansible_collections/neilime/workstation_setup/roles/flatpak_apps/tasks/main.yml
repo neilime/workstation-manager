@@ -1,11 +1,21 @@
 ---
-- name: Install Flatpak support package
+- name: Install Flatpak and GNOME Software support packages
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
-    name: flatpak
+    name:
+      - flatpak
+      - gnome-software
+      - gnome-software-plugin-flatpak
     state: present
+    install_recommends: false
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Ensure GNOME Software Snap support is absent
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: gnome-software-plugin-snap
+    state: absent
 
 - name: Ensure configured Flatpak remote is present
   become: "{{ workstation_manager_use_become }}"
