@@ -108,6 +108,8 @@ jobs:
     environment: ci
     permissions:
       contents: read
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
@@ -153,15 +155,34 @@ jobs:
           report-paths: .reports/tests/e2e-*.junit.xml
           report-name: End-to-End Validation
 
-      - name: Upload e2e desktop screenshots
+      - name: Upload e2e desktop screenshot
+        id: upload-e2e-desktop-screenshot
         if: ${{ always() }}
         # yamllint disable rule:line-length
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         # yamllint enable rule:line-length
         with:
-          name: e2e-desktop-screenshots
-          path: .reports/screenshots/
+          path: .reports/screenshots/e2e-setup-desktop.png
           if-no-files-found: warn
+          archive: false
+
+      - name: Add e2e desktop screenshot to pull request
+        if: >-
+          ${{
+            always()
+            && github.event_name == 'pull_request'
+            && steps.upload-e2e-desktop-screenshot.outcome == 'success'
+            && steps.upload-e2e-desktop-screenshot.outputs.artifact-url != ''
+          }}
+        # yamllint disable rule:line-length
+        uses: hoverkraft-tech/ci-github-common/actions/create-or-update-comment@3a27d31e9ccefbe9609cc9165017ed100ff34a22 # 0.38.0
+        # yamllint enable rule:line-length
+        with:
+          title: "## E2E desktop screenshot"
+          body: >-
+            ![Desktop after workstation setup](${{
+              steps.upload-e2e-desktop-screenshot.outputs.artifact-url
+            }})
 
       - name: Stop e2e VM
         if: ${{ always() }}

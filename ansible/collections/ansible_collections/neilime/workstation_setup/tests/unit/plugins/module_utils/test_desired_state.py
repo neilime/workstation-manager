@@ -91,6 +91,7 @@ def test_normalize_returns_complete_shape_with_required_chezmoi_source() -> None
     assert normalized["desktop"]["browser"]["default"] is True
     assert normalized["desktop"]["browser"]["profiles"] == []
     assert normalized["desktop"]["browser"]["policies"] == {}
+    assert normalized["desktop"]["gnome"]["show_trash"] is True
     assert normalized["development"]["repositories"]["apt"] == []
     assert normalized["development"]["mise"] == {
         "tools": {},
@@ -165,6 +166,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
             },
             "gnome": {
                 "dark_mode": False,
+                "show_trash": False,
                 "favorites": ["org.gnome.Terminal.desktop"],
             },
         },
@@ -226,6 +228,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     assert normalized["desktop"]["browser"]["profiles"] == [{"id": "personal"}]
     assert normalized["desktop"]["browser"]["policies"] == {"PasswordManagerEnabled": False}
     assert normalized["desktop"]["gnome"]["dark_mode"] is False
+    assert normalized["desktop"]["gnome"]["show_trash"] is False
     assert normalized["desktop"]["gnome"]["favorites"] == ["org.gnome.Terminal.desktop"]
     assert normalized["development"]["packages"] == [
         "git",

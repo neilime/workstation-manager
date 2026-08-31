@@ -192,7 +192,11 @@ class DesiredStateDefaultsFactory:
                     "profiles": [],
                     "policies": {},
                 },
-                "gnome": {"dark_mode": True, "favorites": []},
+                "gnome": {
+                    "dark_mode": True,
+                    "show_trash": True,
+                    "favorites": [],
+                },
             },
             "development": {
                 "packages": [],
