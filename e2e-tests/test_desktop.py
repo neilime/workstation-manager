@@ -47,6 +47,32 @@ def test_desktop_dark_mode_preference(host) -> None:
     assert color_scheme == "'prefer-dark'"
 
 
+def test_desktop_wallpaper(host) -> None:
+    """The branded wallpaper should be installed and selected for both color schemes."""
+
+    # Arrange
+    user_home = host.check_output('printf %s "$HOME"')
+    wallpaper_path = f"{user_home}/.local/share/backgrounds/wallpaper.jpg"
+    wallpaper_file = host.file(wallpaper_path)
+    expected_uri = f"'file://{wallpaper_path}'"
+    background_setting_command = "dbus-run-session -- gsettings get org.gnome.desktop.background"
+
+    # Act
+    picture_uri = host.check_output(f"{background_setting_command} picture-uri")
+    picture_uri_dark = host.check_output(f"{background_setting_command} picture-uri-dark")
+    picture_options = host.check_output(f"{background_setting_command} picture-options")
+
+    # Assert
+    assert wallpaper_file.exists
+    assert wallpaper_file.is_file
+    assert wallpaper_file.user == host.check_output("whoami")
+    assert wallpaper_file.mode == 0o644
+    assert wallpaper_file.sha256sum == "612972bfe0d9aa6644b6f4103db9032e21e3c9f6f18a0db2c210e4f004850d70"
+    assert picture_uri == expected_uri
+    assert picture_uri_dark == expected_uri
+    assert picture_options == "'zoom'"
+
+
 def test_desktop_favorites_preference(host) -> None:
     """The dock should contain the desired applications in the desired order."""
 
