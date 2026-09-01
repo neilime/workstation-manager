@@ -89,6 +89,12 @@ bash "$script_dir/e2e-backup.sh" "$vm_name"
 run_phase_tests backup e2e-tests/test_backup.py
 setup_status=0
 bash "$script_dir/e2e-setup.sh" "$vm_name" || setup_status=$?
+if [[ $setup_status -eq 0 ]]; then
+	restart_e2e_desktop_session || setup_status=$?
+fi
+if [[ $setup_status -eq 0 ]]; then
+	wait_for_e2e_user_process copyq || setup_status=$?
+fi
 capture_status=0
 capture_phase_screenshot setup || capture_status=$?
 if [[ $setup_status -ne 0 ]]; then

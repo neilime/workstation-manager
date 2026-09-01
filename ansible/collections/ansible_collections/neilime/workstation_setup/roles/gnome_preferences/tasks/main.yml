@@ -11,6 +11,7 @@
     name:
       - dconf-cli
       - gnome-shell-common
+      - gnome-shell-extension-appindicator
       - python3-psutil
     state: present
     update_cache: true
@@ -23,6 +24,36 @@
     path: "{{ workstation_manager_resolved.user.home }}/.config/dconf"
     state: directory
     mode: "0700"
+
+- name: Ensure target user autostart directory exists
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/autostart"
+    state: directory
+    mode: "0755"
+  when: workstation_manager_resolved.desktop.gnome.autostart | length > 0
+
+- name: Configure GNOME autostart applications
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.copy:
+    dest: >-
+      {{ workstation_manager_resolved.user.home }}/.config/autostart/{{ item.desktop_file }}
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Version=1.0
+      Name={{ item.name }}
+      TryExec=/usr/bin/flatpak
+      Exec={{ item.command }}
+      Terminal=false
+      Hidden=false
+      X-GNOME-Autostart-enabled=true
+  loop: "{{ workstation_manager_resolved.desktop.gnome.autostart }}"
+  loop_control:
+    label: "{{ item.desktop_file }}"
 
 - name: Apply GNOME color scheme preference
   become: "{{ workstation_manager_gnome_use_become_user }}"
