@@ -180,6 +180,53 @@ run_e2e_vm_shell() {
 	run_e2e_lima_shell env sh -lc "$1"
 }
 
+restart_e2e_desktop_session() {
+	local desktop_user_id=""
+	local old_shell_pid=""
+	local new_shell_pid=""
+
+	desktop_user_id="$(run_e2e_lima_control_command 10 id -u | tr -d '\r')"
+	old_shell_pid="$(
+		run_e2e_lima_control_command 10 \
+			pgrep --euid "$desktop_user_id" --oldest --exact gnome-shell 2>/dev/null |
+			tr -d '\r' || true
+	)"
+	run_e2e_lima_control_command 30 sudo -n systemctl restart gdm3
+
+	for _attempt in $(seq 1 45); do
+		new_shell_pid="$(
+			run_e2e_lima_control_command 10 \
+				pgrep --euid "$desktop_user_id" --oldest --exact gnome-shell 2>/dev/null |
+				tr -d '\r' || true
+		)"
+		if [[ -n "$new_shell_pid" && "$new_shell_pid" != "$old_shell_pid" ]]; then
+			return 0
+		fi
+		sleep 2
+	done
+
+	printf '%s\n' "GNOME did not return after restarting gdm3" >&2
+	return 1
+}
+
+wait_for_e2e_user_process() {
+	local process_name="$1"
+	local desktop_user_id=""
+
+	desktop_user_id="$(run_e2e_lima_control_command 10 id -u | tr -d '\r')"
+
+	for _attempt in $(seq 1 30); do
+		if run_e2e_lima_control_command 10 \
+			pgrep --euid "$desktop_user_id" --exact "$process_name" >/dev/null; then
+			return 0
+		fi
+		sleep 2
+	done
+
+	printf '%s\n' "$process_name did not start in the graphical user session" >&2
+	return 1
+}
+
 capture_e2e_vm_desktop() {
 	local capture_name="$1"
 	local output_dir="$2"

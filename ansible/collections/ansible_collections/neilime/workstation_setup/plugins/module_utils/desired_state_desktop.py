@@ -78,6 +78,13 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                     gnome.get("show_trash"),
                     self._resolver.bool_value(default_gnome.get("show_trash"), True),
                 ),
+                "autostart": self._resolver.list_value(
+                    self._resolver.value_or_default(
+                        gnome.get("autostart"),
+                        default_gnome.get("autostart"),
+                    ),
+                    "workstation_manager.desktop.gnome.autostart",
+                ),
                 "favorites": self._resolver.list_value(
                     self._resolver.value_or_default(
                         gnome.get("favorites"),

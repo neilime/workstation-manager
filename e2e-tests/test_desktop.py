@@ -65,7 +65,6 @@ def test_desktop_favorites_preference(host) -> None:
         default_browser_app_id,
         "com.slack.Slack.desktop",
         "com.spotify.Client.desktop",
-        "com.github.hluk.copyq.desktop",
         "com.bitwarden.desktop.desktop",
         "org.gnome.Terminal.desktop",
     ]
@@ -96,3 +95,30 @@ def test_desktop_trash_is_pinned_to_dock(host) -> None:
 
     # Assert
     assert show_trash == "true"
+
+
+def test_copyq_starts_with_the_graphical_session(host) -> None:
+    """CopyQ should autostart hidden and publish its GNOME status indicator."""
+
+    # Arrange
+    user_home = host.check_output('printf %s "$HOME"')
+    autostart_file = host.file(f"{user_home}/.config/autostart/com.github.hluk.copyq.desktop")
+    process_command = 'pgrep --euid "$(id -u)" --exact copyq'
+    extension_command = (
+        'user_id="$(id -u)"; '
+        'XDG_RUNTIME_DIR="/run/user/${user_id}" '
+        'DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${user_id}/bus" '
+        "gnome-extensions info ubuntu-appindicators@ubuntu.com"
+    )
+
+    # Act
+    copyq_process = host.run(process_command)
+    appindicator_extension = host.run(extension_command)
+
+    # Assert
+    assert autostart_file.exists
+    assert "Exec=/usr/bin/flatpak run com.github.hluk.copyq --start-server hide" in autostart_file.content_string
+    assert "X-GNOME-Autostart-enabled=true" in autostart_file.content_string
+    assert copyq_process.succeeded
+    assert appindicator_extension.succeeded
+    assert "State: ACTIVE" in appindicator_extension.stdout

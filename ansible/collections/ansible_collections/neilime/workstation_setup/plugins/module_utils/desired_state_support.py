@@ -195,6 +195,7 @@ class DesiredStateDefaultsFactory:
                 "gnome": {
                     "dark_mode": True,
                     "show_trash": True,
+                    "autostart": [],
                     "favorites": [],
                 },
             },

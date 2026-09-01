@@ -101,6 +101,10 @@ workstation_manager:
       # Apply the workstation's GNOME appearance and Ubuntu Dock layout.
       dark_mode: true
       show_trash: true
+      autostart:
+        - desktop_file: com.github.hluk.copyq.desktop
+          name: CopyQ
+          command: /usr/bin/flatpak run com.github.hluk.copyq --start-server hide
       favorites:
         - org.gnome.Nautilus.desktop
         - org.gnome.Software.desktop
@@ -108,7 +112,6 @@ workstation_manager:
         - google-chrome.desktop
         - com.slack.Slack.desktop
         - com.spotify.Client.desktop
-        - com.github.hluk.copyq.desktop
         - com.bitwarden.desktop.desktop
         - org.gnome.Terminal.desktop
   development:
