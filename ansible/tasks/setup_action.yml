@@ -39,6 +39,10 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.home_environment
 
+- name: Restore workstation backup archive
+  ansible.builtin.import_role:
+    name: neilime.workstation_restore.state
+
 - name: Apply managed state markers
   ansible.builtin.import_role:
     name: neilime.workstation_state.managed_state

@@ -1,0 +1,58 @@
+---
+workstation_restore_archive_path: >- # noqa: var-naming[no-role-prefix]
+  {{
+    workstation_restore_archive |
+    default(
+      lookup('env', 'WORKSTATION_MANAGER_RESTORE_ARCHIVE') |
+      default('', true),
+      true
+    )
+  }}
+workstation_restore_manifest_path: >- # noqa: var-naming[no-role-prefix]
+  {{
+    lookup('env', 'WORKSTATION_MANAGER_RESTORE_MANIFEST') |
+    default(
+      workstation_restore_archive_path |
+      regex_replace('\.tar\.gz$', '.manifest.txt'),
+      true
+    )
+  }}
+workstation_restore_git_inventory_path: >- # noqa: var-naming[no-role-prefix]
+  {{
+    lookup('env', 'WORKSTATION_MANAGER_RESTORE_GIT_INVENTORY') |
+    default(
+      workstation_restore_archive_path |
+      regex_replace('\.tar\.gz$', '.git-repositories.json'),
+      true
+    )
+  }}
+workstation_restore_bookmarks_dir: >- # noqa: var-naming[no-role-prefix]
+  {{
+    lookup('env', 'WORKSTATION_MANAGER_RESTORE_BOOKMARKS_DIR') |
+    default(
+      (workstation_restore_archive_path | dirname) ~ '/browser-bookmarks',
+      true
+    )
+  }}
+workstation_restore_target_user_name: >- # noqa: var-naming[no-role-prefix]
+  {{
+    workstation_manager_resolved.user.name
+    if workstation_manager_resolved is defined
+    else (lookup('env', 'WORKSTATION_MANAGER_USER') | default('root', true))
+  }}
+workstation_restore_target_user_home: >- # noqa: var-naming[no-role-prefix]
+  {{
+    workstation_manager_resolved.user.home
+    if workstation_manager_resolved is defined
+    else (
+      lookup('env', 'WORKSTATION_MANAGER_USER_HOME') |
+      default('/home/' ~ workstation_restore_target_user_name, true)
+    )
+  }}
+workstation_restore_projects_directory: >- # noqa: var-naming[no-role-prefix]
+  {{
+    workstation_manager_resolved.user.projects_directory
+    if workstation_manager_resolved is defined
+    else (workstation_restore_target_user_home ~ '/Documents/dev-projects')
+  }}
+workstation_restore_git_overlay_suffix: ".workstation-manager-restore-overlay" # noqa: var-naming[no-role-prefix]

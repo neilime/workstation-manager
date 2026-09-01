@@ -44,6 +44,23 @@
           true
         )
       }}
+    workstation_backup_git_inventory_path: >-
+      {{
+        lookup('env', 'WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY') |
+        default(
+          (
+            lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+            default(
+              workstation_backup_output_dir ~
+              '/workstation-manager-backup-' ~
+              workstation_backup_timestamp ~
+              '.tar.gz',
+              true
+            )
+          ) | regex_replace('\.tar\.gz$', '.git-repositories.json'),
+          true
+        )
+      }}
     workstation_backup_include_paths: []
     workstation_backup_manifest_lines: []
     workstation_backup_browser_bookmark_exports: []
@@ -55,6 +72,10 @@
 - name: Collect browser bookmark exports
   ansible.builtin.import_role:
     name: neilime.workstation_backup.browser_bookmarks
+
+- name: Collect Git repository inventory
+  ansible.builtin.import_role:
+    name: neilime.workstation_backup.git_repositories
 
 - name: Write backup manifest
   ansible.builtin.import_role:

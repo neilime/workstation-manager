@@ -1,0 +1,139 @@
+---
+- name: Check whether the dev-projects directory exists for Git inventory
+  ansible.builtin.stat:
+    path: "{{ workstation_backup_projects_directory }}"
+  register: workstation_backup_projects_directory_stat
+
+- name: Find Git metadata directories under dev-projects
+  ansible.builtin.find:
+    paths: "{{ workstation_backup_projects_directory }}"
+    recurse: true
+    hidden: true
+    file_type: directory
+    patterns: .git
+  register: workstation_backup_git_metadata_directories
+  when: workstation_backup_projects_directory_stat.stat.exists
+
+- name: Build Git repository root list
+  ansible.builtin.set_fact:
+    workstation_backup_git_repository_roots: >-
+      {{
+        (
+          workstation_backup_git_metadata_directories.files |
+          default([])
+        ) |
+        map(attribute='path') |
+        map('regex_replace', '/\\.git$', '') |
+        list |
+        unique |
+        sort
+      }}
+
+- name: Collect Git repository metadata
+  ansible.builtin.shell: |
+    set -eu
+    python3 - <<'PY'
+    import json
+    import os
+    import pathlib
+    import subprocess
+
+    projects_root = os.environ["PROJECTS_ROOT"]
+    repository_root = os.environ["REPOSITORY_ROOT"]
+
+    repository_path = pathlib.Path(repository_root)
+    if repository_path.name == ".git":
+        repository_path = repository_path.parent
+    repository_root = str(repository_path)
+
+    def run_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", repository_root, *args],
+            check=check,
+            capture_output=True,
+            text=True,
+        )
+
+    remote_names = [
+        line.strip()
+        for line in run_git("remote").stdout.splitlines()
+        if line.strip()
+    ]
+    remotes = []
+    for remote_name in remote_names:
+        remote_url = run_git("remote", "get-url", remote_name).stdout.strip()
+        if remote_url:
+            remotes.append({"name": remote_name, "url": remote_url})
+
+    branch_result = run_git("symbolic-ref", "--quiet", "--short", "HEAD", check=False)
+    branch_name = branch_result.stdout.strip()
+    head_commit = run_git("rev-parse", "HEAD").stdout.strip()
+    status_lines = [
+        line
+        for line in run_git("status", "--porcelain", "--untracked-files=all").stdout.splitlines()
+        if line
+    ]
+    primary_remote_name = ""
+    if any(remote["name"] == "origin" for remote in remotes):
+        primary_remote_name = "origin"
+    elif remotes:
+        primary_remote_name = remotes[0]["name"]
+
+    primary_remote_url = ""
+    for remote in remotes:
+        if remote["name"] == primary_remote_name:
+            primary_remote_url = remote["url"]
+            break
+
+    payload = {
+        "relative_path": os.path.relpath(repository_root, projects_root),
+        "root_path": repository_root,
+        "head_commit": head_commit,
+        "branch": branch_name,
+        "primary_remote_name": primary_remote_name,
+        "primary_remote_url": primary_remote_url,
+        "remotes": remotes,
+        "has_local_modifications": bool(status_lines),
+        "status_lines": status_lines,
+    }
+    print(json.dumps(payload, sort_keys=True))
+    PY
+  args:
+    executable: /bin/bash
+  environment:
+    PROJECTS_ROOT: "{{ workstation_backup_projects_directory }}"
+    REPOSITORY_ROOT: "{{ item }}"
+  loop: "{{ workstation_backup_git_repository_roots }}"
+  loop_control:
+    label: "{{ item }}"
+  register: workstation_backup_git_repository_metadata
+  changed_when: false
+
+- name: Build Git repository inventory records
+  ansible.builtin.set_fact:
+    workstation_backup_git_repository_inventory: >-
+      {{
+        workstation_backup_git_repository_metadata.results |
+        default([]) |
+        map(attribute='stdout') |
+        reject('equalto', '') |
+        map('from_json') |
+        list
+      }}
+
+- name: Write Git repository inventory
+  ansible.builtin.copy:
+    dest: "{{ workstation_backup_git_inventory_path }}"
+    mode: "0600"
+    content: "{{ workstation_backup_git_repository_inventory | default([]) | to_nice_json }}\n"
+
+- name: Record Git repository inventory in the backup manifest
+  ansible.builtin.set_fact:
+    workstation_backup_manifest_lines: >-
+      {{
+        workstation_backup_manifest_lines + [
+          'export' ~ workstation_backup_tab ~
+          'git-repositories' ~ workstation_backup_tab ~
+          workstation_backup_git_inventory_path
+        ]
+      }}

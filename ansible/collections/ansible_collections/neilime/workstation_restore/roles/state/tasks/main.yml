@@ -1,0 +1,128 @@
+- name: Restore workstation backup archive when configured
+  when: workstation_restore_archive_path | length > 0
+  block:
+    - name: Check whether the restore archive exists
+      ansible.builtin.stat:
+        path: "{{ workstation_restore_archive_path }}"
+      register: workstation_restore_archive_stat
+
+    - name: Ensure restore archive exists
+      ansible.builtin.fail:
+        msg: "restore archive not found: {{ workstation_restore_archive_path }}"
+      when: not workstation_restore_archive_stat.stat.exists
+
+    - name: Check whether the paired restore manifest exists
+      ansible.builtin.stat:
+        path: "{{ workstation_restore_manifest_path }}"
+      register: workstation_restore_manifest_stat
+      when: workstation_restore_manifest_path | length > 0
+
+    - name: Check whether the paired Git inventory exists
+      ansible.builtin.stat:
+        path: "{{ workstation_restore_git_inventory_path }}"
+      register: workstation_restore_git_inventory_stat
+      when: workstation_restore_git_inventory_path | length > 0
+
+    - name: Check whether the bookmark export directory exists
+      ansible.builtin.stat:
+        path: "{{ workstation_restore_bookmarks_dir }}"
+      register: workstation_restore_bookmarks_dir_stat
+
+    - name: Load the Git repository inventory
+      ansible.builtin.slurp:
+        path: "{{ workstation_restore_git_inventory_path }}"
+      register: workstation_restore_git_inventory_slurp
+      when: workstation_restore_git_inventory_stat.stat.exists | default(false)
+
+    - name: Parse the Git repository inventory
+      ansible.builtin.set_fact:
+        workstation_restore_git_repository_inventory: >-
+          {{ workstation_restore_git_inventory_slurp.content | b64decode | from_json }}
+      when: workstation_restore_git_inventory_stat.stat.exists | default(false)
+
+    - name: Initialize Git reattach results
+      ansible.builtin.set_fact:
+        workstation_restore_git_repository_inventory: >-
+          {{ workstation_restore_git_repository_inventory | default([]) }}
+        workstation_restore_git_reattach_results: []
+
+    - name: Preview restore inputs
+      ansible.builtin.debug:
+        msg:
+          - "restore archive: {{ workstation_restore_archive_path }}"
+          - >-
+            {{
+              'restore manifest: ' ~ workstation_restore_manifest_path
+              if workstation_restore_manifest_stat.stat.exists | default(false)
+              else 'restore manifest not found next to archive'
+            }}
+          - >-
+            {{
+              'bookmark exports available at ' ~ workstation_restore_bookmarks_dir
+              if workstation_restore_bookmarks_dir_stat.stat.exists | default(false)
+              else 'bookmark exports not found next to archive'
+            }}
+          - >-
+            {{
+              'git inventory: ' ~
+              workstation_restore_git_inventory_path ~
+              ' (' ~
+              (workstation_restore_git_repository_inventory | length | string) ~
+              ' repositories)'
+              if workstation_restore_git_inventory_stat.stat.exists | default(false)
+              else 'git inventory not found next to archive'
+            }}
+      when: ansible_check_mode
+
+    - name: Restore backup archive into the target user home
+      ansible.builtin.unarchive:
+        src: "{{ workstation_restore_archive_path }}"
+        dest: "{{ workstation_restore_target_user_home }}"
+        remote_src: true
+      when: not ansible_check_mode
+
+    - name: Ensure Git is available for repository reattachment
+      ansible.builtin.command:
+        argv:
+          - git
+          - --version
+      changed_when: false
+      check_mode: false
+      when:
+        - not ansible_check_mode
+        - workstation_restore_git_repository_inventory | length > 0
+
+    - name: Reattach restored Git repositories
+      ansible.builtin.include_tasks: reattach_git_repository.yml
+      loop: "{{ workstation_restore_git_repository_inventory }}"
+      loop_control:
+        loop_var: workstation_restore_git_repository
+        label: "{{ workstation_restore_git_repository.relative_path }}"
+      when:
+        - not ansible_check_mode
+        - workstation_restore_git_repository_inventory | length > 0
+
+    - name: Report Git repository reattachment results
+      ansible.builtin.debug:
+        msg: "{{ workstation_restore_git_reattach_results }}"
+      when:
+        - not ansible_check_mode
+        - workstation_restore_git_reattach_results | length > 0
+
+    - name: Report restore completion
+      ansible.builtin.debug:
+        msg:
+          - "restore archive applied from {{ workstation_restore_archive_path }}"
+          - >-
+            {{
+              'bookmark exports remain available at ' ~ workstation_restore_bookmarks_dir ~ ' for manual browser import'
+              if workstation_restore_bookmarks_dir_stat.stat.exists | default(false)
+              else 'no standalone bookmark export directory was found next to the archive'
+            }}
+          - >-
+            {{
+              'git repository inventory processed from ' ~ workstation_restore_git_inventory_path
+              if workstation_restore_git_inventory_stat.stat.exists | default(false)
+              else 'no Git repository inventory was found next to the archive'
+            }}
+      when: not ansible_check_mode

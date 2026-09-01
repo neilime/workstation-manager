@@ -1,0 +1,208 @@
+---
+- name: Resolve Git restore paths for the current repository
+  ansible.builtin.set_fact:
+    workstation_restore_current_repository_path: >-
+      {{ workstation_restore_projects_directory ~ '/' ~ workstation_restore_git_repository.relative_path }}
+    workstation_restore_current_overlay_path: >-
+      {{ workstation_restore_projects_directory ~ '/' ~ workstation_restore_git_repository.relative_path ~ workstation_restore_git_overlay_suffix }}
+
+- name: Check whether the restored repository directory exists
+  ansible.builtin.stat:
+    path: "{{ workstation_restore_current_repository_path }}"
+  register: workstation_restore_current_repository_stat
+
+- name: Record missing restored repository directory
+  ansible.builtin.set_fact:
+    workstation_restore_git_reattach_results: >-
+      {{
+        workstation_restore_git_reattach_results + [
+          {
+            'relative_path': workstation_restore_git_repository.relative_path,
+            'status': 'skipped',
+            'reason': 'missing-restored-directory'
+          }
+        ]
+      }}
+  when: not workstation_restore_current_repository_stat.stat.exists
+
+- name: Record missing primary remote URL
+  ansible.builtin.set_fact:
+    workstation_restore_git_reattach_results: >-
+      {{
+        workstation_restore_git_reattach_results + [
+          {
+            'relative_path': workstation_restore_git_repository.relative_path,
+            'status': 'skipped',
+            'reason': 'missing-primary-remote'
+          }
+        ]
+      }}
+  when:
+    - workstation_restore_current_repository_stat.stat.exists
+    - workstation_restore_git_repository.primary_remote_url | length == 0
+
+- name: Reattach the restored Git repository
+  when:
+    - workstation_restore_current_repository_stat.stat.exists
+    - workstation_restore_git_repository.primary_remote_url | length > 0
+  block:
+    - name: Remove any stale overlay path before Git reattachment
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.file:
+        path: "{{ workstation_restore_current_overlay_path }}"
+        state: absent
+
+    - name: Move the restored worktree aside before cloning
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.command:
+        argv:
+          - mv
+          - "{{ workstation_restore_current_repository_path }}"
+          - "{{ workstation_restore_current_overlay_path }}"
+      changed_when: true
+
+    - name: Clone the primary remote for Git reattachment
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.shell: |
+        set -eu
+        clone_args=(--origin "$PRIMARY_REMOTE_NAME")
+        if [[ -n "$BRANCH_NAME" ]]; then
+          clone_args+=(--branch "$BRANCH_NAME" --single-branch)
+        fi
+        git clone "${clone_args[@]}" "$PRIMARY_REMOTE_URL" "$REPOSITORY_PATH"
+      args:
+        executable: /bin/bash
+      environment:
+        BRANCH_NAME: "{{ workstation_restore_git_repository.branch }}"
+        PRIMARY_REMOTE_NAME: "{{ workstation_restore_git_repository.primary_remote_name }}"
+        PRIMARY_REMOTE_URL: "{{ workstation_restore_git_repository.primary_remote_url }}"
+        REPOSITORY_PATH: "{{ workstation_restore_current_repository_path }}"
+      changed_when: true
+
+    - name: Reconcile additional Git remotes
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.shell: |
+        set -eu
+        if git -C "$REPOSITORY_PATH" remote get-url "$REMOTE_NAME" >/dev/null 2>&1; then
+          git -C "$REPOSITORY_PATH" remote set-url "$REMOTE_NAME" "$REMOTE_URL"
+        else
+          git -C "$REPOSITORY_PATH" remote add "$REMOTE_NAME" "$REMOTE_URL"
+        fi
+      args:
+        executable: /bin/bash
+      environment:
+        REMOTE_NAME: "{{ workstation_restore_git_remote.name }}"
+        REMOTE_URL: "{{ workstation_restore_git_remote.url }}"
+        REPOSITORY_PATH: "{{ workstation_restore_current_repository_path }}"
+      loop: >-
+        {{
+          workstation_restore_git_repository.remotes |
+          rejectattr('name', 'equalto', workstation_restore_git_repository.primary_remote_name) |
+          list
+        }}
+      loop_control:
+        loop_var: workstation_restore_git_remote
+        label: "{{ workstation_restore_git_remote.name }}"
+      changed_when: true
+
+    - name: Restore detached HEAD when the recorded commit is reachable
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.shell: |
+        set -eu
+        if git -C "$REPOSITORY_PATH" cat-file -e "$HEAD_COMMIT^{commit}" 2>/dev/null; then
+          git -C "$REPOSITORY_PATH" checkout --detach "$HEAD_COMMIT"
+          exit 0
+        fi
+        exit 3
+      args:
+        executable: /bin/bash
+      environment:
+        HEAD_COMMIT: "{{ workstation_restore_git_repository.head_commit }}"
+        REPOSITORY_PATH: "{{ workstation_restore_current_repository_path }}"
+      register: workstation_restore_detached_head_checkout
+      changed_when: workstation_restore_detached_head_checkout.rc == 0
+      failed_when: workstation_restore_detached_head_checkout.rc not in [0, 3]
+      when:
+        - workstation_restore_git_repository.branch | length == 0
+        - workstation_restore_git_repository.head_commit | length > 0
+
+    - name: Overlay restored worktree files onto the cloned repository
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.command:
+        argv:
+          - cp
+          - -a
+          - "{{ workstation_restore_current_overlay_path }}/."
+          - "{{ workstation_restore_current_repository_path }}/"
+      changed_when: true
+
+    - name: Remove the temporary overlay path after Git reattachment
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.file:
+        path: "{{ workstation_restore_current_overlay_path }}"
+        state: absent
+
+    - name: Record successful Git reattachment
+      ansible.builtin.set_fact:
+        workstation_restore_git_reattach_results: >-
+          {{
+            workstation_restore_git_reattach_results + [
+              {
+                'relative_path': workstation_restore_git_repository.relative_path,
+                'status': 'reattached',
+                'primary_remote_name': workstation_restore_git_repository.primary_remote_name,
+                'primary_remote_url': workstation_restore_git_repository.primary_remote_url,
+                'detached_head_restored': (
+                  (workstation_restore_detached_head_checkout.rc | default(-1)) == 0
+                  if workstation_restore_detached_head_checkout is defined
+                  else false
+                )
+              }
+            ]
+          }}
+  rescue:
+    - name: Remove any partial cloned repository after reattach failure
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.file:
+        path: "{{ workstation_restore_current_repository_path }}"
+        state: absent
+
+    - name: Check whether the overlay worktree still exists after reattach failure
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.stat:
+        path: "{{ workstation_restore_current_overlay_path }}"
+      register: workstation_restore_current_overlay_stat
+
+    - name: Restore the plain worktree after reattach failure
+      become: true
+      become_user: "{{ workstation_restore_target_user_name }}"
+      ansible.builtin.command:
+        argv:
+          - mv
+          - "{{ workstation_restore_current_overlay_path }}"
+          - "{{ workstation_restore_current_repository_path }}"
+      changed_when: true
+      when: workstation_restore_current_overlay_stat.stat.exists
+
+    - name: Record failed Git reattachment
+      ansible.builtin.set_fact:
+        workstation_restore_git_reattach_results: >-
+          {{
+            workstation_restore_git_reattach_results + [
+              {
+                'relative_path': workstation_restore_git_repository.relative_path,
+                'status': 'failed',
+                'primary_remote_name': workstation_restore_git_repository.primary_remote_name,
+                'primary_remote_url': workstation_restore_git_repository.primary_remote_url
+              }
+            ]
+          }}

@@ -9,6 +9,7 @@ ANSIBLE_PLAYBOOK_FILES := $(filter-out ansible/inventory.yml,$(wildcard ansible/
 FIRST_PARTY_COLLECTION_DIRS := \
 	ansible/collections/ansible_collections/neilime/workstation_setup \
 	ansible/collections/ansible_collections/neilime/workstation_backup \
+	ansible/collections/ansible_collections/neilime/workstation_restore \
 	ansible/collections/ansible_collections/neilime/workstation_cleanup \
 	ansible/collections/ansible_collections/neilime/workstation_state
 
