@@ -99,6 +99,11 @@ To show the remote command help:
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- help
 ```
 
+## GNOME Desktop
+
+Setup installs the bundled Escemi wallpaper in the managed user's local data
+directory and selects it for both light and dark GNOME color schemes.
+
 ## Browser First Run
 
 The repository installs Google Chrome, sets it as the default browser, creates

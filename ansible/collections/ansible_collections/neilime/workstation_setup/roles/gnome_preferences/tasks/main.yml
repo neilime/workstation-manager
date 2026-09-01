@@ -25,6 +25,23 @@
     state: directory
     mode: "0700"
 
+- name: Ensure target user backgrounds directory exists
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.local/share/backgrounds"
+    state: directory
+    mode: "0755"
+
+- name: Install wallpaper
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.copy:
+    src: wallpaper.jpg
+    dest: >-
+      {{ workstation_manager_resolved.user.home }}/.local/share/backgrounds/wallpaper.jpg
+    mode: "0644"
+
 - name: Ensure target user autostart directory exists
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
@@ -65,6 +82,30 @@
   vars:
     workstation_manager_gnome_color_scheme_value: >-
       {{ "'prefer-dark'" if workstation_manager_resolved.desktop.gnome.dark_mode else "'default'" }}
+
+- name: Apply GNOME wallpaper
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: "/org/gnome/desktop/background/{{ item }}"
+    value: "{{ workstation_manager_gnome_wallpaper_uri }}"
+    state: present
+  vars:
+    workstation_manager_gnome_wallpaper_uri: >-
+      'file://{{ workstation_manager_resolved.user.home }}/.local/share/backgrounds/wallpaper.jpg'
+  loop:
+    - picture-uri
+    - picture-uri-dark
+  loop_control:
+    label: "{{ item }}"
+
+- name: Apply GNOME wallpaper display style
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/desktop/background/picture-options
+    value: "'zoom'"
+    state: present
 
 - name: Apply GNOME favorites
   become: "{{ workstation_manager_gnome_use_become_user }}"
