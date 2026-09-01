@@ -37,6 +37,20 @@ def resolve_backup_manifest_path(host) -> str:
     return manifest_path
 
 
+def resolve_backup_git_inventory_path(host) -> str:
+    """Return the Git inventory path paired with the generated E2E backup archive."""
+
+    # Arrange
+    archive_path = resolve_backup_archive_path(host)
+
+    # Act
+    inventory_path = archive_path.removesuffix(".tar.gz") + ".git-repositories.json"
+
+    # Assert
+    assert inventory_path
+    return inventory_path
+
+
 def test_backup_archive_and_manifest_exist(host) -> None:
     """The E2E backup flow should produce both the archive and its manifest."""
 
@@ -51,6 +65,17 @@ def test_backup_archive_and_manifest_exist(host) -> None:
     assert backup_manifest.is_file
 
 
+def test_backup_git_inventory_exists(host) -> None:
+    """The backup flow should emit a Git inventory sidecar for dev-projects."""
+
+    # Arrange
+    backup_git_inventory = host.file(resolve_backup_git_inventory_path(host))
+
+    # Assert
+    assert backup_git_inventory.exists
+    assert backup_git_inventory.is_file
+
+
 def test_backup_manifest_records_expected_entries(host) -> None:
     """The backup manifest should reflect the generated archive and core inputs."""
 
@@ -59,6 +84,7 @@ def test_backup_manifest_records_expected_entries(host) -> None:
     archive_path = resolve_backup_archive_path(host)
     manifest_path = resolve_backup_manifest_path(host)
     bookmark_export_path = f"{BACKUP_ROOT}/browser-bookmarks/Default/Bookmarks.json"
+    git_inventory_path = resolve_backup_git_inventory_path(host)
 
     # Act
     archive_line = host.run(
@@ -77,12 +103,18 @@ def test_backup_manifest_records_expected_entries(host) -> None:
         f"export\tchrome-bookmarks\t{bookmark_export_path}",
         manifest_path,
     )
+    git_inventory_line = host.run(
+        "grep -Fx %s %s",
+        f"export\tgit-repositories\t{git_inventory_path}",
+        manifest_path,
+    )
 
     # Assert
     assert archive_line.succeeded
     assert dry_run_line.succeeded
     assert managed_profiles_line.succeeded
     assert bookmark_export_line.succeeded
+    assert git_inventory_line.succeeded
 
 
 def test_backup_archive_contains_managed_browser_profiles(host) -> None:
@@ -116,3 +148,24 @@ def test_backup_exports_chrome_bookmarks_as_standalone_json(host) -> None:
     assert bookmark_export.is_file
     assert bookmark_export.user == host.check_output("whoami")
     assert has_repo_bookmark
+
+
+def test_backup_exports_git_inventory_for_dev_projects(host) -> None:
+    """The backup flow should record Git remotes and branch state for dev-projects."""
+
+    # Arrange
+    git_inventory = host.file(resolve_backup_git_inventory_path(host))
+
+    # Act
+    has_repo_path = git_inventory.contains('"relative_path": "client-restore"')
+    has_origin_name = git_inventory.contains('"primary_remote_name": "origin"')
+    has_origin_url = git_inventory.contains(
+        '"primary_remote_url": "/tmp/workstation-manager-e2e-origin-client-restore.git"'
+    )
+    has_branch = git_inventory.contains('"branch": "main"')
+
+    # Assert
+    assert has_repo_path
+    assert has_origin_name
+    assert has_origin_url
+    assert has_branch

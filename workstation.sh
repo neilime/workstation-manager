@@ -12,6 +12,7 @@ PRIVATE_OVERRIDE_LOCAL_FILE=""
 PRIVATE_OVERRIDE_TEMP_DIR=""
 GITHUB_TOKEN_VALUE="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}"
 BACKUP_OUTPUT_DIR="${WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR:-}"
+RESTORE_ARCHIVE_PATH="${WORKSTATION_MANAGER_RESTORE_ARCHIVE:-}"
 PROMPTED_BACKUP_OUTPUT_DIR=""
 PROMPTED_BITWARDEN_EMAIL=""
 BITWARDEN_CLIENT_ID_VALUE="${BITWARDEN_CLIENT_ID:-}"
@@ -112,6 +113,7 @@ CI environment overrides:
 	REPOSITORY_BRANCH                 Branch, tag, or commit to apply.
 	WORKSTATION_MANAGER_GITHUB_TOKEN        Optional GitHub token for private GitHub repositories.
 	WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR   Optional backup output directory for non-interactive runs.
+	WORKSTATION_MANAGER_RESTORE_ARCHIVE     Optional backup archive path to replay during setup.
 	BITWARDEN_CLIENT_ID               Bitwarden API client ID for secret restore.
 	BITWARDEN_CLIENT_SECRET           Bitwarden API client secret for secret restore.
 	BITWARDEN_PASSWORD                Bitwarden vault password for secret restore.
@@ -119,6 +121,7 @@ CI environment overrides:
 Examples:
 	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
 	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
+	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup.tar.gz sh -s -- setup
 	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
 	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup --dry-run
 EOF
@@ -331,11 +334,15 @@ prompt_for_backup_output_dir_if_needed() {
 }
 
 prepare_action_dependencies() {
+	include_private_override="$1"
+
 	initialize_target_context
 	require_sudo
 	install_ansible_packages
 	install_git
-	prepare_private_override_file
+	if [ "$include_private_override" = "1" ]; then
+		prepare_private_override_file
+	fi
 	install_remote_collection_requirements
 }
 
@@ -402,7 +409,7 @@ run_ansible_pull() {
 
 run_setup() {
 	dry_run="$1"
-	prepare_action_dependencies
+	prepare_action_dependencies 1
 	prompt_for_bitwarden_credentials_if_needed
 
 	info "Running workstation setup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
@@ -421,13 +428,18 @@ run_setup() {
 			BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
 	fi
 
+	if [ -n "$RESTORE_ARCHIVE_PATH" ]; then
+		set -- "$@" \
+			WORKSTATION_MANAGER_RESTORE_ARCHIVE="$RESTORE_ARCHIVE_PATH"
+	fi
+
 	run_ansible_pull root ansible/setup.yml "$dry_run" 1 "$@"
 }
 
 run_backup() {
 	dry_run="$1"
 	prompt_for_backup_output_dir_if_needed
-	prepare_action_dependencies
+	prepare_action_dependencies 0
 
 	info "Running workstation backup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
 	run_ansible_pull \
@@ -440,7 +452,7 @@ run_backup() {
 
 run_cleanup() {
 	dry_run="$1"
-	prepare_action_dependencies
+	prepare_action_dependencies 1
 
 	info "Running workstation cleanup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
 	run_ansible_pull root ansible/cleanup.yml "$dry_run" 1

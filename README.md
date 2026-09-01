@@ -14,13 +14,14 @@ Fresh Ubuntu machine bootstrap requires only:
 - Bitwarden credentials plus the vault password available for the interactive login prompt
 
 The public entrypoint is `workstation.sh`. The user does not need a local checkout
-to install, re-apply, preview, or back up the machine.
+to install, re-apply, preview, or back up the machine state.
 
 Use it like this:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup.tar.gz sh -s -- setup
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup --dry-run
 ```
@@ -29,10 +30,10 @@ curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/wo
 remaining arguments to it.
 
 - no extra argument: run the `setup` action
-- `setup`: bootstrap dependencies and converge the workstation
-- `cleanup`: prune removable workstation artifacts, remove stale managed directories, and write a drift report under the managed user state directory
-- `backup`: create a user-state backup archive and standalone Chrome bookmark exports instead of applying configuration; prompts for the output directory when run interactively
 - `--dry-run`: preview the selected action in Ansible check mode
+
+When run interactively, the script prompts for required action-specific
+inputs such as the backup output directory.
 
 `setup` and `setup --dry-run` both require Bitwarden-backed SSH/GPG restore. The
 playbook now always runs the SSH and GPG restore roles, so the resolved Ansible
@@ -78,8 +79,20 @@ If you want to run a backup interactively, the script prompts for the destinatio
 CI and other non-interactive runs can still provide only
 `WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=/path/to/output-dir`.
 
+If you want setup to replay a backup, provide
+`WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup-<timestamp>.tar.gz`.
+
 The backup output includes the main archive, its manifest, and any discovered
 Chrome bookmark exports under `browser-bookmarks/` for selective restore.
+
+For Git-backed project directories under `~/Documents/dev-projects`, backup also
+writes a sidecar `*.git-repositories.json` inventory next to the archive. Setup
+uses that inventory during restore to re-clone repositories from their recorded
+remotes and then reapply the backed-up working tree on top.
+
+If `WORKSTATION_MANAGER_RESTORE_ARCHIVE` is also present during `setup`, the
+setup flow replays that backup archive after the managed workstation baseline is
+applied.
 
 To preview changes without applying them:
 
@@ -93,18 +106,45 @@ To preview cleanup drift and removable artifacts without applying changes:
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
 ```
 
+To run setup and replay a previously created backup archive:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup.tar.gz sh -s -- setup
+```
+
 To show the remote command help:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- help
 ```
 
-## GNOME Desktop
+### Setup
 
-Setup installs the bundled Escemi wallpaper in the managed user's local data
+Bootstrap dependencies and converge the workstation.
+
+Setup also fetches `ansible/private.override.yml` from the fixed
+`neilime/workstation-config` repository.
+
+#### Chezmoi
+
+For the home environment, setup installs a pinned `chezmoi` binary, writes the
+managed Chezmoi machine-data config, initializes the fixed
+`neilime/workstation-config` dotfiles source, and applies it to the user home.
+
+#### Bitwarden
+
+Setup restores SSH and GPG material from Bitwarden.
+
+Interactive runs prompt for the Bitwarden login details. CI and other
+automated runs can provide the Bitwarden API credentials through environment
+variables.
+
+### GNOME Desktop
+
+Setup installs the bundled wallpaper in the managed user's local data
 directory and selects it for both light and dark GNOME color schemes.
 
-## Browser First Run
+### Browser First Run
 
 The repository installs Google Chrome, sets it as the default browser, creates
 stable managed profile directories, and applies browser-wide policies such as
@@ -130,7 +170,7 @@ local notes, an encrypted export, or another private workflow that stays
 outside this repository. Do not commit raw browser databases, cookies,
 sessions, or client bookmark sets to this repository.
 
-## Developer Toolchains
+### Developer Toolchains
 
 The workstation now manages ephemeral developer toolchains with `mise`.
 
@@ -144,6 +184,71 @@ The workstation now manages ephemeral developer toolchains with `mise`.
 
 See `ansible/vars/private.override.example.yml` for a private override example
 covering non-secret workstation data.
+
+### Development Projects Layout
+
+`~/Documents/dev-projects` is the expected home for user-maintained project data.
+The backup includes that directory as-is so both active work and long-lived local
+material are preserved.
+
+Suggested layout:
+
+```text
+~/Documents/dev-projects/
+   _0_backup/
+   notes/
+   workspaces/
+   client-a/
+   side-project-b/
+```
+
+- `_0_backup`: non-Git legacy material such as archived former-client work or older side projects that still need to be kept.
+- `notes`: personal notes, working documents, and other reference material that should stay with the development archive.
+- `workspaces`: Visual Studio Code workspace definitions and related local workspace configuration.
+- Other top-level directories: live projects. These are the current client or side-project folders and may themselves contain one or more Git repositories.
+
+Treat this directory as the canonical location for project state you want the
+workstation backup to preserve. The repository does not attempt to classify or
+filter project folders beyond archiving the full `~/Documents/dev-projects`
+tree.
+
+For Git-backed live projects, the backup keeps the checked-out working tree but
+excludes nested `.git` directories. This avoids inflating the archive with Git
+object storage and clone metadata that can be recovered from the remote when
+needed. The trade-off is that local-only Git state such as branch metadata,
+stashes, reflogs, and custom remotes is not preserved by the backup.
+
+### Cleanup
+
+Prune removable workstation artifacts, remove stale managed directories, and
+write a drift report under the managed user state directory.
+
+### Restore During Setup
+
+When `setup` receives `WORKSTATION_MANAGER_RESTORE_ARCHIVE`, it replays the
+backup archive after package installation, browser/profile setup, and
+home-environment bootstrap. That gives the machine its managed baseline first,
+then restores backed-up user data on top.
+
+- The archive path comes from `WORKSTATION_MANAGER_RESTORE_ARCHIVE`.
+- Setup extracts the backup tarball back into `/`, which recreates the backed-up home-directory paths in place.
+- If a paired `*.git-repositories.json` sidecar is present, setup reattaches restored Git-backed project directories by cloning their recorded primary remote and overlaying the backed-up working tree onto that clone.
+- If the paired manifest file and `browser-bookmarks/` directory are still present next to the archive, the restore role reports them so the operator can inspect the manifest and manually import bookmark exports if needed.
+- If a recorded remote cannot be cloned, the restore step keeps the plain restored worktree in place rather than discarding project files.
+
+### Backup
+
+Create a user-state backup, not a full-system image or bare-metal snapshot.
+
+The backup does the following:
+
+- Chrome configuration: archives `~/.config/google-chrome` as part of the main backup tarball.
+- Managed browser profiles: archives `~/.local/share/workstation-manager/browser-profiles` from the workstation-managed profile store.
+- Development projects: archives `~/Documents/dev-projects` so user project work is included in the backup, while excluding nested `.git` directories.
+- Git repository inventory: writes `*.git-repositories.json` beside the archive so setup can reattach restored project directories to their remotes.
+- Workstation-manager user config: archives `~/.config/workstation-manager`.
+- Chrome bookmark export: copies discovered Chrome bookmark files to `browser-bookmarks/*.json` for selective restore without restoring the full browser data directory.
+- Backup manifest: writes a `.manifest.txt` file that records the generated archive, included or missing paths, and exported bookmark files.
 
 ## Development
 

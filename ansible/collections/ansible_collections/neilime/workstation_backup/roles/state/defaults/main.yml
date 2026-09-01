@@ -21,11 +21,20 @@ workstation_backup_manifest_path: >- # noqa: var-naming[no-role-prefix]
     regex_replace('\\.tar\\.gz$', '.manifest.txt'),
     true
   ) }}
+workstation_backup_git_inventory_path: >- # noqa: var-naming[no-role-prefix]
+  {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY') |
+  default(
+    workstation_backup_archive_path |
+    regex_replace('\\.tar\\.gz$', '.git-repositories.json'),
+    true
+  ) }}
 workstation_backup_dry_run: >- # noqa: var-naming[no-role-prefix]
   {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_DRY_RUN') |
   default('0', true) | bool }}
 workstation_backup_extra_paths_raw: >- # noqa: var-naming[no-role-prefix]
   {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS') | default('', true) }}
+workstation_backup_projects_directory: >- # noqa: var-naming[no-role-prefix]
+  {{ ansible_env.HOME }}/Documents/dev-projects
 workstation_backup_chrome_config_dir: >- # noqa: var-naming[no-role-prefix]
   {{ ansible_env.HOME }}/.config/google-chrome
 workstation_backup_bookmarks_export_dir: >- # noqa: var-naming[no-role-prefix]
@@ -36,10 +45,12 @@ workstation_backup_default_paths: # noqa: var-naming[no-role-prefix]
   - label: managed-browser-profiles
     path: "{{ ansible_env.HOME }}/.local/share/workstation-manager/browser-profiles"
   - label: dev-projects
-    path: "{{ ansible_env.HOME }}/Documents/dev-projects"
+    path: "{{ workstation_backup_projects_directory }}"
   - label: workstation-manager-user-config
     path: "{{ ansible_env.HOME }}/.config/workstation-manager"
 workstation_backup_archive_exclusion_patterns: # noqa: var-naming[no-role-prefix]
+  - "*/.git"
+  - "*/.git/*"
   - "*/Cache/*"
   - "*/Code Cache/*"
   - "*/GPUCache/*"

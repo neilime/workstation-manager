@@ -8,6 +8,15 @@
     workstation_use_become: >-
       {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
       default('true', true) | bool }}
+    workstation_restore_archive: >-
+      {{
+        workstation_manager_restore_archive |
+        default(
+          lookup('env', 'WORKSTATION_MANAGER_RESTORE_ARCHIVE') |
+          default('', true),
+          true
+        )
+      }}
     workstation_private_override_file: >-
       {{
         workstation_manager_private_override_file |
