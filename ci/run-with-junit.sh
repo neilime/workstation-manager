@@ -16,10 +16,10 @@ mkdir -p "$(dirname "$report_file")"
 
 command_output_file="$(mktemp)"
 
-if "$@" >"$command_output_file" 2>&1; then
+if "$@" 2>&1 | tee "$command_output_file"; then
 	exit_code=0
 else
-	exit_code=$?
+	exit_code=${PIPESTATUS[0]}
 fi
 
 command_output="$(cat "$command_output_file")"

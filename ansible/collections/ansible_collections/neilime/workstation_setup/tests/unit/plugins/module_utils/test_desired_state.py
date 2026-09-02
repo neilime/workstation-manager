@@ -184,7 +184,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
             "editor_packages": ["com.visualstudio.code"],
             "mise": {
                 "tools": {"node": "latest", "php": "8.4"},
-                "gh_extensions": ["nektos/gh-act"],
+                "gh_extensions": ["nektos/gh-act", "github/gh-stack"],
                 "docker_cli_plugins": DECLARED_DOCKER_CLI_PLUGINS,
             },
             "settings": {"sysctl": {"fs.inotify.max_user_watches": "524288"}},
@@ -258,7 +258,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     assert normalized["development"]["editor_packages"] == ["com.visualstudio.code"]
     assert normalized["development"]["mise"] == {
         "tools": {"node": "latest", "php": "8.4"},
-        "gh_extensions": ["nektos/gh-act"],
+        "gh_extensions": ["nektos/gh-act", "github/gh-stack"],
         "docker_cli_plugins": DECLARED_DOCKER_CLI_PLUGINS,
     }
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}

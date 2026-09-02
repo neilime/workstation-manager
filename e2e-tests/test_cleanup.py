@@ -30,7 +30,7 @@ def test_cleanup_report_is_written(host) -> None:
 
 
 def test_cleanup_runs_system_maintenance(host) -> None:
-    """Cleanup should complete its uCareSystem and APT maintenance actions."""
+    """Cleanup should complete its APT maintenance and journal vacuum actions."""
 
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
@@ -41,8 +41,8 @@ def test_cleanup_runs_system_maintenance(host) -> None:
     actions = cleanup_report["actions"]
 
     # Assert
-    assert actions["ucaresystem_available"] is True
-    assert actions["ucaresystem_exit_code"] == 0
+    assert isinstance(actions["apt_upgrade_changed"], bool)
+    assert actions["journal_vacuum_exit_code"] == 0
     assert actions["apt_autoremove_requested"] is True
 
 
@@ -63,9 +63,11 @@ def test_cleanup_report_preserves_json_scalar_types(host) -> None:
     assert actions["docker_prune_exit_code"] is None or (
         isinstance(actions["docker_prune_exit_code"], int) and not isinstance(actions["docker_prune_exit_code"], bool)
     )
-    assert isinstance(actions["ucaresystem_available"], bool)
-    assert isinstance(actions["ucaresystem_exit_code"], int)
-    assert not isinstance(actions["ucaresystem_exit_code"], bool)
+    assert isinstance(actions["apt_upgrade_changed"], bool)
+    assert actions["journal_vacuum_exit_code"] is None or (
+        isinstance(actions["journal_vacuum_exit_code"], int)
+        and not isinstance(actions["journal_vacuum_exit_code"], bool)
+    )
     assert isinstance(actions["apt_autoremove_requested"], bool)
 
 

@@ -5,7 +5,30 @@
   gather_facts: true
   vars:
     workstation_action: backup
+    workstation_use_become: >-
+      {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
+      default('true', true) | bool }}
+    workstation_private_override_file: >-
+      {{
+        workstation_manager_private_override_file |
+        default(
+          lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') |
+          default('', true),
+          true
+        )
+      }}
 
   tasks:
+    - name: Resolve workstation config inputs
+      ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml
+
+    - name: Synchronize managed chezmoi state before backup
+      ansible.builtin.import_role:
+        name: neilime.workstation_backup.chezmoi
+
+    - name: Synchronize managed SSH and GPG key material with Bitwarden
+      ansible.builtin.import_role:
+        name: neilime.workstation_backup.secret_manager_keys
+
     - name: Run backup action tasks
       ansible.builtin.import_tasks: tasks/backup_action.yml

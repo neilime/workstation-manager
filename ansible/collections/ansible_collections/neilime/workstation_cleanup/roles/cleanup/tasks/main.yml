@@ -234,18 +234,6 @@
   failed_when: false
   check_mode: false
 
-- name: Check whether ucaresystem-core is available for cleanup
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.command:
-    argv:
-      - sh
-      - -lc
-      - command -v ucaresystem-core
-  register: workstation_manager_cleanup_ucaresystem_command
-  changed_when: false
-  failed_when: false
-  check_mode: false
-
 - name: Remove cached mise installer
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
@@ -298,20 +286,16 @@
     - not ansible_check_mode
     - workstation_manager_cleanup_docker_command.rc == 0
 
-- name: Update and tidy packages with ucaresystem-core
+- name: Upgrade installed APT packages
   become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.command:
-    argv:
-      - ucaresystem-core
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
   environment:
     DEBIAN_FRONTEND: noninteractive
     NEEDRESTART_MODE: a
-  register: workstation_manager_cleanup_ucaresystem_update
-  changed_when: false
-  failed_when: false
-  when:
-    - not ansible_check_mode
-    - workstation_manager_cleanup_ucaresystem_command.rc == 0
+  register: workstation_manager_cleanup_apt_upgrade
+  when: not ansible_check_mode
 
 - name: Remove orphaned APT dependencies
   become: "{{ workstation_manager_use_become }}"
@@ -328,6 +312,17 @@
     autoclean: true
   environment:
     DEBIAN_FRONTEND: noninteractive
+  when: not ansible_check_mode
+
+- name: Vacuum systemd journal logs
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - --vacuum-time=2weeks
+  register: workstation_manager_cleanup_journal_vacuum
+  changed_when: "'Deleted' in workstation_manager_cleanup_journal_vacuum.stderr"
+  failed_when: false
   when: not ansible_check_mode
 
 - name: Build cleanup report payload
@@ -358,9 +353,10 @@
             'docker_prune_available': workstation_manager_cleanup_docker_command.rc == 0,
             'docker_prune_exit_code':
               workstation_manager_cleanup_docker_prune.rc | default(None),
-            'ucaresystem_available': workstation_manager_cleanup_ucaresystem_command.rc == 0,
-            'ucaresystem_exit_code':
-              workstation_manager_cleanup_ucaresystem_update.rc | default(None),
+            'apt_upgrade_changed':
+              workstation_manager_cleanup_apt_upgrade.changed | default(false),
+            'journal_vacuum_exit_code':
+              workstation_manager_cleanup_journal_vacuum.rc | default(None),
             'apt_autoremove_requested': not ansible_check_mode,
             'removed_browser_profile_directories':
               workstation_manager_cleanup_unmanaged_browser_profile_directories

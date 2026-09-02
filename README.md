@@ -16,14 +16,11 @@ Fresh Ubuntu machine bootstrap requires only:
 The public entrypoint is `workstation.sh`. The user does not need a local checkout
 to install, re-apply, preview, or back up the machine state.
 
-Use it like this:
+Recommended interactive setup command:
 
 ```sh
+WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup-<timestamp>.tar.gz \
 curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup.tar.gz sh -s -- setup
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup --dry-run
 ```
 
 `sh -s --` tells `sh` to read the script from standard input and pass the
@@ -35,15 +32,6 @@ remaining arguments to it.
 When run interactively, the script prompts for required action-specific
 inputs such as the backup output directory.
 
-`setup` and `setup --dry-run` both require Bitwarden-backed SSH/GPG restore. The
-playbook now always runs the SSH and GPG restore roles, so the resolved Ansible
-configuration must define `secrets.bitwarden.ssh_collection_id` and
-`secrets.bitwarden.gpg_collection_id`. `workstation.sh` uses API credentials when
-`BITWARDEN_CLIENT_ID`, `BITWARDEN_CLIENT_SECRET`, and `BITWARDEN_PASSWORD` are
-already provided in the environment, which is the intended CI and end-to-end
-automation path. End users are prompted for the Bitwarden email and vault
-password instead of exporting them in the shell.
-
 The script bootstraps its own dependencies and applies the repository with
 `ansible-pull`. Running it again later is the normal way to re-apply the managed
 workstation state. It uses a hidden checkout internally; that repository clone
@@ -52,9 +40,30 @@ workflow.
 
 The public interface is intentionally small: setup, cleanup, backup, and help.
 
-Setup and cleanup automatically fetch `ansible/private.override.yml` from the
-fixed `neilime/workstation-config` repository with Git and merge it as the
-private override layer.
+### Secrets
+
+`setup`, `setup --dry-run`, `backup`, and `backup --dry-run` all require
+Bitwarden-backed SSH/GPG access.
+
+- Setup always restores SSH and GPG keys from the declared collections.
+- Backup checks the local SSH and GPG key material against those same Bitwarden
+  collections before creating the archive.
+- If backup finds key drift, it asks whether to add, update, or ignore each
+  mismatch.
+- The resolved Ansible configuration must define
+  `secrets.bitwarden.ssh_collection_id` and
+  `secrets.bitwarden.gpg_collection_id`.
+- `workstation.sh` uses API credentials when `BITWARDEN_CLIENT_ID`,
+  `BITWARDEN_CLIENT_SECRET`, and `BITWARDEN_PASSWORD` are already present in the
+  environment, which is the intended CI and end-to-end automation path.
+- End users are prompted for the Bitwarden email and vault password instead of
+  exporting them in the shell.
+
+### Private Overrides
+
+Setup, cleanup, and backup automatically fetch `ansible/private.override.yml`
+from the fixed `neilime/workstation-config` repository with Git and merge it as
+the private override layer.
 
 The Chezmoi source is fixed to `neilime/workstation-config`.
 
@@ -65,34 +74,21 @@ Suggested layout:
 
 ```text
 workstation-config/
-  ansible/private.override.yml
-  dot_*
+   ansible/private.override.yml
+   dot_*
 ```
 
 Keep actual secrets in Bitwarden rather than writing them into that local file.
 
 Because `neilime/workstation-config` is private, the bootstrap machine must be
-able to authenticate to that Git repository. CI and end-to-end automation can
-provide `WORKSTATION_MANAGER_GITHUB_TOKEN` for private GitHub repository access.
+able to authenticate to that Git repository.
 
-If you want to run a backup interactively, the script prompts for the destination.
-CI and other non-interactive runs can still provide only
-`WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=/path/to/output-dir`.
+- Interactive setup bootstraps `gh`, prompts for `gh auth login`, and runs
+  `gh auth setup-git` automatically when private repository access is missing.
+- CI and end-to-end automation can provide `WORKSTATION_MANAGER_GITHUB_TOKEN`
+  for private GitHub repository access.
 
-If you want setup to replay a backup, provide
-`WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup-<timestamp>.tar.gz`.
-
-The backup output includes the main archive, its manifest, and any discovered
-Chrome bookmark exports under `browser-bookmarks/` for selective restore.
-
-For Git-backed project directories under `~/Documents/dev-projects`, backup also
-writes a sidecar `*.git-repositories.json` inventory next to the archive. Setup
-uses that inventory during restore to re-clone repositories from their recorded
-remotes and then reapply the backed-up working tree on top.
-
-If `WORKSTATION_MANAGER_RESTORE_ARCHIVE` is also present during `setup`, the
-setup flow replays that backup archive after the managed workstation baseline is
-applied.
+### Examples
 
 To preview changes without applying them:
 
@@ -124,6 +120,18 @@ Bootstrap dependencies and converge the workstation.
 
 Setup also fetches `ansible/private.override.yml` from the fixed
 `neilime/workstation-config` repository.
+
+On a fresh Ubuntu machine, if access to the private
+`neilime/workstation-config` repository is not already configured, the setup
+bootstrap installs `gh`, prompts for `gh auth login`, runs
+`gh auth setup-git`, and then continues automatically.
+
+If you want setup to replay a backup, provide
+`WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup-<timestamp>.tar.gz`.
+
+If `WORKSTATION_MANAGER_RESTORE_ARCHIVE` is also present during `setup`, the
+setup flow replays that backup archive after the managed workstation baseline is
+applied.
 
 #### Chezmoi
 
@@ -240,8 +248,18 @@ then restores backed-up user data on top.
 
 Create a user-state backup, not a full-system image or bare-metal snapshot.
 
+Interactive backup prompts for the destination, any chezmoi synchronization
+decisions, and any Bitwarden key-sync decisions.
+
+CI and other non-interactive runs can still provide
+`WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=/path/to/output-dir`, but a backup run
+that detects unsynchronized chezmoi state or unsynchronized SSH/GPG keys fails
+instead of guessing how to modify them.
+
 The backup does the following:
 
+- Managed chezmoi state: checks managed chezmoi drift before archiving and asks
+  whether to `re-add`, `apply`, or ignore any drift it finds.
 - Chrome configuration: archives `~/.config/google-chrome` as part of the main backup tarball.
 - Managed browser profiles: archives `~/.local/share/workstation-manager/browser-profiles` from the workstation-managed profile store.
 - Development projects: archives `~/Documents/dev-projects` so user project work is included in the backup, while excluding nested `.git` directories.

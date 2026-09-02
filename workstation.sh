@@ -92,6 +92,15 @@ prompt_for_required_value() {
 	printf '%s' "$prompt_value"
 }
 
+interactive_terminal_flag() {
+	if [ -c /dev/tty ]; then
+		printf '1\n'
+		return
+	fi
+
+	printf '0\n'
+}
+
 usage() {
 	cat <<EOF
 Usage: workstation.sh [setup] [--dry-run] | workstation.sh cleanup [--dry-run] | workstation.sh backup [--dry-run]
@@ -205,6 +214,44 @@ install_git() {
 	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
 }
 
+install_github_cli() {
+	if command -v gh >/dev/null 2>&1; then
+		return
+	fi
+
+	require_sudo
+	info "Installing GitHub CLI for private repository authentication"
+	sudo apt-get update
+	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gh ||
+		fail "Failed to install GitHub CLI. Install gh manually or configure Git access to $PRIVATE_OVERRIDE_REPOSITORY_URL."
+}
+
+can_prompt_for_private_override_auth() {
+	[ -c /dev/tty ] || return 1
+	[ "$1" = "setup" ] || return 1
+	[ -z "$GITHUB_TOKEN_VALUE" ] || return 1
+	return 0
+}
+
+prompt_for_github_cli_authentication() {
+	install_github_cli
+
+	info "Private override access requires GitHub authentication; prompting through GitHub CLI"
+	println_to_tty "Complete the GitHub CLI login flow. If this machine has no browser, use the device code on another device."
+	gh auth login --git-protocol https --skip-ssh-key ||
+		fail "GitHub CLI authentication failed"
+	gh auth setup-git ||
+		fail "GitHub CLI could not configure git credentials"
+}
+
+clone_private_override_repository() {
+	repository_url="$1"
+	destination_dir="$2"
+
+	GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "$PRIVATE_OVERRIDE_REPOSITORY_BRANCH" \
+		"$repository_url" "$destination_dir" >/dev/null 2>&1
+}
+
 resolve_github_repository_path() {
 	repository_url="$1"
 
@@ -282,6 +329,8 @@ install_remote_collection_requirements() {
 }
 
 prepare_private_override_file() {
+	command_name="$1"
+
 	if [ -n "$PRIVATE_OVERRIDE_LOCAL_FILE" ]; then
 		return
 	fi
@@ -292,9 +341,20 @@ prepare_private_override_file() {
 	authenticated_private_override_repository_url="$(resolve_authenticated_repository_url "$PRIVATE_OVERRIDE_REPOSITORY_URL")"
 
 	info "Fetching private override from $PRIVATE_OVERRIDE_REPOSITORY_URL#$PRIVATE_OVERRIDE_REPOSITORY_BRANCH"
-	if ! GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "$PRIVATE_OVERRIDE_REPOSITORY_BRANCH" \
-		"$authenticated_private_override_repository_url" "$private_override_checkout_dir" >/dev/null 2>&1; then
-		fail "Failed to fetch private override repository $PRIVATE_OVERRIDE_REPOSITORY_URL. Ensure Git can authenticate to this private repository or export WORKSTATION_MANAGER_GITHUB_TOKEN in CI."
+	if ! clone_private_override_repository \
+		"$authenticated_private_override_repository_url" \
+		"$private_override_checkout_dir"; then
+		if can_prompt_for_private_override_auth "$command_name"; then
+			prompt_for_github_cli_authentication
+			rm -rf "$private_override_checkout_dir"
+			if ! clone_private_override_repository \
+				"$PRIVATE_OVERRIDE_REPOSITORY_URL" \
+				"$private_override_checkout_dir"; then
+				fail "Failed to fetch private override repository $PRIVATE_OVERRIDE_REPOSITORY_URL even after GitHub CLI authentication."
+			fi
+		else
+			fail "Failed to fetch private override repository $PRIVATE_OVERRIDE_REPOSITORY_URL. Ensure Git can authenticate to this private repository, authenticate with GitHub CLI during setup, or export WORKSTATION_MANAGER_GITHUB_TOKEN in CI."
+		fi
 	fi
 
 	[ -f "$private_override_candidate" ] ||
@@ -304,6 +364,9 @@ prepare_private_override_file() {
 }
 
 prompt_for_bitwarden_credentials_if_needed() {
+	action_name="$1"
+	action_purpose="$2"
+
 	if [ -n "$BITWARDEN_CLIENT_ID_VALUE" ] &&
 		[ -n "$BITWARDEN_CLIENT_SECRET_VALUE" ] &&
 		[ -n "$BITWARDEN_PASSWORD_VALUE" ]; then
@@ -311,9 +374,9 @@ prompt_for_bitwarden_credentials_if_needed() {
 	fi
 
 	[ -c /dev/tty ] ||
-		fail "setup requires interactive Bitwarden login for end users, or BITWARDEN_CLIENT_ID, BITWARDEN_CLIENT_SECRET, and BITWARDEN_PASSWORD in CI"
+		fail "$action_name requires interactive Bitwarden login for end users, or BITWARDEN_CLIENT_ID, BITWARDEN_CLIENT_SECRET, and BITWARDEN_PASSWORD in CI"
 
-	info "Bitwarden-backed secrets restore is required; prompting for credentials"
+	info "$action_purpose requires Bitwarden access; prompting for credentials"
 	PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value "BITWARDEN_EMAIL" "Bitwarden email: " 0)"
 	BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
 	BITWARDEN_CLIENT_ID_VALUE=""
@@ -335,13 +398,14 @@ prompt_for_backup_output_dir_if_needed() {
 
 prepare_action_dependencies() {
 	include_private_override="$1"
+	command_name="$2"
 
 	initialize_target_context
 	require_sudo
 	install_ansible_packages
 	install_git
 	if [ "$include_private_override" = "1" ]; then
-		prepare_private_override_file
+		prepare_private_override_file "$command_name"
 	fi
 	install_remote_collection_requirements
 }
@@ -358,6 +422,8 @@ run_ansible_pull() {
 	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
 		set -- "WORKSTATION_MANAGER_GITHUB_TOKEN=$GITHUB_TOKEN_VALUE" "$@"
 	fi
+
+	set -- "WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
 
 	case "$runner_kind" in
 	root)
@@ -409,8 +475,8 @@ run_ansible_pull() {
 
 run_setup() {
 	dry_run="$1"
-	prepare_action_dependencies 1
-	prompt_for_bitwarden_credentials_if_needed
+	prepare_action_dependencies 1 setup
+	prompt_for_bitwarden_credentials_if_needed "setup" "Bitwarden-backed secrets restore"
 
 	info "Running workstation setup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
 	set --
@@ -439,20 +505,37 @@ run_setup() {
 run_backup() {
 	dry_run="$1"
 	prompt_for_backup_output_dir_if_needed
-	prepare_action_dependencies 0
+	prepare_action_dependencies 1 backup
+	prompt_for_bitwarden_credentials_if_needed "backup" "Backup-time SSH and GPG key synchronization"
 
 	info "Running workstation backup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
+	set --
+
+	if [ -n "$BITWARDEN_CLIENT_ID_VALUE" ] &&
+		[ -n "$BITWARDEN_CLIENT_SECRET_VALUE" ] &&
+		[ -n "$BITWARDEN_PASSWORD_VALUE" ]; then
+		set -- "$@" \
+			BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID_VALUE" \
+			BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET_VALUE" \
+			BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
+	else
+		set -- "$@" \
+			BITWARDEN_EMAIL="$PROMPTED_BITWARDEN_EMAIL" \
+			BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
+	fi
+
 	run_ansible_pull \
 		user \
 		ansible/backup.yml \
 		"$dry_run" \
-		0 \
+		1 \
+		"$@" \
 		WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR="$BACKUP_OUTPUT_DIR"
 }
 
 run_cleanup() {
 	dry_run="$1"
-	prepare_action_dependencies 1
+	prepare_action_dependencies 1 cleanup
 
 	info "Running workstation cleanup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
 	run_ansible_pull root ansible/cleanup.yml "$dry_run" 1

@@ -17,24 +17,16 @@ workstation_manager:
       prerequisites:
         - locales
         - tzdata
+        - python3-debian
       # Ubuntu repository packages and vendor-managed APT packages.
       apt:
         - htop
-        - ucaresystem-core
         - xdg-utils
       # Refresh APT metadata when the cache is older than this many seconds.
       cache_valid_time: 86400
     repositories:
-      # Vendor APT repository declarations include explicit source and keyrings.
-      apt:
-        - name: utappia-stable
-          source: >-
-            deb [signed-by=/usr/share/keyrings/utappia-archive-keyring.asc]
-            https://ppa.launchpadcontent.net/utappia/stable/ubuntu {{ ansible_distribution_release }} main
-          keyring:
-            url: >-
-              https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xCEA1EBAF65B1043E244021E1A726F660EBC8F9FD
-            path: /usr/share/keyrings/utappia-archive-keyring.asc
+      # Vendor APT repository declarations use explicit deb822 source fields.
+      apt: []
     # Extra system directories managed with root ownership by default.
     directories: []
     services:
@@ -64,9 +56,14 @@ workstation_manager:
       # Vendor repository declaration for the primary browser package.
       repository:
         name: google-chrome
-        source: >-
-          deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-key.asc]
-          https://dl.google.com/linux/chrome/deb/ stable main
+        uris:
+          - https://dl.google.com/linux/chrome/deb/
+        suites:
+          - stable
+        components:
+          - main
+        architectures:
+          - amd64
         keyring:
           url: https://dl.google.com/linux/linux_signing_key.pub
           path: /usr/share/keyrings/google-linux-signing-key.asc
@@ -162,6 +159,7 @@ workstation_manager:
         "aqua:wagoodman/dive": latest
       gh_extensions:
         - nektos/gh-act
+        - github/gh-stack
       docker_cli_plugins:
         - command: docker-compose
           tool: aqua:docker/compose

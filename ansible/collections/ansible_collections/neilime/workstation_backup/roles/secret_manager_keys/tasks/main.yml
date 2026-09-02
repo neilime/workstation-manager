@@ -1,0 +1,200 @@
+---
+- name: Read the backup interactivity flag
+  ansible.builtin.set_fact:
+    workstation_backup_secret_manager_interactive: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
+
+- name: Check whether the managed SSH directory exists
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.ssh"
+  register: workstation_backup_secret_manager_ssh_dir_stat
+
+- name: Discover local SSH public keys
+  ansible.builtin.find:
+    paths: "{{ workstation_manager_resolved.user.home }}/.ssh"
+    patterns: "*.pub"
+    file_type: file
+  register: workstation_backup_secret_manager_ssh_public_keys
+  when: workstation_backup_secret_manager_ssh_dir_stat.stat.exists
+
+- name: Initialize local SSH key synchronization state
+  ansible.builtin.set_fact:
+    workstation_backup_local_ssh_keys: []
+
+- name: Collect local SSH keypairs
+  ansible.builtin.include_tasks: collect_ssh_key.yml
+  loop: "{{ workstation_backup_secret_manager_ssh_public_keys.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  no_log: true
+
+- name: Read Bitwarden SSH key collection items
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.bitwarden_collection
+  vars:
+    bitwarden_collection_id: >-
+      {{ workstation_manager_resolved.secrets.bitwarden.ssh_collection_id }}
+    bitwarden_collection_purpose: Backup SSH key synchronization
+
+- name: Read Bitwarden SSH collection metadata
+  ansible.builtin.command:
+    argv:
+      - bw
+      - get
+      - collection
+      - "{{ workstation_manager_resolved.secrets.bitwarden.ssh_collection_id }}"
+      - --session
+      - "{{ bitwarden_collection_session }}"
+  register: workstation_backup_secret_manager_ssh_collection
+  changed_when: false
+
+- name: Build SSH key synchronization actions
+  ansible.builtin.set_fact:
+    workstation_backup_ssh_key_sync_actions: >-
+      {{
+        (
+          workstation_backup_local_ssh_keys
+          | neilime.workstation_backup.backup_ssh_key_sync_actions(
+              bitwarden_collection_items,
+              workstation_manager_resolved.user.home
+            )
+        )
+        | map(
+            'combine',
+            {
+              'collection_id': workstation_manager_resolved.secrets.bitwarden.ssh_collection_id,
+              'organization_id': ((workstation_backup_secret_manager_ssh_collection.stdout | from_json).organizationId | default('', true)),
+              'bitwarden_session': bitwarden_collection_session
+            }
+          )
+        | list
+      }}
+  no_log: true
+
+- name: Ensure GPG tooling is installed for key synchronization
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name:
+      - gpg
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Initialize local GPG key synchronization state
+  ansible.builtin.set_fact:
+    workstation_backup_local_gpg_keys: []
+
+- name: Check whether the managed GPG directory exists
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: workstation_backup_secret_manager_gpg_dir_stat
+
+- name: Read local GPG key fingerprints
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    gpg --batch --with-colons --list-secret-keys --fingerprint |
+      awk -F: '$1 == "sec" { primary = 1; next } $1 == ("fp" "r") && primary { print $10; primary = 0 }'
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: workstation_backup_secret_manager_gpg_fingerprints
+  changed_when: false
+  when: workstation_backup_secret_manager_gpg_dir_stat.stat.exists
+
+- name: Collect local GPG keys
+  ansible.builtin.include_tasks: collect_gpg_key.yml
+  loop: >-
+    {{
+      (workstation_backup_secret_manager_gpg_fingerprints.stdout_lines | default([]))
+      | map('trim')
+      | reject('equalto', '')
+      | list
+    }}
+  loop_control:
+    label: "{{ item }}"
+  no_log: true
+
+- name: Read Bitwarden GPG key collection items
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.bitwarden_collection
+  vars:
+    bitwarden_collection_id: >-
+      {{ workstation_manager_resolved.secrets.bitwarden.gpg_collection_id }}
+    bitwarden_collection_purpose: Backup GPG key synchronization
+
+- name: Read Bitwarden GPG collection metadata
+  ansible.builtin.command:
+    argv:
+      - bw
+      - get
+      - collection
+      - "{{ workstation_manager_resolved.secrets.bitwarden.gpg_collection_id }}"
+      - --session
+      - "{{ bitwarden_collection_session }}"
+  register: workstation_backup_secret_manager_gpg_collection
+  changed_when: false
+
+- name: Build GPG key synchronization actions
+  ansible.builtin.set_fact:
+    workstation_backup_gpg_key_sync_actions: >-
+      {{
+        (
+          workstation_backup_local_gpg_keys
+          | neilime.workstation_backup.backup_gpg_key_sync_actions(bitwarden_collection_items)
+        )
+        | map(
+            'combine',
+            {
+              'collection_id': workstation_manager_resolved.secrets.bitwarden.gpg_collection_id,
+              'organization_id': ((workstation_backup_secret_manager_gpg_collection.stdout | from_json).organizationId | default('', true)),
+              'bitwarden_session': bitwarden_collection_session
+            }
+          )
+        | list
+      }}
+  no_log: true
+
+- name: Combine SSH and GPG synchronization actions
+  ansible.builtin.set_fact:
+    workstation_backup_secret_manager_actions: >-
+      {{
+        (workstation_backup_ssh_key_sync_actions | default([]))
+        + (workstation_backup_gpg_key_sync_actions | default([]))
+      }}
+  no_log: true
+
+- name: Report synchronized key state during backup dry runs
+  ansible.builtin.debug:
+    msg: >-
+      Would {{ item.action }} {{ item.kind }} key {{ item.name }} in Bitwarden
+      because it is {{ 'missing' if item.reason == 'missing_in_secret_manager' else 'out of sync' }}.
+  loop: "{{ workstation_backup_secret_manager_actions }}"
+  loop_control:
+    label: "{{ item.kind }} {{ item.name }}"
+  when: workstation_backup_dry_run
+
+- name: Fail when backup needs Bitwarden key decisions in non-interactive mode
+  ansible.builtin.fail:
+    msg: >-
+      Backup found SSH or GPG keys that are not synchronized with Bitwarden, but
+      this run is non-interactive. Re-run with an interactive terminal to choose
+      add/update/ignore actions.
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_secret_manager_actions | length > 0
+    - not workstation_backup_secret_manager_interactive
+
+- name: Prompt and apply Bitwarden key synchronization actions
+  ansible.builtin.include_tasks: prompt_and_apply_action.yml
+  loop: "{{ workstation_backup_secret_manager_actions }}"
+  loop_control:
+    label: "{{ item.action }} {{ item.kind }} {{ item.name }}"
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_secret_manager_actions | length > 0
+    - workstation_backup_secret_manager_interactive
+  no_log: true

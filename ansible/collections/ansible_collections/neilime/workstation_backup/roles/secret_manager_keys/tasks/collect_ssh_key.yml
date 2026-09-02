@@ -1,0 +1,35 @@
+---
+- name: Check for the matching SSH private key
+  ansible.builtin.stat:
+    path: "{{ item.path | regex_replace('\\.pub$', '') }}"
+  register: workstation_backup_secret_manager_private_key_stat
+
+- name: Read the SSH private key content
+  ansible.builtin.slurp:
+    src: "{{ item.path | regex_replace('\\.pub$', '') }}"
+  register: workstation_backup_secret_manager_private_key_content
+  when: workstation_backup_secret_manager_private_key_stat.stat.exists
+  no_log: true
+
+- name: Read the SSH public key content
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  register: workstation_backup_secret_manager_public_key_content
+  when: workstation_backup_secret_manager_private_key_stat.stat.exists
+  no_log: true
+
+- name: Record the local SSH keypair for synchronization
+  ansible.builtin.set_fact:
+    workstation_backup_local_ssh_keys: >-
+      {{
+        (workstation_backup_local_ssh_keys | default([]))
+        + [
+            {
+              'name': item.path | basename | regex_replace('\\.pub$', ''),
+              'private_key': workstation_backup_secret_manager_private_key_content.content | b64decode,
+              'public_key': workstation_backup_secret_manager_public_key_content.content | b64decode
+            }
+          ]
+      }}
+  when: workstation_backup_secret_manager_private_key_stat.stat.exists
+  no_log: true
