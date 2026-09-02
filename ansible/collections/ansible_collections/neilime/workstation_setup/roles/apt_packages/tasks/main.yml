@@ -4,13 +4,15 @@
   ansible.builtin.assert:
     that:
       - item.name is string
-      - item.source is string
+      - item.uris | length > 0
+      - item.suites | length > 0
+      - item.components | length > 0
       - item.keyring is mapping
       - item.keyring.url is string
       - item.keyring.path is string
     fail_msg: >-
       Declared APT repository {{ item | to_nice_json }} must include name,
-      source, and keyring.url/keyring.path fields.
+      uris, suites, components, and keyring.url/keyring.path fields.
   loop: "{{ workstation_manager_resolved.system.repositories.apt }}"
   loop_control:
     label: "{{ item.name | default('unnamed-repository') }}"
@@ -44,11 +46,14 @@
 
 - name: Configure declared vendor APT repositories
   become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.apt_repository:
-    repo: "{{ item.source }}"
-    filename: "{{ item.filename | default(item.name) }}"
+  ansible.builtin.deb822_repository:
+    name: "{{ item.filename | default(item.name) }}"
+    uris: "{{ item.uris }}"
+    suites: "{{ item.suites }}"
+    components: "{{ item.components }}"
+    architectures: "{{ item.architectures | default(omit) }}"
+    signed_by: "{{ item.keyring.path }}"
     state: "{{ item.state | default('present') }}"
-    update_cache: false
   loop: "{{ workstation_manager_resolved.system.repositories.apt }}"
   loop_control:
     label: "{{ item.name }}"

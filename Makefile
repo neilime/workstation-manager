@@ -145,11 +145,10 @@ define check_ansible_command
 	$(install_collection_requirements_command); \
 	export ANSIBLE_COLLECTIONS_PATH="/workspace/ansible/vendor-collections:/workspace/ansible/collections"; \
 	if [ -n "$(REPORTS_DIR)" ]; then \
-		/workspace/ci/run-with-junit.sh \
-			"/workspace/$(REPORTS_DIR)/tests/check-ansible.junit.xml" \
-			"ansible" \
-			"syntax-check" \
-			bash -lc "for playbook in $(ANSIBLE_PLAYBOOK_FILES); do ansible-playbook --syntax-check -i ansible/inventory.yml \"\$$playbook\" || exit \$$?; done"; \
+		python3 /workspace/ci/ansible_syntax_report.py \
+			--inventory ansible/inventory.yml \
+			--report-file "/workspace/$(REPORTS_DIR)/checks/ansible-syntax.sarif" \
+			$(ANSIBLE_PLAYBOOK_FILES); \
 	else \
 		for playbook in $(ANSIBLE_PLAYBOOK_FILES); do ansible-playbook --syntax-check -i ansible/inventory.yml "$$playbook"; done; \
 	fi

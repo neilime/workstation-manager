@@ -1,0 +1,111 @@
+---
+- name: Prompt for the Bitwarden key synchronization action
+  ansible.builtin.pause:
+    prompt: >-
+      {{ item.kind | upper }} key {{ item.name }} is {{ 'missing from' if item.action == 'add' else 'different in' }}
+      Bitwarden. Choose [{{ item.action }}/ignore]:
+  register: workstation_backup_secret_manager_user_choice
+  until: workstation_backup_secret_manager_user_choice.user_input | trim | lower in [item.action, 'ignore']
+  retries: 3
+  delay: 0
+
+- name: Skip the Bitwarden key synchronization change on user request
+  ansible.builtin.debug:
+    msg: "Ignoring {{ item.kind }} key {{ item.name }} during this backup run"
+  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == 'ignore'
+
+- name: Read the current Bitwarden item before updating it
+  ansible.builtin.command:
+    argv:
+      - bw
+      - get
+      - item
+      - "{{ item.bitwarden_item_id }}"
+      - --session
+      - "{{ item.bitwarden_session }}"
+  register: workstation_backup_secret_manager_existing_item
+  changed_when: false
+  when:
+    - workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action
+    - item.action == 'update'
+  no_log: true
+
+- name: Build the Bitwarden item payload for synchronization
+  ansible.builtin.set_fact:
+    workstation_backup_secret_manager_item_payload: >-
+      {{
+        (workstation_backup_secret_manager_existing_item.stdout | from_json)
+        | combine({'name': item.name, 'fields': item.fields}, recursive=True, list_merge='replace')
+      }}
+  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action and item.action == 'update'
+  no_log: true
+
+- name: Build the Bitwarden item payload for a new secret-manager item
+  ansible.builtin.set_fact:
+    workstation_backup_secret_manager_item_payload: >-
+      {{
+        {
+          'type': 2,
+          'secureNote': {'type': 0},
+          'notes': '',
+          'collectionIds': [item.collection_id],
+          'name': item.name,
+          'fields': item.fields
+        }
+        | combine(
+            {'organizationId': item.organization_id},
+            recursive=True,
+            list_merge='replace'
+          )
+          if item.organization_id | length > 0
+          else {
+            'type': 2,
+            'secureNote': {'type': 0},
+            'notes': '',
+            'collectionIds': [item.collection_id],
+            'name': item.name,
+            'fields': item.fields
+          }
+      }}
+  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action and item.action == 'add'
+  no_log: true
+
+- name: Encode the Bitwarden item payload
+  ansible.builtin.command:
+    argv:
+      - bw
+      - encode
+  stdin: "{{ workstation_backup_secret_manager_item_payload | to_json }}"
+  register: workstation_backup_secret_manager_encoded_payload
+  changed_when: false
+  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action
+  no_log: true
+
+- name: Create the missing Bitwarden key item
+  ansible.builtin.command:
+    argv:
+      - bw
+      - create
+      - item
+      - "{{ workstation_backup_secret_manager_encoded_payload.stdout }}"
+      - --session
+      - "{{ item.bitwarden_session }}"
+  when:
+    - workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action
+    - item.action == 'add'
+  no_log: true
+
+- name: Update the existing Bitwarden key item
+  ansible.builtin.command:
+    argv:
+      - bw
+      - edit
+      - item
+      - "{{ item.bitwarden_item_id }}"
+      - "{{ workstation_backup_secret_manager_encoded_payload.stdout }}"
+      - --session
+      - "{{ item.bitwarden_session }}"
+  when:
+    - workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action
+    - item.action == 'update'
+  no_log: true

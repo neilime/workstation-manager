@@ -1,0 +1,69 @@
+---
+- name: Export the local GPG secret key
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --armor
+      - --export-secret-keys
+      - "{{ item }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: workstation_backup_secret_manager_gpg_private_key
+  changed_when: false
+  no_log: true
+
+- name: Export the local GPG public key
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --armor
+      - --export
+      - "{{ item }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: workstation_backup_secret_manager_gpg_public_key
+  changed_when: false
+  no_log: true
+
+- name: Export the local GPG ownertrust entry
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    gpg --export-ownertrust "{{ item }}" | awk -F: '$1 == "{{ item }}" { print; exit }'
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
+  register: workstation_backup_secret_manager_gpg_ownertrust
+  changed_when: false
+  no_log: true
+
+- name: Record the local GPG key for synchronization
+  ansible.builtin.set_fact:
+    workstation_backup_local_gpg_keys: >-
+      {{
+        (workstation_backup_local_gpg_keys | default([]))
+        + [
+            {
+              'fingerprint': item,
+              'private_key': workstation_backup_secret_manager_gpg_private_key.stdout,
+              'public_key': workstation_backup_secret_manager_gpg_public_key.stdout,
+              'ownertrust': (
+                workstation_backup_secret_manager_gpg_ownertrust.stdout | trim
+                if workstation_backup_secret_manager_gpg_ownertrust.stdout | trim | length > 0
+                else none
+              )
+            }
+          ]
+      }}
+  no_log: true

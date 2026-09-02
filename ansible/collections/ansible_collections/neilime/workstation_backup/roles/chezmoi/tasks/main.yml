@@ -1,0 +1,217 @@
+---
+- name: Resolve backup chezmoi settings
+  ansible.builtin.set_fact:
+    workstation_backup_chezmoi_enabled: >-
+      {{ workstation_manager_resolved.home_environment.chezmoi.source | length > 0 }}
+    workstation_backup_chezmoi_config_path: >-
+      {{
+        workstation_manager_resolved.home_environment.chezmoi.config_path
+        if workstation_manager_resolved.home_environment.chezmoi.config_path.startswith('/')
+        else (
+          workstation_manager_resolved.user.home ~ '/'
+          ~ workstation_manager_resolved.home_environment.chezmoi.config_path[2:]
+          if workstation_manager_resolved.home_environment.chezmoi.config_path.startswith('~/')
+          else workstation_manager_resolved.user.home ~ '/'
+          ~ workstation_manager_resolved.home_environment.chezmoi.config_path
+        )
+      }}
+    workstation_backup_chezmoi_source_dir: >-
+      {{ workstation_manager_resolved.user.home ~ '/.local/share/chezmoi' }}
+    workstation_backup_chezmoi_interactive: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
+
+- name: Check whether the managed chezmoi config file exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_backup_chezmoi_config_path }}"
+  register: workstation_backup_chezmoi_config_stat
+  when: workstation_backup_chezmoi_enabled
+
+- name: Check whether the managed chezmoi source directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_backup_chezmoi_source_dir }}"
+  register: workstation_backup_chezmoi_source_dir_stat
+  when: workstation_backup_chezmoi_enabled
+
+- name: Resolve whether managed chezmoi state is bootstrapped
+  ansible.builtin.set_fact:
+    workstation_backup_chezmoi_bootstrapped: >-
+      {{
+        workstation_backup_chezmoi_enabled
+        and workstation_backup_chezmoi_config_stat.stat.exists
+        and workstation_backup_chezmoi_source_dir_stat.stat.exists
+        and workstation_backup_chezmoi_source_dir_stat.stat.isdir
+      }}
+  when: workstation_backup_chezmoi_enabled
+
+- name: Assert that chezmoi bootstrap state is not partial
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_config_stat.stat.exists == workstation_backup_chezmoi_source_dir_stat.stat.exists
+    fail_msg: >-
+      Backup found partial chezmoi bootstrap state. Expected both
+      {{ workstation_backup_chezmoi_config_path }} and
+      {{ workstation_backup_chezmoi_source_dir }} to either exist together or
+      both be absent.
+  when: workstation_backup_chezmoi_enabled
+
+- name: Check whether chezmoi is installed for backup preflight
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - --version
+  register: workstation_backup_chezmoi_version
+  changed_when: false
+  failed_when: false
+  when: workstation_backup_chezmoi_bootstrapped | default(false)
+
+- name: Assert that chezmoi is available for backup preflight
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_version.rc == 0
+    fail_msg: >-
+      Backup chezmoi synchronization requires {{ workstation_manager_resolved.home_environment.chezmoi.bin_path }},
+      but it is not available on this machine.
+  when: workstation_backup_chezmoi_bootstrapped | default(false)
+
+- name: Assert that the managed chezmoi source directory exists
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_source_dir_stat.stat.exists
+      - workstation_backup_chezmoi_source_dir_stat.stat.isdir
+    fail_msg: >-
+      Backup chezmoi synchronization requires the managed source directory at
+      {{ workstation_backup_chezmoi_source_dir }}, but it does not exist.
+  when: workstation_backup_chezmoi_bootstrapped | default(false)
+
+- name: Check whether chezmoi status has drift before backup
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - status
+      - --path-style
+      - absolute
+  register: workstation_backup_chezmoi_status
+  changed_when: "{{ workstation_backup_chezmoi_status.stdout | trim | length > 0 }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  check_mode: false
+  when: workstation_backup_chezmoi_bootstrapped | default(false)
+
+- name: Report chezmoi drift during backup dry runs
+  ansible.builtin.debug:
+    msg: >-
+      Backup would require chezmoi synchronization before archiving managed home
+      state. Current drift:
+      {{ '\n' ~ workstation_backup_chezmoi_status.stdout if workstation_backup_chezmoi_status.stdout | trim | length > 0 else '' }}
+  when:
+    - workstation_backup_chezmoi_bootstrapped | default(false)
+    - workstation_backup_dry_run
+    - workstation_backup_chezmoi_status is changed
+
+- name: Fail when chezmoi drift requires an interactive decision
+  ansible.builtin.fail:
+    msg: >-
+      Backup found managed chezmoi drift, but this run is non-interactive.
+      Re-run with an interactive terminal to choose re-add, apply, or ignore.
+  when:
+    - workstation_backup_chezmoi_bootstrapped | default(false)
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status is changed
+    - not workstation_backup_chezmoi_interactive
+
+- name: Prompt for the chezmoi synchronization action
+  ansible.builtin.pause:
+    prompt: >-
+      Managed chezmoi files are out of sync before backup.
+      Choose [re-add/apply/ignore].
+      Current drift:
+      {{ '\n' ~ workstation_backup_chezmoi_status.stdout }}
+  register: workstation_backup_chezmoi_user_choice
+  until: workstation_backup_chezmoi_user_choice.user_input | trim | lower in ['re-add', 'apply', 'ignore']
+  retries: 3
+  delay: 0
+  when:
+    - workstation_backup_chezmoi_bootstrapped | default(false)
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_interactive
+
+- name: Re-add modified managed files into the chezmoi source state
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - re-add
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  changed_when: true
+  when:
+    - workstation_backup_chezmoi_bootstrapped | default(false)
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_interactive
+    - workstation_backup_chezmoi_user_choice.user_input | trim | lower == 're-add'
+
+- name: Apply chezmoi source state to the managed target files
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - apply
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  changed_when: true
+  when:
+    - workstation_backup_chezmoi_bootstrapped | default(false)
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_interactive
+    - workstation_backup_chezmoi_user_choice.user_input | trim | lower == 'apply'
+
+- name: Re-check chezmoi status after synchronization action
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - status
+      - --path-style
+      - absolute
+  register: workstation_backup_chezmoi_status_after_sync
+  changed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  when:
+    - workstation_backup_chezmoi_bootstrapped | default(false)
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_interactive
+    - workstation_backup_chezmoi_user_choice.user_input | trim | lower in ['re-add', 'apply']
+
+- name: Assert that chezmoi is synchronized after the chosen action
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_status_after_sync.stdout | trim | length == 0
+    fail_msg: >-
+      Backup could not fully synchronize managed chezmoi files. Remaining drift:
+      {{ workstation_backup_chezmoi_status_after_sync.stdout }}
+  when:
+    - workstation_backup_chezmoi_bootstrapped | default(false)
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_interactive
+    - workstation_backup_chezmoi_user_choice.user_input | trim | lower in ['re-add', 'apply']

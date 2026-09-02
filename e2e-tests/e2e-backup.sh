@@ -7,6 +7,10 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/e2e-common.sh"
 
 resolve_e2e_workstation_context "${1:-workstation-manager-v1}"
+require_e2e_env_vars \
+	BITWARDEN_CLIENT_ID \
+	BITWARDEN_CLIENT_SECRET \
+	BITWARDEN_PASSWORD
 
 backup_root="/tmp/workstation-manager-e2e-backup"
 target_user_home="$(resolve_e2e_target_user_home)"
@@ -78,4 +82,7 @@ EOF
 
 run_e2e_workstation_action \
 	backup \
+	"BITWARDEN_CLIENT_ID=${BITWARDEN_CLIENT_ID}" \
+	"BITWARDEN_CLIENT_SECRET=${BITWARDEN_CLIENT_SECRET}" \
+	"BITWARDEN_PASSWORD=${BITWARDEN_PASSWORD}" \
 	"WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=$backup_root"

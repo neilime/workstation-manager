@@ -4,12 +4,14 @@
   ansible.builtin.assert:
     that:
       - workstation_manager_resolved.desktop.browser.repository.name is string
-      - workstation_manager_resolved.desktop.browser.repository.source is string
+      - workstation_manager_resolved.desktop.browser.repository.uris | length > 0
+      - workstation_manager_resolved.desktop.browser.repository.suites | length > 0
+      - workstation_manager_resolved.desktop.browser.repository.components | length > 0
       - workstation_manager_resolved.desktop.browser.repository.keyring is mapping
       - workstation_manager_resolved.desktop.browser.repository.keyring.url is string
       - workstation_manager_resolved.desktop.browser.repository.keyring.path is string
     fail_msg: >-
-      Declared primary browser repository must include name, source, and
+      Declared primary browser repository must include name, uris, suites, components, and
       keyring.url/keyring.path fields.
 
 - name: Ensure primary browser APT keyring directory exists
@@ -33,15 +35,19 @@
 
 - name: Configure primary browser vendor APT repository
   become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.apt_repository:
-    repo: "{{ workstation_manager_resolved.desktop.browser.repository.source }}"
-    filename: >-
+  ansible.builtin.deb822_repository:
+    name: >-
       {{
         workstation_manager_resolved.desktop.browser.repository.filename
         | default(workstation_manager_resolved.desktop.browser.repository.name)
       }}
+    uris: "{{ workstation_manager_resolved.desktop.browser.repository.uris }}"
+    suites: "{{ workstation_manager_resolved.desktop.browser.repository.suites }}"
+    components: "{{ workstation_manager_resolved.desktop.browser.repository.components }}"
+    architectures: >-
+      {{ workstation_manager_resolved.desktop.browser.repository.architectures | default(omit) }}
+    signed_by: "{{ workstation_manager_resolved.desktop.browser.repository.keyring.path }}"
     state: "{{ workstation_manager_resolved.desktop.browser.repository.state | default('present') }}"
-    update_cache: true
 
 - name: Install primary browser package
   become: "{{ workstation_manager_use_become }}"
@@ -49,7 +55,7 @@
     name: "{{ workstation_manager_resolved.desktop.browser.package }}"
     state: present
     update_cache: true
-    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+    cache_valid_time: 0
 
 - name: Ensure target user XDG config directory exists
   become: "{{ workstation_manager_use_become }}"
