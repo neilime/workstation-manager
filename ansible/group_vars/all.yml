@@ -118,6 +118,7 @@ workstation_manager:
       - zsh
       - make
       - jq
+      - bat
       - fonts-firacode
       - build-essential
       - autoconf

@@ -1,0 +1,122 @@
+---
+- name: Resolve VS Code settings sync state
+  ansible.builtin.set_fact:
+    workstation_manager_vscode_settings_sync_use_become_user: >-
+      {{ workstation_manager_use_become and ansible_user_id != workstation_manager_resolved.user.name }}
+    workstation_manager_vscode_settings_sync_state_dir: >-
+      {{ workstation_manager_resolved.user.home | neilime.workstation_setup.vscode_settings_sync_state_dir }}
+    workstation_manager_vscode_settings_sync_interactive: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
+  changed_when: false
+
+- name: Check whether VS Code sync state already exists
+  become: "{{ workstation_manager_vscode_settings_sync_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_vscode_settings_sync_state_dir }}"
+  register: workstation_manager_vscode_settings_sync_state_stat
+  changed_when: false
+
+- name: Discover the active GNOME session environment for VS Code sync
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+
+    target_user_id="$(id -u "$TARGET_USER")"
+    gnome_shell_pid="$(pgrep --euid "$target_user_id" --oldest --exact gnome-shell || true)"
+
+    if [[ -z "$gnome_shell_pid" ]]; then
+      exit 3
+    fi
+
+    tr '\0' '\n' <"/proc/${gnome_shell_pid}/environ" |
+      awk -F= '/^(DISPLAY|WAYLAND_DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XAUTHORITY)=/ { print }'
+  args:
+    executable: /bin/bash
+  environment:
+    TARGET_USER: "{{ workstation_manager_resolved.user.name }}"
+  register: workstation_manager_vscode_settings_sync_session_environment
+  changed_when: false
+  failed_when: false
+  when:
+    - workstation_manager_resolved.development.editor_packages | neilime.workstation_setup.has_vscode_editor_package
+    - not workstation_manager_vscode_settings_sync_state_stat.stat.exists
+    - workstation_manager_vscode_settings_sync_interactive
+    - not ansible_check_mode
+
+- name: Decide whether to request VS Code settings sync
+  ansible.builtin.set_fact:
+    workstation_manager_vscode_should_request_settings_sync: >-
+      {{
+        workstation_manager_resolved.development.editor_packages |
+        neilime.workstation_setup.should_request_vscode_settings_sync(
+          workstation_manager_vscode_settings_sync_state_stat.stat.exists,
+          workstation_manager_vscode_settings_sync_session_environment.rc == 0,
+          workstation_manager_vscode_settings_sync_interactive,
+          ansible_check_mode
+        )
+      }}
+  changed_when: false
+
+- name: Request VS Code settings sync through the supported CLI flow
+  become: "{{ workstation_manager_vscode_settings_sync_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+
+    while IFS= read -r env_line; do
+      export "$env_line"
+    done <<'EOF'
+    {{ workstation_manager_vscode_settings_sync_session_environment.stdout }}
+    EOF
+
+    if command -v code >/dev/null 2>&1; then
+      exec code --sync on
+    fi
+
+    if command -v flatpak >/dev/null 2>&1 && flatpak info com.visualstudio.code >/dev/null 2>&1; then
+      exec flatpak run com.visualstudio.code --sync on
+    fi
+
+    exit 3
+  args:
+    executable: /bin/bash
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  register: workstation_manager_vscode_settings_sync_command
+  changed_when: workstation_manager_vscode_settings_sync_command.rc == 0
+  failed_when: false
+  when: workstation_manager_vscode_should_request_settings_sync
+
+- name: Report VS Code settings sync launch result
+  ansible.builtin.debug:
+    msg:
+      - VS Code Settings Sync launch was requested through the supported CLI flow.
+      - Complete sign-in and choose which data to sync inside VS Code.
+  when:
+    - workstation_manager_vscode_should_request_settings_sync
+    - workstation_manager_vscode_settings_sync_command.rc == 0
+
+- name: Decide whether to show VS Code settings sync guidance
+  ansible.builtin.set_fact:
+    workstation_manager_vscode_should_remind_settings_sync: >-
+      {{
+        workstation_manager_resolved.development.editor_packages |
+        neilime.workstation_setup.should_remind_vscode_settings_sync(
+          workstation_manager_vscode_settings_sync_state_stat.stat.exists,
+          workstation_manager_vscode_settings_sync_interactive,
+          ansible_check_mode
+        )
+      }}
+  changed_when: false
+
+- name: Show fallback VS Code settings sync guidance
+  ansible.builtin.debug:
+    msg:
+      - VS Code Settings Sync is not enabled yet for this user.
+      - Open VS Code and choose Manage > Backup and Sync Settings... or use the Accounts menu.
+      - Sign in with a Microsoft or GitHub account, then choose which data to sync.
+  when:
+    - workstation_manager_vscode_should_remind_settings_sync
+    - not (workstation_manager_vscode_should_request_settings_sync | default(false) and workstation_manager_vscode_settings_sync_command.rc == 0)

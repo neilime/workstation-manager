@@ -39,6 +39,10 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.home_environment
 
+- name: Request VS Code settings sync flow
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.editor_settings_sync
+
 - name: Restore workstation backup archive
   ansible.builtin.import_role:
     name: neilime.workstation_restore.state

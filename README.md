@@ -74,8 +74,10 @@ Suggested layout:
 
 ```text
 workstation-config/
-   ansible/private.override.yml
-   dot_*
+  .chezmoiroot
+  ansible/private.override.yml
+  home/
+    dot_*
 ```
 
 Keep actual secrets in Bitwarden rather than writing them into that local file.
@@ -192,6 +194,16 @@ The workstation now manages ephemeral developer toolchains with `mise`.
 
 See `ansible/vars/private.override.example.yml` for a private override example
 covering non-secret workstation data.
+
+### Editor
+
+Visual Studio Code user settings, extensions, snippets, tasks, UI state, and profiles are
+expected to come from Visual Studio Code Settings Sync.
+
+If Visual Studio Code is installed by workstation-manager and no prior local Visual Studio Code sync
+state exists, setup requests the supported `code --sync on` flow on interactive
+GNOME sessions. You may still need to complete sign-in and choose which data to
+sync inside Visual Studio Code, following the official workflow.
 
 ### Development Projects Layout
 
