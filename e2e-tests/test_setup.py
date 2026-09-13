@@ -1,5 +1,25 @@
 """End-to-end checks for the setup bootstrap tests."""
 
+import json
+
+
+def test_setup_installs_and_configures_orca(host) -> None:
+    """Orca should be installed with a launcher and usable initial settings."""
+
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    data_file = host.file(f"{user_home}/.config/orca/orca-data.json")
+
+    assert host.package("orca-ide").is_installed
+    assert host.run("command -v orca-ide").succeeded
+    assert host.file("/usr/share/applications/orca-ide.desktop").exists
+    assert data_file.is_file
+    assert data_file.mode == 0o600
+    settings = json.loads(data_file.content_string)["settings"]
+    assert settings["theme"] == "system"
+    assert settings["terminalFontFamily"] == "Fira Code"
+    assert settings["workspaceDir"] == f"{user_home}/Documents/dev-projects/workspaces/orca"
+    assert host.file(settings["workspaceDir"]).is_directory
+
 
 def test_setup_bootstrap_tools_are_available(host) -> None:
     """The bootstrapped machine should have the setup tools available."""
