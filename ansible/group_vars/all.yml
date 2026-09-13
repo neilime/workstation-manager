@@ -106,6 +106,7 @@ workstation_manager:
         - org.gnome.Nautilus.desktop
         - org.gnome.Software.desktop
         - com.visualstudio.code.desktop
+        - orca-ide.desktop
         - google-chrome.desktop
         - com.slack.Slack.desktop
         - com.spotify.Client.desktop
@@ -146,6 +147,13 @@ workstation_manager:
     # Optional GUI editor packages, usually delivered by Flatpak.
     editor_packages:
       - com.visualstudio.code
+    orca:
+      # Setup installs the latest stable official Orca IDE Debian package.
+      # Seed settings only on first setup; Orca owns subsequent changes.
+      # Worktrees are stored in <projects_directory>/workspaces/orca.
+      settings:
+        theme: system
+        terminalFontFamily: Fira Code
     mise:
       # Common workstation-wide tool defaults. Child folders can override these
       # with their own restored mise.toml files.

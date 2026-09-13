@@ -1,0 +1,135 @@
+---
+- name: Resolve Orca package architecture and initial settings
+  ansible.builtin.set_fact:
+    workstation_manager_orca_architecture: >-
+      {{ {'x86_64': 'amd64', 'amd64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}.get(ansible_architecture, '') }}
+    workstation_manager_orca_settings: >-
+      {{
+        workstation_manager.development.orca.settings
+        | combine({'workspaceDir': workstation_manager_resolved.user.projects_directory ~ '/workspaces/orca'})
+      }}
+    workstation_manager_orca_data_path: "{{ workstation_manager_resolved.user.home }}/.config/orca/orca-data.json"
+
+- name: Validate Orca architecture and workspace settings
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_orca_architecture | length > 0
+      - workstation_manager_orca_settings.workspaceDir is string
+      - workstation_manager_orca_settings.workspaceDir is match('^/')
+    fail_msg: >-
+      Orca requires an amd64 or arm64 Linux target and an absolute projects directory.
+
+- name: Fetch the latest stable Orca release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/stablyai/orca/releases/latest
+    headers:
+      Accept: application/vnd.github+json
+    return_content: true
+    timeout: 30
+  register: workstation_manager_orca_release
+  changed_when: false
+  # Read release metadata during previews without downloading or installing packages.
+  check_mode: false
+
+- name: Resolve the latest Orca version
+  ansible.builtin.set_fact:
+    workstation_manager_orca_version: "{{ workstation_manager_orca_release.json.tag_name | regex_replace('^v', '') }}"
+
+- name: Select the Orca Debian release asset for this architecture
+  ansible.builtin.set_fact:
+    workstation_manager_orca_asset: >-
+      {{
+        workstation_manager_orca_release.json.assets
+        | selectattr('name', 'equalto',
+            'orca-ide_' ~ workstation_manager_orca_version ~ '_' ~ workstation_manager_orca_architecture ~ '.deb')
+        | first
+        | default({})
+      }}
+
+- name: Validate the Orca release asset and checksum
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_orca_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - workstation_manager_orca_asset.browser_download_url is defined
+      - workstation_manager_orca_asset.digest | default('', true) is match('^sha256:[0-9a-f]{64}$')
+    fail_msg: >-
+      The latest stable Orca release {{ workstation_manager_orca_release.json.tag_name }}
+      must provide a Debian package and SHA-256 digest for {{ workstation_manager_orca_architecture }}.
+
+- name: Read installed Debian packages
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Resolve Orca package installation
+  ansible.builtin.set_fact:
+    workstation_manager_orca_package_path: >-
+      /var/cache/workstation-manager/{{ workstation_manager_orca_asset.name }}
+    workstation_manager_orca_install_required: >-
+      {{
+        'orca-ide' not in ansible_facts.packages
+        or ansible_facts.packages['orca-ide'][0].version
+        is version(workstation_manager_orca_version, '<')
+      }}
+
+- name: Preview Orca package installation
+  ansible.builtin.debug:
+    msg: "Would install Orca {{ workstation_manager_orca_version }} from the official Debian package."
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - workstation_manager_orca_install_required
+
+- name: Install the official Orca Debian package
+  when:
+    - not ansible_check_mode
+    - workstation_manager_orca_install_required
+  block:
+    - name: Ensure the package cache directory exists
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.file:
+        path: /var/cache/workstation-manager
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download the verified Orca Debian package
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.get_url:
+        url: "{{ workstation_manager_orca_asset.browser_download_url }}"
+        dest: "{{ workstation_manager_orca_package_path }}"
+        checksum: "{{ workstation_manager_orca_asset.digest }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install Orca and its runtime dependencies
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.apt:
+        deb: "{{ workstation_manager_orca_package_path }}"
+        state: present
+        update_cache: true
+        cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Ensure Orca user directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+  loop:
+    - "{{ workstation_manager_orca_data_path | dirname }}"
+    - "{{ workstation_manager_orca_settings.workspaceDir }}"
+
+- name: Seed Orca settings without replacing existing application state
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: "{{ workstation_manager_orca_data_path }}"
+    content: "{{ {'settings': workstation_manager_orca_settings} | to_nice_json }}\n"
+    force: false
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0600"

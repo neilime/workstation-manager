@@ -88,6 +88,7 @@ def test_desktop_favorites_preference(host) -> None:
         "org.gnome.Nautilus.desktop",
         "org.gnome.Software.desktop",
         "com.visualstudio.code.desktop",
+        "orca-ide.desktop",
         default_browser_app_id,
         "com.slack.Slack.desktop",
         "com.spotify.Client.desktop",

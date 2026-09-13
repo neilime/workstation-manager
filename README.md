@@ -205,6 +205,20 @@ state exists, setup requests the supported `code --sync on` flow on interactive
 GNOME sessions. You may still need to complete sign-in and choose which data to
 sync inside Visual Studio Code, following the official workflow.
 
+### Orca
+
+Setup installs [Orca](https://www.onorca.dev/) from its latest stable Debian release
+for amd64 or arm64, verifies the release asset's SHA-256 checksum, and adds it to
+the default GNOME favorites. The package provides the `orca-ide` command and
+desktop launcher.
+Each setup run queries the official GitHub release metadata and installs or
+upgrades Orca when needed, keeping newer installed versions.
+
+On first setup, `~/.config/orca/orca-data.json` is seeded with the system theme,
+Fira Code terminal font, and a worktree directory at
+`<projects_directory>/workspaces/orca`. Existing Orca settings and session data
+are preserved. Launch Orca to add repositories and sign in to your coding agents.
+
 ### Development Projects Layout
 
 `~/Documents/dev-projects` is the expected home for user-maintained project data.

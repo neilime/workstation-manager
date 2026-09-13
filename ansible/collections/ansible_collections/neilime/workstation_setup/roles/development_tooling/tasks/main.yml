@@ -426,3 +426,7 @@
   loop_control:
     label: "{{ item.key }}"
   when: workstation_manager_resolved.development.settings.sysctl | length > 0
+
+- name: Install and configure Orca
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.orca
