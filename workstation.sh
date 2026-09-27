@@ -8,7 +8,7 @@ ANSIBLE_CHECKOUT_DIR="/tmp/workstation-manager-v1"
 TARGET_USER=""
 TARGET_USER_HOME=""
 COLLECTIONS_INSTALL_DIR=""
-PRIVATE_OVERRIDE_LOCAL_FILE=""
+PRIVATE_OVERRIDE_LOCAL_FILE="${WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE:-}"
 PRIVATE_OVERRIDE_TEMP_DIR=""
 GITHUB_TOKEN_VALUE="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}"
 BACKUP_OUTPUT_DIR="${WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR:-}"
@@ -40,6 +40,11 @@ cleanup() {
 
 trap cleanup EXIT
 
+has_interactive_terminal() {
+	# A /dev/tty device can exist even when this process has no controlling terminal.
+	(: </dev/tty) 2>/dev/null
+}
+
 print_to_tty() {
 	printf '%s' "$1" >/dev/tty
 }
@@ -54,13 +59,12 @@ prompt_from_tty() {
 	prompt_value=""
 	tty_state=""
 
-	[ -c /dev/tty ] || return 1
-
-	print_to_tty "$prompt_text"
+	has_interactive_terminal || return 1
 
 	if [ "$secret_prompt" = "1" ]; then
 		tty_state="$(stty -g </dev/tty)"
 		stty -echo </dev/tty
+		print_to_tty "$prompt_text"
 		if ! IFS= read -r prompt_value </dev/tty; then
 			stty "$tty_state" </dev/tty
 			println_to_tty ""
@@ -69,6 +73,7 @@ prompt_from_tty() {
 		stty "$tty_state" </dev/tty
 		println_to_tty ""
 	else
+		print_to_tty "$prompt_text"
 		IFS= read -r prompt_value </dev/tty || return 1
 	fi
 
@@ -93,7 +98,7 @@ prompt_for_required_value() {
 }
 
 interactive_terminal_flag() {
-	if [ -c /dev/tty ]; then
+	if has_interactive_terminal; then
 		printf '1\n'
 		return
 	fi
@@ -121,6 +126,7 @@ CI environment overrides:
 	REPOSITORY_URL                    GitHub repository source for the hidden checkout.
 	REPOSITORY_BRANCH                 Branch, tag, or commit to apply.
 	WORKSTATION_MANAGER_GITHUB_TOKEN        Optional GitHub token for private GitHub repositories.
+	WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE  Optional local private override file.
 	WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR   Optional backup output directory for non-interactive runs.
 	WORKSTATION_MANAGER_RESTORE_ARCHIVE     Optional backup archive path to replay during setup.
 	BITWARDEN_CLIENT_ID               Bitwarden API client ID for secret restore.
@@ -182,7 +188,7 @@ run_as_target_user() {
 		return
 	fi
 
-	sudo -u "$TARGET_USER" env \
+	sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD -u "$TARGET_USER" env \
 		HOME="$TARGET_USER_HOME" \
 		USER="$TARGET_USER" \
 		LOGNAME="$TARGET_USER" \
@@ -227,7 +233,7 @@ install_github_cli() {
 }
 
 can_prompt_for_private_override_auth() {
-	[ -c /dev/tty ] || return 1
+	has_interactive_terminal || return 1
 	[ "$1" = "setup" ] || return 1
 	[ -z "$GITHUB_TOKEN_VALUE" ] || return 1
 	return 0
@@ -373,7 +379,7 @@ prompt_for_bitwarden_credentials_if_needed() {
 		return
 	fi
 
-	[ -c /dev/tty ] ||
+	has_interactive_terminal ||
 		fail "$action_name requires interactive Bitwarden login for end users, or BITWARDEN_CLIENT_ID, BITWARDEN_CLIENT_SECRET, and BITWARDEN_PASSWORD in CI"
 
 	info "$action_purpose requires Bitwarden access; prompting for credentials"
@@ -389,7 +395,7 @@ prompt_for_backup_output_dir_if_needed() {
 		return
 	fi
 
-	[ -c /dev/tty ] ||
+	has_interactive_terminal ||
 		fail "backup requires an interactive terminal for the output directory, or WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR in CI"
 
 	PROMPTED_BACKUP_OUTPUT_DIR="$(prompt_for_required_value "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR" "Backup output directory: " 0)"
@@ -397,16 +403,13 @@ prompt_for_backup_output_dir_if_needed() {
 }
 
 prepare_action_dependencies() {
-	include_private_override="$1"
-	command_name="$2"
+	command_name="$1"
 
 	initialize_target_context
 	require_sudo
 	install_ansible_packages
 	install_git
-	if [ "$include_private_override" = "1" ]; then
-		prepare_private_override_file "$command_name"
-	fi
+	prepare_private_override_file "$command_name"
 	install_remote_collection_requirements
 }
 
@@ -414,23 +417,36 @@ run_ansible_pull() {
 	runner_kind="$1"
 	playbook_path="$2"
 	dry_run="$3"
-	include_private_override="$4"
-	shift 4
+	shift 3
 	initialize_target_context
 	authenticated_repository_url="$(resolve_authenticated_repository_url "$REPOSITORY_URL")"
+
+	# Share credentials through the environment, including across sudo.
+	export BITWARDEN_EMAIL="$PROMPTED_BITWARDEN_EMAIL"
+	export BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID_VALUE"
+	export BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET_VALUE"
+	export BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
 
 	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
 		set -- "WORKSTATION_MANAGER_GITHUB_TOKEN=$GITHUB_TOKEN_VALUE" "$@"
 	fi
 
-	set -- "WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
+	# Preserve the target desktop session for GPG and interactive application setup.
+	set -- \
+		"DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}" \
+		"XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}" \
+		"DISPLAY=${DISPLAY:-}" \
+		"WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" \
+		"GPG_TTY=${GPG_TTY:-}" \
+		"WORKSTATION_MANAGER_USER=$TARGET_USER" \
+		"WORKSTATION_MANAGER_USER_HOME=$TARGET_USER_HOME" \
+		"WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=$PRIVATE_OVERRIDE_LOCAL_FILE" \
+		"WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
 
 	case "$runner_kind" in
 	root)
 		set -- \
-			sudo env \
-			WORKSTATION_MANAGER_USER="$TARGET_USER" \
-			WORKSTATION_MANAGER_USER_HOME="$TARGET_USER_HOME" \
+			sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
 			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
 			"$@"
 		;;
@@ -459,86 +475,54 @@ run_ansible_pull() {
 		set -- "$@" --full
 	fi
 
-	if [ "$include_private_override" = "1" ] && [ -n "$PRIVATE_OVERRIDE_LOCAL_FILE" ]; then
-		set -- "$@" -e "workstation_private_override_file=$PRIVATE_OVERRIDE_LOCAL_FILE"
-	fi
-
 	if [ "$dry_run" = "1" ]; then
-		if [ "$playbook_path" = "ansible/backup.yml" ]; then
-			set -- "$@" -e "WORKSTATION_MANAGER_BACKUP_DRY_RUN=1"
-		fi
 		set -- "$@" --check --diff
 	fi
 
-	"$@"
+	if has_interactive_terminal; then
+		"$@" </dev/tty
+	else
+		"$@"
+	fi
 }
 
 run_setup() {
 	dry_run="$1"
-	prepare_action_dependencies 1 setup
+	prepare_action_dependencies setup
 	prompt_for_bitwarden_credentials_if_needed "setup" "Bitwarden-backed secrets restore"
 
 	info "Running workstation setup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
 	set --
-
-	if [ -n "$BITWARDEN_CLIENT_ID_VALUE" ] &&
-		[ -n "$BITWARDEN_CLIENT_SECRET_VALUE" ] &&
-		[ -n "$BITWARDEN_PASSWORD_VALUE" ]; then
-		set -- "$@" \
-			BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID_VALUE" \
-			BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET_VALUE" \
-			BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
-	else
-		set -- "$@" \
-			BITWARDEN_EMAIL="$PROMPTED_BITWARDEN_EMAIL" \
-			BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
-	fi
 
 	if [ -n "$RESTORE_ARCHIVE_PATH" ]; then
 		set -- "$@" \
 			WORKSTATION_MANAGER_RESTORE_ARCHIVE="$RESTORE_ARCHIVE_PATH"
 	fi
 
-	run_ansible_pull root ansible/setup.yml "$dry_run" 1 "$@"
+	run_ansible_pull root ansible/setup.yml "$dry_run" "$@"
 }
 
 run_backup() {
 	dry_run="$1"
 	prompt_for_backup_output_dir_if_needed
-	prepare_action_dependencies 1 backup
-	prompt_for_bitwarden_credentials_if_needed "backup" "Backup-time SSH and GPG key synchronization"
+	prepare_action_dependencies backup
+	prompt_for_bitwarden_credentials_if_needed "backup" "Backup-time key and browser recovery synchronization"
 
 	info "Running workstation backup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
-	set --
-
-	if [ -n "$BITWARDEN_CLIENT_ID_VALUE" ] &&
-		[ -n "$BITWARDEN_CLIENT_SECRET_VALUE" ] &&
-		[ -n "$BITWARDEN_PASSWORD_VALUE" ]; then
-		set -- "$@" \
-			BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID_VALUE" \
-			BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET_VALUE" \
-			BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
-	else
-		set -- "$@" \
-			BITWARDEN_EMAIL="$PROMPTED_BITWARDEN_EMAIL" \
-			BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
-	fi
-
 	run_ansible_pull \
 		user \
 		ansible/backup.yml \
 		"$dry_run" \
-		1 \
-		"$@" \
 		WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR="$BACKUP_OUTPUT_DIR"
 }
 
 run_cleanup() {
 	dry_run="$1"
-	prepare_action_dependencies 1 cleanup
+	prepare_action_dependencies cleanup
+	prompt_for_bitwarden_credentials_if_needed "cleanup" "Browser profile drift inspection"
 
 	info "Running workstation cleanup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
-	run_ansible_pull root ansible/cleanup.yml "$dry_run" 1
+	run_ansible_pull root ansible/cleanup.yml "$dry_run"
 }
 
 main() {

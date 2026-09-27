@@ -3,12 +3,30 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TypedDict
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     bitwarden_item_fields,
 )
 
 BitwardenItemFieldReader = bitwarden_item_fields.BitwardenItemFieldReader
+
+
+class SshKeyFile(TypedDict):
+    """Validated key content and destination for one restored file."""
+
+    dest: str
+    mode: str
+    content: str
+
+
+class SshKeyRestorePlan(TypedDict):
+    """A vault key identity and its private/public file pair."""
+
+    item_id: str
+    name: str
+    private: SshKeyFile
+    public: SshKeyFile
 
 
 # pylint: disable=too-few-public-methods
@@ -22,7 +40,7 @@ class BitwardenSshKeyRestorePlanner:
         self,
         item_payload: dict[str, object],
         user_home: str,
-    ) -> dict[str, object]:
+    ) -> SshKeyRestorePlan:
         """Return the file restore plan for a Bitwarden SSH-key item."""
 
         item_name = self._key_name(item_payload.get("name"))

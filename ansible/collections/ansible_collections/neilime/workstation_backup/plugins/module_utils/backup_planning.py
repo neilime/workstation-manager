@@ -66,40 +66,6 @@ class BackupPathPlanBuilder:
         }
 
 
-class BrowserBookmarkPlanBuilder:
-    """Build browser bookmark export and manifest data."""
-
-    def build(
-        self,
-        bookmark_files: list[dict[str, Any]],
-        chrome_config_dir: str,
-        bookmarks_export_dir: str,
-        tab_character: str,
-    ) -> dict[str, list[dict[str, str]] | list[str]]:
-        """Return bookmark export copies and their manifest lines."""
-
-        exports: list[dict[str, str]] = []
-        manifest_lines: list[str] = []
-        chrome_prefix = f"{chrome_config_dir.rstrip('/')}/"
-
-        for bookmark_file in bookmark_files:
-            source_path = bookmark_file["path"]
-            relative_path = (
-                source_path.removeprefix(chrome_prefix)
-                if source_path.startswith(chrome_prefix)
-                else source_path.lstrip("/")
-            )
-            destination_path = f"{bookmarks_export_dir}/{relative_path}.json"
-
-            exports.append({"source": source_path, "dest": destination_path})
-            manifest_lines.append(f"export{tab_character}chrome-bookmarks{tab_character}{destination_path}")
-
-        return {
-            "exports": exports,
-            "manifest_lines": manifest_lines,
-        }
-
-
 class BackupManifestContentBuilder:
     """Render backup manifest text content."""
 

@@ -11,7 +11,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the development section of the desired-state schema."""
 
-    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+    def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+        """Return the normalized development section."""
+
         development = self._resolver.mapping(config.get("development"), "workstation_manager.development")
         repositories = self._resolver.mapping(
             development.get("repositories"),
@@ -73,12 +75,5 @@ class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSec
                 settings,
                 default_settings,
                 "workstation_manager.development.settings",
-            ),
-            "runtimes": self._resolver.mapping(
-                self._resolver.value_or_default(
-                    development.get("runtimes"),
-                    defaults.get("runtimes"),
-                ),
-                "workstation_manager.development.runtimes",
             ),
         }

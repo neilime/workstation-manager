@@ -13,7 +13,7 @@ def test_build_plan_uses_notes_and_public_key_field_defaults() -> None:
 
     # Arrange
     planner = BitwardenSshKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "id_rsa_escemi",
         "notes": "ssh-private-material-line-1\nssh-private-material-line-2",
@@ -52,7 +52,7 @@ def test_build_plan_rejects_nested_item_names() -> None:
 
     # Arrange
     planner = BitwardenSshKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "nested/id_client",
         "fields": [
@@ -77,7 +77,7 @@ def test_build_plan_rejects_missing_public_key_field() -> None:
 
     # Arrange
     planner = BitwardenSshKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "id_rsa_escemi",
         "fields": [
@@ -98,7 +98,7 @@ def test_build_plan_rejects_missing_private_key_field() -> None:
 
     # Arrange
     planner = BitwardenSshKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "id_rsa_escemi",
         "fields": [],

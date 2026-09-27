@@ -71,21 +71,19 @@ def test_cleanup_report_preserves_json_scalar_types(host) -> None:
     assert isinstance(actions["apt_autoremove_requested"], bool)
 
 
-def test_cleanup_removes_only_unmanaged_browser_profile_directories(host) -> None:
-    """Cleanup should delete the stale profile while preserving declared profiles."""
+def test_cleanup_preserves_all_native_browser_profiles_and_internal_data(host) -> None:
+    """Undeclared native profiles and Brave internal directories must survive cleanup."""
 
-    # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
-    stale_profile_dir = f"{user_home}/.local/share/workstation-manager/browser-profiles/e2e-stale"
-    cleanup_report_path = f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
+    root = f"{user_home}/.config/BraveSoftware/Brave-Browser"
+    unmanaged_paths = [f"{root}/managed-e2e-stale", f"{root}/Profile 9999"]
+    internal_path = f"{root}/e2e-component-cache"
+    report_path = f"{user_home}/.local/state/workstation-manager-v1/cleanup-report.json"
+    report = json.loads(host.file(report_path).content_string)
 
-    # Act
-    stale_profile = host.file(stale_profile_dir)
-    cleanup_report = json.loads(host.file(cleanup_report_path).content_string)
-    removed_profiles = cleanup_report["actions"]["removed_browser_profile_directories"]
-    unmanaged_profiles = cleanup_report["drift"]["unmanaged_browser_profile_directories"]
-
-    # Assert
-    assert not stale_profile.exists
-    assert removed_profiles == [stale_profile_dir]
-    assert unmanaged_profiles == [stale_profile_dir]
+    assert set(unmanaged_paths) <= set(report["drift"]["unmanaged_browser_profile_directories"])
+    assert internal_path not in report["drift"]["unmanaged_browser_profile_directories"]
+    for profile_path in unmanaged_paths:
+        assert host.file(f"{profile_path}/Preferences").exists
+        assert host.file(f"{profile_path}/e2e-preserve-marker").content_string == "preserve\n"
+    assert host.file(f"{internal_path}/e2e-preserve-marker").content_string == "preserve\n"

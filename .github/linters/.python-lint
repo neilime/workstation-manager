@@ -11,3 +11,8 @@ max-line-length=120
 
 # Super-Linter does not install the project's Python dependencies.
 disable=import-error
+
+[IMPORTS]
+
+# The local ansible/ tree is configuration, not the installed runtime package.
+known-third-party=ansible,ansible_collections

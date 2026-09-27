@@ -1,63 +1,27 @@
-"""End-to-end checks for managed browser profile directories."""
+"""End-to-end checks for selectable native Brave profiles."""
+
+import json
 
 
-def resolve_managed_browser_profile_ids(host) -> tuple[str, list[str]]:
-    """Return the managed browser profiles discovered on the target machine."""
+def native_profiles(host):
+    """Read the native profile registry from the isolated test workstation."""
 
     user_home = host.check_output("printf '%s' \"$HOME\"")
-    profiles_root = f"{user_home}/.local/share/workstation-manager/browser-profiles"
-    profiles_result = host.run(
-        "find %s -mindepth 1 -maxdepth 1 -type d -printf '%%f\\n' | sort",
-        profiles_root,
-    )
-
-    assert profiles_result.succeeded
-    profile_ids = [profile_id for profile_id in profiles_result.stdout.splitlines() if profile_id]
-    assert profile_ids
-
-    return profiles_root, profile_ids
+    root = f"{user_home}/.config/BraveSoftware/Brave-Browser"
+    state = json.loads(host.file(f"{root}/Local State").content_string)
+    profiles = state["profile"]["info_cache"]
+    assert profiles
+    return root, profiles
 
 
-def test_primary_browser_profile_directories_exist(host) -> None:
-    """Managed browser profile directories should match the applied desired state."""
-
-    # Arrange
-    profiles_root, profile_ids = resolve_managed_browser_profile_ids(host)
-
-    # Act
-    root_directory = host.file(profiles_root)
-    profile_directories = {profile_id: host.file(f"{profiles_root}/{profile_id}") for profile_id in profile_ids}
-
-    # Assert
-    assert root_directory.exists
-    assert root_directory.is_directory
-    for profile_id, profile_directory in profile_directories.items():
-        assert profile_directory.exists, profile_id
-        assert profile_directory.is_directory, profile_id
-        assert profile_directory.user == host.check_output("whoami"), profile_id
-
-
-def test_primary_browser_profile_directories_do_not_seed_browser_databases(
-    host,
-) -> None:
-    """Managed browser profile directories should start without browser databases."""
-
-    # Arrange
-    profiles_root, profile_ids = resolve_managed_browser_profile_ids(host)
-    seeded_files = [
-        "Default/Cookies",
-        "Default/History",
-        "Default/Login Data",
-        "Default/Preferences",
-    ]
-
-    # Act
-    profile_seed_files = {
-        f"{profile_id}:{seeded_file}": host.file(f"{profiles_root}/{profile_id}/{seeded_file}")
-        for profile_id in profile_ids
-        for seeded_file in seeded_files
-    }
-
-    # Assert
-    for file_key, profile_seed_file in profile_seed_files.items():
-        assert not profile_seed_file.exists, file_key
+def test_primary_browser_profiles_are_registered(host) -> None:
+    """Profiles loaded from Bitwarden appear in Brave's native profile picker."""
+    root, profiles = native_profiles(host)
+    current_user = host.check_output("whoami")
+    for directory, metadata in profiles.items():
+        profile = host.file(f"{root}/{directory}")
+        assert profile.is_directory
+        assert profile.user == current_user
+        prefs = json.loads(host.file(f"{root}/{directory}/Preferences").content_string)
+        assert prefs["profile"]["name"] == metadata["name"]
+        assert metadata["name"]

@@ -43,7 +43,6 @@ class BitwardenSshKeySyncPlanner:
                     self._action_payload(
                         normalized_local_item,
                         action="add",
-                        reason="missing_in_secret_manager",
                     )
                 )
                 continue
@@ -55,7 +54,6 @@ class BitwardenSshKeySyncPlanner:
                 self._action_payload(
                     normalized_local_item,
                     action="update",
-                    reason="content_mismatch",
                     bitwarden_item_id=remote_item["item_id"],
                 )
             )
@@ -77,7 +75,6 @@ class BitwardenSshKeySyncPlanner:
 
             remote_items_by_name[key_name] = {
                 "item_id": str(restore_plan["item_id"]),
-                "name": key_name,
                 "private_key": str(restore_plan["private"]["content"]),
                 "public_key": str(restore_plan["public"]["content"]),
             }
@@ -108,14 +105,12 @@ class BitwardenSshKeySyncPlanner:
         local_item: dict[str, str],
         *,
         action: str,
-        reason: str,
         bitwarden_item_id: str | None = None,
     ) -> dict[str, object]:
         return {
             "kind": "ssh",
             "name": local_item["name"],
             "action": action,
-            "reason": reason,
             "bitwarden_item_id": bitwarden_item_id,
             "fields": [
                 {"name": "private_key", "type": 1, "value": local_item["private_key"]},
@@ -151,7 +146,6 @@ class BitwardenGpgKeySyncPlanner:
                     self._action_payload(
                         normalized_local_item,
                         action="add",
-                        reason="missing_in_secret_manager",
                     )
                 )
                 continue
@@ -163,7 +157,6 @@ class BitwardenGpgKeySyncPlanner:
                 self._action_payload(
                     normalized_local_item,
                     action="update",
-                    reason="content_mismatch",
                     bitwarden_item_id=remote_item["item_id"],
                 )
             )
@@ -184,8 +177,6 @@ class BitwardenGpgKeySyncPlanner:
 
             remote_items_by_fingerprint[fingerprint] = {
                 "item_id": str(restore_plan["item_id"]),
-                "name": str(restore_plan["name"]),
-                "fingerprint": fingerprint,
                 "private_key": str(restore_plan["private_key"]),
                 "public_key": str(restore_plan["public_key"]),
                 "ownertrust": self._optional_string(restore_plan.get("ownertrust")),
@@ -244,7 +235,6 @@ class BitwardenGpgKeySyncPlanner:
         local_item: dict[str, str | None],
         *,
         action: str,
-        reason: str,
         bitwarden_item_id: str | None = None,
     ) -> dict[str, object]:
         fields: list[dict[str, object]] = [
@@ -259,8 +249,6 @@ class BitwardenGpgKeySyncPlanner:
             "kind": "gpg",
             "name": local_item["name"],
             "action": action,
-            "reason": reason,
-            "fingerprint": local_item["fingerprint"],
             "bitwarden_item_id": bitwarden_item_id,
             "fields": fields,
         }

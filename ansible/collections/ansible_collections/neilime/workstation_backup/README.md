@@ -1,6 +1,9 @@
 # neilime.workstation_backup
 
-Dedicated backup collection for the workstation-manager repository.
+Owns key and browser recovery checks, Chezmoi synchronization, archive creation,
+Git repository inventory, and backup manifests.
 
-This collection owns backup-only orchestration, source discovery, export
-generation, manifest writing, Git repository inventory export, and archive creation.
+See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
+user workflow and recovery limits, and the
+[development guide](../../../../../docs/development/README.md) for structure and
+checks.

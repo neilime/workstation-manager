@@ -1,0 +1,105 @@
+---
+- name: Load browser profile definitions from Bitwarden
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.browser_profile_collection
+
+- name: Publish Brave desktop application identifier
+  ansible.builtin.set_fact:
+    workstation_manager_browser_desktop_file: brave-browser.desktop # noqa: var-naming[no-role-prefix]
+
+- name: Ensure Brave APT keyring directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: /usr/share/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Brave APT repository keyring
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+    dest: /usr/share/keyrings/brave-browser-archive-keyring.gpg
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure Brave vendor APT repository
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.deb822_repository:
+    name: brave-browser-release
+    uris:
+      - https://brave-browser-apt-release.s3.brave.com/
+    suites:
+      - stable
+    components:
+      - main
+    architectures:
+      - amd64
+      - arm64
+    signed_by: /usr/share/keyrings/brave-browser-archive-keyring.gpg
+    state: present
+
+- name: Install Brave browser package
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: brave-browser
+    state: present
+    update_cache: true
+    cache_valid_time: 0
+
+- name: Ensure target user XDG config directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+- name: Apply Brave default browser associations
+  become: "{{ workstation_manager_use_become }}"
+  community.general.ini_file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/mimeapps.list"
+    section: Default Applications
+    option: "{{ item }}"
+    value: "{{ workstation_manager_browser_desktop_file }}"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+    no_extra_spaces: true
+  loop:
+    - x-scheme-handler/http
+    - x-scheme-handler/https
+    - text/html
+  loop_control:
+    label: "{{ item }}"
+
+- name: Ensure Brave managed policy directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: /etc/brave/policies/managed
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Keep Brave Sync available without overriding synced preferences
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: /etc/brave/policies/managed/workstation-manager.json
+    owner: root
+    group: root
+    mode: "0644"
+    # This permits Sync; joining a chain still requires its recovery code.
+    content: |
+      {"SyncDisabled": false}
+
+- name: Register native Brave profiles and apply declared theme colors
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.browser_profiles:
+    user_data_dir: "{{ browser_brave_user_data_dir }}"
+    profiles: "{{ workstation_manager_browser_profiles }}"
+  when: (workstation_manager_browser_profiles | length) > 0

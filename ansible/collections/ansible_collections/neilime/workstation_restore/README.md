@@ -1,7 +1,9 @@
 # neilime.workstation_restore
 
-Dedicated restore collection for the workstation-manager repository.
+Owns archive validation, extraction into the target user's home, and Git
+repository reattachment during setup.
 
-This collection owns archive validation, restore previews, and in-place
-recovery of supported backup paths, including Git repository reattachment for
-restored dev-project working trees.
+See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
+user workflow and recovery limits, and the
+[development guide](../../../../../docs/development/README.md) for structure and
+checks.

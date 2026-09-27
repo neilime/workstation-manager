@@ -21,9 +21,7 @@ restore_archive="$(
 run_e2e_vm_shell "$(
 	cat <<EOF
 rm -rf '$target_user_home/Documents/dev-projects'
-rm -rf '$target_user_home/.config/google-chrome'
 rm -rf '$target_user_home/.config/workstation-manager'
-rm -rf '$target_user_home/.local/share/workstation-manager/browser-profiles'
 EOF
 )"
 

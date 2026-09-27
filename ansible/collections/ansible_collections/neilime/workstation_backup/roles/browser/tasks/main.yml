@@ -1,0 +1,35 @@
+---
+- name: Read browser backup interactivity
+  ansible.builtin.set_fact:
+    browser_interactive: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
+
+- name: Verify browser recovery and resolve drift before archiving
+  ansible.builtin.include_tasks: verify.yml
+
+- name: Confirm live browser Sync and recovery words for all profiles
+  ansible.builtin.pause:
+    prompt: >-
+      {{ workstation_backup_browser_sync_instructions }}
+      For every collection profile, verify a recent successful Sync with no pending changes/errors,
+      and compare its stable recovery words with its Bitwarden secure note without pasting them here.
+      Confirm only after all profiles have finished syncing and their recovery notes match.
+      Choose [synced/abort].
+  register: browser_sync_choice
+  until: browser_sync_choice.user_input | trim | lower in ['synced', 'abort']
+  retries: 3
+  delay: 0
+  when:
+    - not workstation_backup_dry_run
+    - not browser_has_drift
+    - workstation_backup_browser_inspection.profiles | length > 0
+
+- name: Require completed browser synchronization
+  ansible.builtin.assert:
+    that:
+      - browser_sync_choice.user_input | trim | lower == 'synced'
+    fail_msg: Browser Sync completion was not confirmed; no archive was created.
+  when:
+    - not workstation_backup_dry_run
+    - not browser_has_drift
+    - workstation_backup_browser_inspection.profiles | length > 0

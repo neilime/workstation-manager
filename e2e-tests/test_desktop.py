@@ -1,6 +1,9 @@
 """End-to-end checks for the desktop tests."""
 
 import ast
+import pathlib
+
+from ansible.parsing.dataloader import DataLoader
 
 
 def read_favorite_app_ids(host) -> list[str]:
@@ -77,6 +80,9 @@ def test_desktop_favorites_preference(host) -> None:
     """The dock should contain the desired applications in the desired order."""
 
     # Arrange
+    defaults_path = pathlib.Path(__file__).parents[1] / "ansible" / "group_vars" / "all.yml"
+    defaults = DataLoader().load_from_file(str(defaults_path))["workstation_manager"]
+    configured_favorites = defaults["desktop"]["gnome"]["favorites"]
     default_browser_app_id = host.check_output("xdg-mime query default text/html")
 
     # Act
@@ -85,15 +91,7 @@ def test_desktop_favorites_preference(host) -> None:
     # Assert
     assert default_browser_app_id
     assert favorite_app_ids == [
-        "org.gnome.Nautilus.desktop",
-        "org.gnome.Software.desktop",
-        "com.visualstudio.code.desktop",
-        "orca-ide.desktop",
-        default_browser_app_id,
-        "com.slack.Slack.desktop",
-        "com.spotify.Client.desktop",
-        "com.bitwarden.desktop.desktop",
-        "org.gnome.Terminal.desktop",
+        default_browser_app_id if app_id == "browser" else app_id for app_id in configured_favorites
     ]
 
 

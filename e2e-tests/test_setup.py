@@ -78,21 +78,10 @@ def test_setup_replays_managed_user_backup_data(host) -> None:
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
     managed_config_file = host.file(f"{user_home}/.config/workstation-manager/restore-fixture.txt")
-    browser_profile_file = host.file(
-        f"{user_home}/.local/share/workstation-manager/browser-profiles/personal/profile.txt"
-    )
-    chrome_bookmarks_file = host.file(f"{user_home}/.config/google-chrome/Default/Bookmarks")
-
     # Assert
     assert managed_config_file.exists
     assert managed_config_file.is_file
     assert managed_config_file.contains("managed-config-fixture")
-    assert browser_profile_file.exists
-    assert browser_profile_file.is_file
-    assert browser_profile_file.contains("browser-profile-fixture")
-    assert chrome_bookmarks_file.exists
-    assert chrome_bookmarks_file.is_file
-    assert chrome_bookmarks_file.contains('"checksum": "backup-fixture"')
 
 
 def test_setup_preserves_local_git_worktree_changes_after_reattach(host) -> None:

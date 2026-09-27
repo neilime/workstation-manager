@@ -50,50 +50,8 @@ workstation_manager:
         - org.gnome.DejaDup
         - org.libreoffice.LibreOffice
         - com.bitwarden.desktop
-    browser:
-      # Install the primary browser from the vendor APT package.
-      package: google-chrome-stable
-      # Vendor repository declaration for the primary browser package.
-      repository:
-        name: google-chrome
-        uris:
-          - https://dl.google.com/linux/chrome/deb/
-        suites:
-          - stable
-        components:
-          - main
-        architectures:
-          - amd64
-        keyring:
-          url: https://dl.google.com/linux/linux_signing_key.pub
-          path: /usr/share/keyrings/google-linux-signing-key.asc
-      # The primary browser is expected to become the default browser.
-      default: true
-      # Declared profiles for the single primary browser workflow.
-      profiles:
-        - id: personal
-          label: Personal
-          sync: browser
-        - id: escemi
-          label: Escemi
-          sync: browser
-      # Bookmarks stay profile-scoped and should be restored through sync or export.
-      # Generated browser-wide policy inputs for the primary browser.
-      policies:
-        baseline_extensions:
-          - id: nngceckbapebfimnlniiiahkandclblb
-            installation_mode: force_installed
-            update_url: https://clients2.google.com/service/update2/crx
-        password_manager:
-          enabled: false
-        third_party_password_manager:
-          extension_id: nngceckbapebfimnlniiiahkandclblb
-          installation_mode: force_installed
-          update_url: https://clients2.google.com/service/update2/crx
-          policy: {}
-        startup:
-          bookmark_bar_enabled: true
-          restore_on_startup: 1
+    # Select the browser adapter; installation details belong to its role.
+    browser: brave
     gnome:
       # Apply the workstation's GNOME appearance and Ubuntu Dock layout.
       dark_mode: true
@@ -105,12 +63,13 @@ workstation_manager:
       favorites:
         - org.gnome.Nautilus.desktop
         - org.gnome.Software.desktop
-        - com.visualstudio.code.desktop
-        - orca-ide.desktop
-        - google-chrome.desktop
+        - com.bitwarden.desktop.desktop
+        # The selected browser adapter supplies its desktop entry.
+        - browser
         - com.slack.Slack.desktop
         - com.spotify.Client.desktop
-        - com.bitwarden.desktop.desktop
+        - com.visualstudio.code.desktop
+        - orca-ide.desktop
         - org.gnome.Terminal.desktop
   development:
     # Core developer packages installed globally from APT.
@@ -176,14 +135,13 @@ workstation_manager:
       # Development tooling often needs a higher filesystem watch limit.
       sysctl:
         fs.inotify.max_user_watches: "524288"
-    runtimes: {}
   home_environment:
     # Manage user-home dotfiles through the built-in Chezmoi integration.
     chezmoi:
-      # Fixed dotfiles source for the workstation home environment.
-      source: "neilime/workstation-config"
       # Pin a stable Chezmoi release for reproducible workstation bootstrap.
       version: "2.70.4"
+      # Git repository used to initialize the managed dotfiles checkout.
+      source: "https://github.com/neilime/workstation-config.git"
       # Apply dotfiles after init.
       apply: true
       # Install the Chezmoi binary to this global path.
@@ -199,3 +157,5 @@ workstation_manager:
       ssh_collection_id:
       # Bitwarden collection UUID for GPG key items.
       gpg_collection_id:
+      # Profile names, stable IDs, directories, and Sync recovery words live here.
+      browser_profiles_collection_id:

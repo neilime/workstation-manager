@@ -80,10 +80,8 @@ def test_backup_manifest_records_expected_entries(host) -> None:
     """The backup manifest should reflect the generated archive and core inputs."""
 
     # Arrange
-    user_home = host.check_output("printf '%s' \"$HOME\"")
     archive_path = resolve_backup_archive_path(host)
     manifest_path = resolve_backup_manifest_path(host)
-    bookmark_export_path = f"{BACKUP_ROOT}/browser-bookmarks/Default/Bookmarks.json"
     git_inventory_path = resolve_backup_git_inventory_path(host)
 
     # Act
@@ -93,16 +91,6 @@ def test_backup_manifest_records_expected_entries(host) -> None:
         manifest_path,
     )
     dry_run_line = host.run("grep -Fx 'dry_run\t0' %s", manifest_path)
-    managed_profiles_line = host.run(
-        "grep -Fx %s %s",
-        (f"include\tmanaged-browser-profiles\t{user_home}/.local/share/workstation-manager/browser-profiles"),
-        manifest_path,
-    )
-    bookmark_export_line = host.run(
-        "grep -Fx %s %s",
-        f"export\tchrome-bookmarks\t{bookmark_export_path}",
-        manifest_path,
-    )
     git_inventory_line = host.run(
         "grep -Fx %s %s",
         f"export\tgit-repositories\t{git_inventory_path}",
@@ -112,42 +100,14 @@ def test_backup_manifest_records_expected_entries(host) -> None:
     # Assert
     assert archive_line.succeeded
     assert dry_run_line.succeeded
-    assert managed_profiles_line.succeeded
-    assert bookmark_export_line.succeeded
     assert git_inventory_line.succeeded
 
 
-def test_backup_archive_contains_managed_browser_profiles(host) -> None:
-    """The generated archive should contain the managed browser profile root."""
+def test_backup_creates_no_browser_exports(host) -> None:
+    """General backups must not create standalone browser recovery files."""
 
-    # Arrange
-    backup_archive_path = resolve_backup_archive_path(host)
-
-    # Act
-    archive_listing = host.run(
-        "tar -tzf %s | grep -F %s",
-        backup_archive_path,
-        ".local/share/workstation-manager/browser-profiles/personal",
-    )
-
-    # Assert
-    assert archive_listing.succeeded
-
-
-def test_backup_exports_chrome_bookmarks_as_standalone_json(host) -> None:
-    """The backup flow should export bookmark JSON separately from raw Chrome data."""
-
-    # Arrange
-    bookmark_export = host.file(f"{BACKUP_ROOT}/browser-bookmarks/Default/Bookmarks.json")
-
-    # Act
-    has_repo_bookmark = bookmark_export.contains('"url": "https://github.com/neilime/workstation-manager"')
-
-    # Assert
-    assert bookmark_export.exists
-    assert bookmark_export.is_file
-    assert bookmark_export.user == host.check_output("whoami")
-    assert has_repo_bookmark
+    assert not host.file(f"{BACKUP_ROOT}/browser-bookmarks").exists
+    assert not host.check_output("find %s -type f -name '*.gpg'", BACKUP_ROOT)
 
 
 def test_backup_exports_git_inventory_for_dev_projects(host) -> None:

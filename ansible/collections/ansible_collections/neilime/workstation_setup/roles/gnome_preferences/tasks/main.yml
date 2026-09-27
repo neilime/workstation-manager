@@ -120,7 +120,9 @@
         '@as []'
         if workstation_manager_resolved.desktop.gnome.favorites | length == 0
         else
-        workstation_manager_resolved.desktop.gnome.favorites | to_json
+        workstation_manager_resolved.desktop.gnome.favorites
+        | map('regex_replace', '^browser$', workstation_manager_browser_desktop_file)
+        | list | to_json
       }}
 
 - name: Apply Ubuntu Dock trash visibility

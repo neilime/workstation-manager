@@ -17,13 +17,9 @@ class HomeEnvironmentSectionNormalizer(desired_state_support.DesiredStateDefault
             raise ValueError(f"{name} must be a string")
         return resolved
 
-    def _required_non_empty_string(self, value: object, default: object, name: str) -> str:
-        try:
-            return self._resolver.first_non_empty_string(value, default)
-        except ValueError as exc:
-            raise ValueError(f"{name} must be a non-empty string") from exc
+    def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+        """Return the normalized home environment section."""
 
-    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
         home_environment = self._resolver.mapping(
             config.get("home_environment"), "workstation_manager.home_environment"
         )
@@ -37,18 +33,22 @@ class HomeEnvironmentSectionNormalizer(desired_state_support.DesiredStateDefault
             "workstation_manager.home_environment.defaults.chezmoi",
         )
 
+        source = self._string_or_default(
+            chezmoi.get("source"),
+            default_chezmoi.get("source"),
+            "workstation_manager.home_environment.chezmoi.source",
+        ).strip()
+        if not source:
+            raise ValueError("workstation_manager.home_environment.chezmoi.source must be a non-empty string")
+
         return {
             "chezmoi": {
-                "source": self._required_non_empty_string(
-                    default_chezmoi.get("source"),
-                    None,
-                    "workstation_manager.home_environment.chezmoi.source",
-                ),
                 "version": self._string_or_default(
                     chezmoi.get("version"),
                     default_chezmoi.get("version"),
                     "workstation_manager.home_environment.chezmoi.version",
                 ),
+                "source": source,
                 "apply": self._resolver.bool_value(
                     chezmoi.get("apply"),
                     self._resolver.bool_value(

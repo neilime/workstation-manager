@@ -32,7 +32,7 @@
       matchStringsStrategy: "any",
       matchStrings: [
         'chezmoi:\\n(?:[^\\n]*\\n){0,6}?\\s+version:\\s+"(?<currentValue>[^"]+)"',
-        '"source": "neilime/workstation-config",\\n\\s+"version": "(?<currentValue>[^"]+)",',
+        '"chezmoi": \\{\\n\\s+"version": "(?<currentValue>[^"]+)",',
         '\\("version", "(?<currentValue>[^"]+)"\\),',
       ],
       depNameTemplate: "twpayne/chezmoi",

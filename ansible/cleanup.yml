@@ -4,7 +4,6 @@
   connection: local
   gather_facts: true
   vars:
-    workstation_action: cleanup
     # jscpd:ignore-start
     workstation_use_become: >-
       {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
@@ -23,5 +22,10 @@
     - name: Resolve workstation config inputs
       ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml
 
-    - name: Run cleanup action tasks
-      ansible.builtin.import_tasks: tasks/cleanup_action.yml
+    - name: Load browser profile definitions before inspecting cleanup drift
+      ansible.builtin.import_role:
+        name: neilime.workstation_setup.browser_profile_collection
+
+    - name: Cleanup removable workstation artifacts and report drift
+      ansible.builtin.import_role:
+        name: neilime.workstation_cleanup.cleanup

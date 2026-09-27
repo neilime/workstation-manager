@@ -10,36 +10,12 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 BrowserProfilePathsPlanner = browser_profile_paths.BrowserProfilePathsPlanner
 
 
-def test_build_profiles_root_dir_returns_stable_path() -> None:
-    """Browser profiles should live under the managed per-user root."""
-
-    # Arrange
-    planner = browser_profile_paths.BrowserProfilePathsPlanner()
-
-    # Act
-    profiles_root_dir = planner.build_profiles_root_dir("/home/emilien")
-
-    # Assert
-    assert profiles_root_dir == "/home/emilien/.local/share/workstation-manager/browser-profiles"
-
-
-def test_build_profiles_root_dir_rejects_empty_user_home() -> None:
-    """An empty home path should fail before any directory planning."""
-
-    # Arrange
-    planner = BrowserProfilePathsPlanner()
-
-    # Act / Assert
-    with pytest.raises(ValueError, match="user_home must not be empty"):
-        planner.build_profiles_root_dir("")
-
-
 def test_build_profile_directory_returns_stable_profile_path() -> None:
     """Each declared profile id should map to a stable managed directory."""
 
     # Arrange
     planner = BrowserProfilePathsPlanner()
-    profiles_root_dir = "/home/emilien/.local/share/workstation-manager/browser-profiles"
+    profiles_root_dir = "/home/emilien/.config/BraveSoftware/Brave-Browser"
 
     # Act
     profile_directory = planner.build_profile_directory(
@@ -48,7 +24,7 @@ def test_build_profile_directory_returns_stable_profile_path() -> None:
     )
 
     # Assert
-    assert profile_directory == "/home/emilien/.local/share/workstation-manager/browser-profiles/client-2"
+    assert profile_directory == "/home/emilien/.config/BraveSoftware/Brave-Browser/managed-client-2"
 
 
 def test_build_profile_directory_rejects_invalid_profile_id() -> None:
@@ -56,7 +32,7 @@ def test_build_profile_directory_rejects_invalid_profile_id() -> None:
 
     # Arrange
     planner = BrowserProfilePathsPlanner()
-    profiles_root_dir = "/home/emilien/.local/share/workstation-manager/browser-profiles"
+    profiles_root_dir = "/home/emilien/.config/BraveSoftware/Brave-Browser"
 
     # Act / Assert
     with pytest.raises(

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state import (
     DesiredStateConfigNormalizer,
 )
-
-DEFAULT_CHEZMOI_SOURCE = "https://github.com/example/dotfiles.git"
 
 
 def test_normalize_returns_default_flatpak_desktop_configuration() -> None:
@@ -14,7 +13,7 @@ def test_normalize_returns_default_flatpak_desktop_configuration() -> None:
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    raw_config: dict[str, object] = {"home_environment": {"chezmoi": {"source": DEFAULT_CHEZMOI_SOURCE}}}
+    raw_config: dict[str, object] = {}
     environment = {"USER": "emilien"}
 
     # Act
@@ -25,12 +24,7 @@ def test_normalize_returns_default_flatpak_desktop_configuration() -> None:
         "remote": "flathub",
         "packages": [],
     }
-    assert normalized["desktop"]["browser"]["package"] == "google-chrome-stable"
-    assert normalized["desktop"]["browser"]["repository"]["name"] == "google-chrome"
-    assert (
-        normalized["desktop"]["browser"]["repository"]["keyring"]["path"]
-        == "/usr/share/keyrings/google-linux-signing-key.asc"
-    )
+    assert normalized["desktop"]["browser"] == "brave"
 
 
 def test_normalize_preserves_declared_flatpak_apps_separately_from_browser() -> None:
@@ -38,17 +32,13 @@ def test_normalize_preserves_declared_flatpak_apps_separately_from_browser() -> 
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    raw_config = {
-        "home_environment": {"chezmoi": {"source": DEFAULT_CHEZMOI_SOURCE}},
+    raw_config: dict[str, object] = {
         "desktop": {
             "flatpak": {
                 "remote": "flathub",
                 "packages": ["com.bitwarden.desktop", "com.slack.Slack"],
             },
-            "browser": {
-                "default": True,
-                "profiles": [{"id": "personal"}, {"id": "professional"}],
-            },
+            "browser": "brave",
         },
     }
     environment = {"USER": "emilien"}
@@ -61,9 +51,39 @@ def test_normalize_preserves_declared_flatpak_apps_separately_from_browser() -> 
         "remote": "flathub",
         "packages": ["com.bitwarden.desktop", "com.slack.Slack"],
     }
-    assert normalized["desktop"]["browser"]["package"] == "google-chrome-stable"
-    assert normalized["desktop"]["browser"]["repository"]["name"] == "google-chrome"
-    assert normalized["desktop"]["browser"]["profiles"] == [
-        {"id": "personal"},
-        {"id": "professional"},
-    ]
+    assert normalized["desktop"]["browser"] == "brave"
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        {},
+        {"adapter": "brave"},
+        {"settings": {"profiles": []}},
+        {"package": "brave-browser"},
+        [],
+        None,
+        True,
+        12,
+        "",
+        " brave",
+        "Brave",
+        "brave-browser",
+        "../brave",
+        "/usr/bin/brave",
+        "brave/browser",
+        "brave\n",
+    ],
+)
+def test_browser_selector_rejects_invalid_identifiers(selector: object) -> None:
+    """Adapter selection must not accept mappings, empty values, or paths."""
+
+    with pytest.raises(ValueError, match="desktop.browser must be a browser identifier"):
+        DesiredStateConfigNormalizer().normalize({"desktop": {"browser": selector}})
+
+
+def test_browser_selector_accepts_future_adapter_identifiers() -> None:
+    """Available adapters are resolved outside this browser-neutral normalizer."""
+
+    normalized = DesiredStateConfigNormalizer().normalize({"desktop": {"browser": "example_browser2"}})
+    assert normalized["desktop"]["browser"] == "example_browser2"

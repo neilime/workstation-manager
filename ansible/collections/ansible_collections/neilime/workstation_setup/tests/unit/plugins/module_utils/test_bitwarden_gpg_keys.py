@@ -13,7 +13,7 @@ def test_build_plan_uses_required_fields_and_optional_ownertrust() -> None:
 
     # Arrange
     planner = BitwardenGpgKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",
         "fields": [
@@ -49,7 +49,7 @@ def test_build_plan_allows_missing_ownertrust() -> None:
 
     # Arrange
     planner = BitwardenGpgKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",
         "fields": [
@@ -71,7 +71,7 @@ def test_build_plan_derives_fingerprint_from_ownertrust() -> None:
 
     # Arrange
     planner = BitwardenGpgKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",
         "fields": [
@@ -98,7 +98,7 @@ def test_build_plan_normalizes_flattened_openpgp_armor_and_appends_subkey() -> N
     end_private = "".join(["-----", "END", " PGP PRIVATE KEY ", "BLOCK", "-----"])
     begin_public = "".join(["-----", "BEGIN", " PGP PUBLIC KEY ", "BLOCK", "-----"])
     end_public = "".join(["-----", "END", " PGP PUBLIC KEY ", "BLOCK", "-----"])
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",
         "fields": [
@@ -145,7 +145,7 @@ def test_build_plan_rejects_missing_fingerprint() -> None:
 
     # Arrange
     planner = BitwardenGpgKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",
         "fields": [
@@ -164,7 +164,7 @@ def test_build_plan_rejects_ownertrust_without_fingerprint_prefix() -> None:
 
     # Arrange
     planner = BitwardenGpgKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",
         "fields": [
@@ -184,7 +184,7 @@ def test_build_plan_rejects_invalid_fingerprint_characters() -> None:
 
     # Arrange
     planner = BitwardenGpgKeyRestorePlanner()
-    item_payload = {
+    item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",
         "fields": [

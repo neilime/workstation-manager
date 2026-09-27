@@ -4,7 +4,6 @@
   connection: local
   gather_facts: true
   vars:
-    workstation_action: backup
     workstation_use_become: >-
       {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
       default('true', true) | bool }}
@@ -30,5 +29,10 @@
       ansible.builtin.import_role:
         name: neilime.workstation_backup.secret_manager_keys
 
-    - name: Run backup action tasks
-      ansible.builtin.import_tasks: tasks/backup_action.yml
+    - name: Verify browser profile recovery and completed Sync
+      ansible.builtin.import_role:
+        name: neilime.workstation_backup.browser
+
+    - name: Run backup workflow
+      ansible.builtin.import_role:
+        name: neilime.workstation_backup.state

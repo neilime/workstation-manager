@@ -15,18 +15,6 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.development_tooling
 
-- name: Apply primary browser configuration
-  ansible.builtin.import_role:
-    name: neilime.workstation_setup.primary_browser
-
-- name: Apply browser profile directories
-  ansible.builtin.import_role:
-    name: neilime.workstation_setup.browser_profiles
-
-- name: Apply GNOME desktop preferences
-  ansible.builtin.import_role:
-    name: neilime.workstation_setup.gnome_preferences
-
 - name: Restore SSH keys from Bitwarden
   ansible.builtin.import_role:
     name: neilime.workstation_setup.ssh_keys
@@ -39,13 +27,21 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.home_environment
 
-- name: Request VS Code settings sync flow
-  ansible.builtin.import_role:
-    name: neilime.workstation_setup.editor_settings_sync
-
 - name: Restore workstation backup archive
   ansible.builtin.import_role:
     name: neilime.workstation_restore.state
+
+- name: Apply selected browser adapter
+  ansible.builtin.include_role:
+    name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"
+
+- name: Apply GNOME desktop preferences
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.gnome_preferences
+
+- name: Request VS Code settings sync flow
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.editor_settings_sync
 
 - name: Apply managed state markers
   ansible.builtin.import_role:

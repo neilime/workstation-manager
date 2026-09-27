@@ -14,6 +14,7 @@
     GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
   register: workstation_backup_secret_manager_gpg_private_key
   changed_when: false
+  check_mode: false
   no_log: true
 
 - name: Export the local GPG public key
@@ -31,6 +32,7 @@
     GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
   register: workstation_backup_secret_manager_gpg_public_key
   changed_when: false
+  check_mode: false
   no_log: true
 
 - name: Export the local GPG ownertrust entry
@@ -46,6 +48,7 @@
     GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
   register: workstation_backup_secret_manager_gpg_ownertrust
   changed_when: false
+  check_mode: false
   no_log: true
 
 - name: Record the local GPG key for synchronization
