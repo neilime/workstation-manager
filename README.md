@@ -18,6 +18,7 @@ You need Ubuntu, internet access, `curl`, `sudo`, and:
 Set up your [private configuration](docs/usage/configuration.md) first. Run the
 commands below from a terminal in your desktop session. Setup prompts for GitHub
 authentication when needed; setup, backup, and cleanup prompt for Bitwarden access.
+Password input is hidden. Press Ctrl-C to cancel a prompt.
 
 ## Set up or update the workstation
 
