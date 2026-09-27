@@ -53,32 +53,31 @@ println_to_tty() {
 	printf '%s\n' "$1" >/dev/tty
 }
 
-prompt_from_tty() {
+prompt_from_tty() (
 	prompt_text="$1"
 	secret_prompt="$2"
 	prompt_value=""
-	tty_state=""
 
 	has_interactive_terminal || return 1
 
 	if [ "$secret_prompt" = "1" ]; then
-		tty_state="$(stty -g </dev/tty)"
-		stty -echo </dev/tty
-		print_to_tty "$prompt_text"
-		if ! IFS= read -r prompt_value </dev/tty; then
-			stty "$tty_state" </dev/tty
-			println_to_tty ""
-			return 1
-		fi
-		stty "$tty_state" </dev/tty
-		println_to_tty ""
-	else
-		print_to_tty "$prompt_text"
-		IFS= read -r prompt_value </dev/tty || return 1
+		# Only echo changes; some stty implementations cannot restore their -g output.
+		tty_settings="$(LC_ALL=C stty -a </dev/tty)" || return 1
+		case " $tty_settings " in
+		*[[:space:]]-echo[[:space:]\;]*) tty_echo="-echo" ;;
+		*[[:space:]]echo[[:space:]\;]*) tty_echo="echo" ;;
+		*) return 1 ;;
+		esac
+		# Keep these traps local to the prompt, including on EOF and interruption.
+		trap 'stty "$tty_echo" </dev/tty || exit 1; println_to_tty ""' EXIT
+		trap 'exit 1' HUP INT TERM
+		stty -echo </dev/tty || return 1
 	fi
 
+	print_to_tty "$prompt_text" || return 1
+	IFS= read -r prompt_value </dev/tty || return 1
 	printf '%s' "$prompt_value"
-}
+)
 
 prompt_for_required_value() {
 	prompt_name="$1"
