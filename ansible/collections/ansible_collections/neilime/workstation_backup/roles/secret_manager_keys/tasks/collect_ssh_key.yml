@@ -1,35 +1,41 @@
 ---
-- name: Check for the matching SSH private key
+- name: Check for the matching SSH public key
   ansible.builtin.stat:
-    path: "{{ item.path | regex_replace('\\.pub$', '') }}"
-  register: workstation_backup_secret_manager_private_key_stat
+    path: "{{ item.path }}.pub"
+  register: workstation_backup_secret_manager_public_key_stat
+
+- name: Require a public key for each local SSH private key
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_secret_manager_public_key_stat.stat.isreg | default(false)
+    fail_msg: >-
+      Cannot synchronize SSH private key {{ item.path }} without its public key
+      {{ item.path }}.pub. Restore or generate the matching public key before backup.
+  no_log: false
 
 - name: Read the SSH private key content
   ansible.builtin.slurp:
-    src: "{{ item.path | regex_replace('\\.pub$', '') }}"
+    src: "{{ item.path }}"
   register: workstation_backup_secret_manager_private_key_content
-  when: workstation_backup_secret_manager_private_key_stat.stat.exists
   no_log: true
 
 - name: Read the SSH public key content
   ansible.builtin.slurp:
-    src: "{{ item.path }}"
+    src: "{{ item.path }}.pub"
   register: workstation_backup_secret_manager_public_key_content
-  when: workstation_backup_secret_manager_private_key_stat.stat.exists
   no_log: true
 
 - name: Record the local SSH keypair for synchronization
   ansible.builtin.set_fact:
     workstation_backup_local_ssh_keys: >-
       {{
-        (workstation_backup_local_ssh_keys | default([]))
+        workstation_backup_local_ssh_keys
         + [
             {
-              'name': item.path | basename | regex_replace('\\.pub$', ''),
+              'name': item.path | basename,
               'private_key': workstation_backup_secret_manager_private_key_content.content | b64decode,
               'public_key': workstation_backup_secret_manager_public_key_content.content | b64decode
             }
           ]
       }}
-  when: workstation_backup_secret_manager_private_key_stat.stat.exists
   no_log: true

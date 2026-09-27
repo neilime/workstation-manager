@@ -1,0 +1,53 @@
+---
+- name: Initialize declared Brave profile paths
+  ansible.builtin.set_fact:
+    browser_brave_expected_profile_paths: []
+
+- name: Resolve declared native Brave profile paths
+  ansible.builtin.set_fact:
+    browser_brave_expected_profile_paths: >-
+      {{
+        browser_brave_expected_profile_paths
+        + [
+          browser_brave_user_data_dir
+          | neilime.workstation_setup.browser_profile_directory(item.id, item.directory | default(none))
+        ]
+      }}
+  loop: "{{ workstation_manager_browser_profiles }}"
+  loop_control:
+    label: "{{ item.id }}"
+  no_log: true
+
+- name: Check whether the Brave profiles root exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ browser_brave_user_data_dir }}"
+  register: browser_brave_profiles_root_stat
+
+- name: Find native Brave profile preferences for a read-only drift report
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.find:
+    paths: "{{ browser_brave_user_data_dir }}"
+    patterns: Preferences
+    file_type: file
+    recurse: true
+    depth: 2
+  register: browser_brave_profile_preferences
+  when: browser_brave_profiles_root_stat.stat.exists
+
+- name: Report undeclared Brave profile directories # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    workstation_manager_cleanup_unmanaged_browser_profile_directories: >-
+      {{
+        (
+          browser_brave_profile_preferences.files
+          | map(attribute='path')
+          | map('dirname')
+          | unique
+          | list
+          | difference(browser_brave_expected_profile_paths)
+          | sort
+        )
+        if browser_brave_profiles_root_stat.stat.exists
+        else []
+      }}

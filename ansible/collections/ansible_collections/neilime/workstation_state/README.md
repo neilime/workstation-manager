@@ -1,6 +1,8 @@
 # neilime.workstation_state
 
-Shared collection for workstation managed-state serialization and marker roles.
+Owns shared managed-state serialization and the baseline markers written by
+setup and read during cleanup.
 
-This collection owns the persisted managed-state schema used by setup and later
-consumed by cleanup drift reporting.
+See the [development guide](../../../../../docs/development/README.md) for
+collection boundaries and checks, and [cleanup](../../../../../docs/usage/cleanup.md)
+for the baseline's effect on removals and drift reports.

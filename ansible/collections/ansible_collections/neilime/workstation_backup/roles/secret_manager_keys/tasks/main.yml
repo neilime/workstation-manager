@@ -9,12 +9,13 @@
     path: "{{ workstation_manager_resolved.user.home }}/.ssh"
   register: workstation_backup_secret_manager_ssh_dir_stat
 
-- name: Discover local SSH public keys
+- name: Discover local SSH private keys
   ansible.builtin.find:
     paths: "{{ workstation_manager_resolved.user.home }}/.ssh"
-    patterns: "*.pub"
+    contains: "^-----BEGIN ([A-Z0-9]+ )?PRIVATE KEY-----"
     file_type: file
-  register: workstation_backup_secret_manager_ssh_public_keys
+    hidden: true
+  register: workstation_backup_secret_manager_ssh_private_keys
   when: workstation_backup_secret_manager_ssh_dir_stat.stat.exists
 
 - name: Initialize local SSH key synchronization state
@@ -23,7 +24,7 @@
 
 - name: Collect local SSH keypairs
   ansible.builtin.include_tasks: collect_ssh_key.yml
-  loop: "{{ workstation_backup_secret_manager_ssh_public_keys.files | default([]) }}"
+  loop: "{{ workstation_backup_secret_manager_ssh_private_keys.files | default([]) }}"
   loop_control:
     label: "{{ item.path | basename }}"
   no_log: true
@@ -43,10 +44,12 @@
       - get
       - collection
       - "{{ workstation_manager_resolved.secrets.bitwarden.ssh_collection_id }}"
-      - --session
-      - "{{ bitwarden_collection_session }}"
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_session }}"
   register: workstation_backup_secret_manager_ssh_collection
   changed_when: false
+  check_mode: false
+  no_log: true
 
 - name: Build SSH key synchronization actions
   ansible.builtin.set_fact:
@@ -79,6 +82,7 @@
     state: present
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+  when: not workstation_backup_dry_run
 
 - name: Initialize local GPG key synchronization state
   ansible.builtin.set_fact:
@@ -103,6 +107,7 @@
     GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
   register: workstation_backup_secret_manager_gpg_fingerprints
   changed_when: false
+  check_mode: false
   when: workstation_backup_secret_manager_gpg_dir_stat.stat.exists
 
 - name: Collect local GPG keys
@@ -133,10 +138,12 @@
       - get
       - collection
       - "{{ workstation_manager_resolved.secrets.bitwarden.gpg_collection_id }}"
-      - --session
-      - "{{ bitwarden_collection_session }}"
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_session }}"
   register: workstation_backup_secret_manager_gpg_collection
   changed_when: false
+  check_mode: false
+  no_log: true
 
 - name: Build GPG key synchronization actions
   ansible.builtin.set_fact:
@@ -169,20 +176,21 @@
 
 - name: Report synchronized key state during backup dry runs
   ansible.builtin.debug:
-    msg: >-
-      Would {{ item.action }} {{ item.kind }} key {{ item.name }} in Bitwarden
-      because it is {{ 'missing' if item.reason == 'missing_in_secret_manager' else 'out of sync' }}.
-  loop: "{{ workstation_backup_secret_manager_actions }}"
-  loop_control:
-    label: "{{ item.kind }} {{ item.name }}"
-  when: workstation_backup_dry_run
+    msg: |-
+      {% for action in workstation_backup_secret_manager_actions %}
+      Would {{ action.action }} {{ action.kind }} key {{ action.name }} in Bitwarden
+      because it is {{ 'missing' if action.action == 'add' else 'out of sync' }}.
+      {% endfor %}
+  when:
+    - workstation_backup_dry_run
+    - workstation_backup_secret_manager_actions | length > 0
 
 - name: Fail when backup needs Bitwarden key decisions in non-interactive mode
   ansible.builtin.fail:
     msg: >-
       Backup found SSH or GPG keys that are not synchronized with Bitwarden, but
       this run is non-interactive. Re-run with an interactive terminal to choose
-      add/update/ignore actions.
+      add/update or abort the backup.
   when:
     - not workstation_backup_dry_run
     - workstation_backup_secret_manager_actions | length > 0

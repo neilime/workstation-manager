@@ -17,7 +17,5 @@ class FilterModule:
         """Return the filters provided by this collection."""
 
         return {
-            "browser_profiles_root_dir": _planner.build_profiles_root_dir,
             "browser_profile_directory": _planner.build_profile_directory,
-            "has_valid_browser_profile_id": _planner.has_valid_profile_id,
         }

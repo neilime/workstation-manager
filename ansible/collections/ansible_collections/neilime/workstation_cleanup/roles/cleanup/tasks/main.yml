@@ -1,18 +1,6 @@
 ---
 - name: Resolve cleanup managed paths
   ansible.builtin.set_fact:
-    workstation_manager_cleanup_browser_profiles_root_dir: >-
-      {{
-        workstation_manager_resolved.user.home
-        | neilime.workstation_setup.browser_profiles_root_dir
-      }}
-    workstation_manager_cleanup_expected_browser_profile_ids: >-
-      {{
-        workstation_manager_resolved.desktop.browser.profiles
-        | map(attribute='id')
-        | list
-        | sort
-      }}
     workstation_manager_cleanup_managed_config_root: >-
       {{ workstation_manager_resolved.user.home ~ '/.config/workstation-manager' }}
     workstation_manager_cleanup_expected_system_state_paths:
@@ -76,20 +64,10 @@
   failed_when: false
   check_mode: false
 
-- name: Check whether the browser profiles root exists
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.stat:
-    path: "{{ workstation_manager_cleanup_browser_profiles_root_dir }}"
-  register: workstation_manager_cleanup_browser_profiles_root_stat
-
-- name: Find current browser profile directories
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.find:
-    paths: "{{ workstation_manager_cleanup_browser_profiles_root_dir }}"
-    file_type: directory
-    recurse: false
-  register: workstation_manager_cleanup_browser_profile_directories
-  when: workstation_manager_cleanup_browser_profiles_root_stat.stat.exists
+- name: Inspect profiles through the selected browser adapter
+  ansible.builtin.include_role:
+    name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"
+    tasks_from: inspect_profiles
 
 - name: Check whether the managed user config root exists
   become: "{{ workstation_manager_use_become }}"
@@ -169,26 +147,6 @@
         )
         else []
       }}
-    workstation_manager_cleanup_unmanaged_browser_profile_directories: >-
-      {{
-        (
-          workstation_manager_cleanup_browser_profile_directories.files
-          | map(attribute='path')
-          | list
-          | difference(
-              workstation_manager_cleanup_expected_browser_profile_ids
-              | map(
-                  'regex_replace',
-                  '^',
-                  workstation_manager_cleanup_browser_profiles_root_dir ~ '/'
-                )
-              | list
-            )
-          | sort
-        )
-        if workstation_manager_cleanup_browser_profiles_root_stat.stat.exists
-        else []
-      }}
     workstation_manager_cleanup_unexpected_system_state_paths: >-
       {{
         (
@@ -240,33 +198,6 @@
     path: "{{ workstation_manager_resolved.user.state_dir }}/mise-install.sh"
     state: absent
   when: not ansible_check_mode
-
-- name: Ensure declared browser profiles are never removed
-  ansible.builtin.assert:
-    that:
-      - >-
-        (
-          workstation_manager_cleanup_unmanaged_browser_profile_directories
-          | map('basename')
-          | list
-          | intersect(workstation_manager_cleanup_expected_browser_profile_ids)
-          | length
-        ) == 0
-    fail_msg: >-
-      Refusing to remove browser profiles declared in the effective workstation
-      configuration.
-
-- name: Remove unmanaged browser profile directories
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop: "{{ workstation_manager_cleanup_unmanaged_browser_profile_directories }}"
-  loop_control:
-    label: "{{ item | basename }}"
-  when:
-    - not ansible_check_mode
-    - workstation_manager_cleanup_unmanaged_browser_profile_directories | length > 0
 
 - name: Prune Docker data
   become: "{{ workstation_manager_use_become }}"
@@ -357,11 +288,7 @@
               workstation_manager_cleanup_apt_upgrade.changed | default(false),
             'journal_vacuum_exit_code':
               workstation_manager_cleanup_journal_vacuum.rc | default(None),
-            'apt_autoremove_requested': not ansible_check_mode,
-            'removed_browser_profile_directories':
-              workstation_manager_cleanup_unmanaged_browser_profile_directories
-              if not ansible_check_mode
-              else []
+            'apt_autoremove_requested': not ansible_check_mode
           }
         }
       }}
@@ -396,7 +323,7 @@
         Unexpected Flatpak apps since the last managed apply:
         {{ workstation_manager_cleanup_unexpected_flatpak_packages | join(', ') or 'none' }}
       - >-
-        Unmanaged browser profile directories under the managed root:
+        Additional native browser profiles preserved (report only):
         {{ workstation_manager_cleanup_unmanaged_browser_profile_directories | join(', ') or 'none' }}
       - >-
         Unexpected managed config paths:

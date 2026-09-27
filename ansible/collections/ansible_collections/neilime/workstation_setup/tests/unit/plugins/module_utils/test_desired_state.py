@@ -9,6 +9,8 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_
     DesiredStateConfigNormalizer,
 )
 
+BROWSER_PROFILES_COLLECTION_ID = "1659d058-b43c-4b59-8c84-cba19c437223"
+
 DECLARED_DOCKER_CLI_PLUGINS = [
     {
         "command": "docker-compose",
@@ -17,23 +19,20 @@ DECLARED_DOCKER_CLI_PLUGINS = [
 ]
 
 DEFAULT_HOME_ENVIRONMENT_ITEMS = (
-    ("source", "neilime/workstation-config"),
     ("version", "2.70.4"),
+    ("source", "https://github.com/neilime/workstation-config.git"),
     ("apply", True),
     ("bin_path", "/usr/local/bin/chezmoi"),
     ("config_path", ".config/chezmoi/chezmoi.yaml"),
 )
-DEFAULT_CHEZMOI_SOURCE = "neilime/workstation-config"
 
 
 def build_home_environment(
-    source: str = DEFAULT_CHEZMOI_SOURCE,
     overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a home_environment payload without repeating the default schema literal."""
 
     chezmoi = dict(DEFAULT_HOME_ENVIRONMENT_ITEMS)
-    chezmoi["source"] = source
     if overrides:
         chezmoi.update(overrides)
 
@@ -42,6 +41,7 @@ def build_home_environment(
 
 DECLARED_HOME_ENVIRONMENT = build_home_environment(
     overrides={
+        "source": "https://git.example.test/team/dotfiles.git",
         "apply": False,
         "bin_path": "/opt/bin/chezmoi",
         "config_path": ".config/chezmoi/work.yaml",
@@ -58,8 +58,8 @@ def assert_empty_optional_system_collections(normalized: dict[str, Any]) -> None
     assert normalized["system"]["settings"]["sysctl"] == {}
 
 
-def test_normalize_returns_complete_shape_with_required_chezmoi_source() -> None:
-    """The required Chezmoi source should unlock the remaining documented defaults."""
+def test_normalize_returns_complete_shape_with_defaults() -> None:
+    """An empty configuration should resolve the documented defaults."""
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
@@ -86,11 +86,7 @@ def test_normalize_returns_complete_shape_with_required_chezmoi_source() -> None
     assert_empty_optional_system_collections(normalized)
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "flathub"
-    assert normalized["desktop"]["browser"]["package"] == "google-chrome-stable"
-    assert normalized["desktop"]["browser"]["repository"]["name"] == "google-chrome"
-    assert normalized["desktop"]["browser"]["default"] is True
-    assert normalized["desktop"]["browser"]["profiles"] == []
-    assert normalized["desktop"]["browser"]["policies"] == {}
+    assert normalized["desktop"]["browser"] == "brave"
     assert normalized["desktop"]["gnome"]["show_trash"] is True
     assert normalized["desktop"]["gnome"]["autostart"] == []
     assert normalized["development"]["repositories"]["apt"] == []
@@ -103,6 +99,7 @@ def test_normalize_returns_complete_shape_with_required_chezmoi_source() -> None
     assert normalized["secrets"]["bitwarden"]["server"] == ""
     assert normalized["secrets"]["bitwarden"]["ssh_collection_id"] == ""
     assert normalized["secrets"]["bitwarden"]["gpg_collection_id"] == ""
+    assert normalized["secrets"]["bitwarden"]["browser_profiles_collection_id"] == ""
 
 
 def test_normalize_preserves_declared_values_and_env_overrides() -> None:
@@ -131,7 +128,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
             "path": "/etc/apt/keyrings/docker.asc",
         },
     }
-    raw_config = {
+    raw_config: dict[str, object] = {
         "user": {
             "name": "declared",
             "home": "/srv/declared",
@@ -160,11 +157,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
                 "remote": "custom",
                 "packages": ["com.brave.Browser"],
             },
-            "browser": {
-                "default": False,
-                "profiles": [{"id": "personal"}],
-                "policies": {"PasswordManagerEnabled": False},
-            },
+            "browser": "brave",
             "gnome": {
                 "dark_mode": False,
                 "show_trash": False,
@@ -188,7 +181,6 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
                 "docker_cli_plugins": DECLARED_DOCKER_CLI_PLUGINS,
             },
             "settings": {"sysctl": {"fs.inotify.max_user_watches": "524288"}},
-            "runtimes": {"node": {"manager": "fnm"}},
         },
         "home_environment": DECLARED_HOME_ENVIRONMENT,
         "secrets": {
@@ -230,11 +222,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "custom"
     assert normalized["desktop"]["flatpak"]["packages"] == ["com.brave.Browser"]
-    assert normalized["desktop"]["browser"]["package"] == "google-chrome-stable"
-    assert normalized["desktop"]["browser"]["repository"]["name"] == "google-chrome"
-    assert normalized["desktop"]["browser"]["default"] is False
-    assert normalized["desktop"]["browser"]["profiles"] == [{"id": "personal"}]
-    assert normalized["desktop"]["browser"]["policies"] == {"PasswordManagerEnabled": False}
+    assert normalized["desktop"]["browser"] == "brave"
     assert normalized["desktop"]["gnome"]["dark_mode"] is False
     assert normalized["desktop"]["gnome"]["show_trash"] is False
     assert normalized["desktop"]["gnome"]["autostart"] == [
@@ -262,7 +250,6 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
         "docker_cli_plugins": DECLARED_DOCKER_CLI_PLUGINS,
     }
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
-    assert normalized["development"]["runtimes"] == {"node": {"manager": "fnm"}}
     assert normalized["home_environment"] == DECLARED_HOME_ENVIRONMENT
     assert normalized["secrets"]["bitwarden"]["server"] == "https://vault.example.test"
     assert normalized["secrets"]["bitwarden"]["ssh_collection_id"] == "11111111-1111-1111-1111-111111111111"
@@ -287,8 +274,8 @@ def test_normalize_preserves_explicit_empty_system_lists() -> None:
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    raw_config = {
-        "home_environment": build_home_environment(DEFAULT_CHEZMOI_SOURCE),
+    raw_config: dict[str, object] = {
+        "home_environment": build_home_environment(),
         "system": {
             "packages": {"prerequisites": [], "apt": []},
             "directories": [],
@@ -307,59 +294,13 @@ def test_normalize_preserves_explicit_empty_system_lists() -> None:
     assert_empty_optional_system_collections(normalized)
 
 
-def test_normalize_uses_default_chezmoi_source_when_omitted() -> None:
-    """The tracked Chezmoi source should apply when no override declares one."""
-
-    # Arrange
-    normalizer = DesiredStateConfigNormalizer()
-    raw_config: dict[str, object] = {}
-
-    # Act
-    normalized = normalizer.normalize(raw_config, {"USER": "emilien"})
-
-    # Assert
-    assert normalized["home_environment"] == build_home_environment()
-
-
-def test_normalize_uses_default_chezmoi_source_when_declared_empty() -> None:
-    """An empty Chezmoi source override should fall back to the tracked default."""
-
-    # Arrange
-    normalizer = DesiredStateConfigNormalizer()
-
-    # Act
-    normalized = normalizer.normalize(
-        {"home_environment": {"chezmoi": {"source": ""}}},
-        {"USER": "emilien"},
-    )
-
-    # Assert
-    assert normalized["home_environment"] == build_home_environment()
-
-
-def test_normalize_ignores_explicit_chezmoi_source_overrides() -> None:
-    """The tracked Chezmoi source should stay fixed even when config declares another one."""
-
-    # Arrange
-    normalizer = DesiredStateConfigNormalizer()
-
-    # Act
-    normalized = normalizer.normalize(
-        {"home_environment": {"chezmoi": {"source": "example/workstation-config"}}},
-        {"USER": "emilien"},
-    )
-
-    # Assert
-    assert normalized["home_environment"] == build_home_environment()
-
-
 def test_normalize_rejects_bitwarden_collections_without_server() -> None:
     """Declared Bitwarden collections require an explicit Bitwarden server."""
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    raw_config = {
-        "home_environment": build_home_environment(DEFAULT_CHEZMOI_SOURCE),
+    raw_config: dict[str, object] = {
+        "home_environment": build_home_environment(),
         "secrets": {
             "bitwarden": {
                 "server": "",
@@ -381,7 +322,7 @@ def test_normalize_rejects_invalid_package_cache_policy() -> None:
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    raw_config = {"system": {"packages": {"cache_valid_time": "daily"}}}
+    raw_config: dict[str, object] = {"system": {"packages": {"cache_valid_time": "daily"}}}
     environment = {"USER": "emilien"}
 
     # Act / Assert
@@ -394,8 +335,8 @@ def test_normalize_rejects_invalid_bitwarden_collection_id() -> None:
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    raw_config = {
-        "home_environment": build_home_environment(DEFAULT_CHEZMOI_SOURCE),
+    raw_config: dict[str, object] = {
+        "home_environment": build_home_environment(),
         "secrets": {
             "bitwarden": {
                 "server": "https://vault.example.test",
@@ -410,3 +351,85 @@ def test_normalize_rejects_invalid_bitwarden_collection_id() -> None:
         match="workstation_manager.secrets.bitwarden.ssh_collection_id must be a UUID string",
     ):
         normalizer.normalize(raw_config, {"USER": "emilien"})
+
+
+@pytest.mark.parametrize(
+    "source, expected",
+    [
+        ("https://git.example.test/team/dotfiles.git", "https://git.example.test/team/dotfiles.git"),
+        ("git@example.test:team/dotfiles.git", "git@example.test:team/dotfiles.git"),
+        ("/srv/dotfiles", "/srv/dotfiles"),
+        ("  https://git.example.test/team/dotfiles.git  ", "https://git.example.test/team/dotfiles.git"),
+    ],
+)
+def test_normalize_preserves_configured_chezmoi_source(source: str, expected: str) -> None:
+    """The configured repository or local path must reach Chezmoi without being replaced by the default."""
+
+    normalized = DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": source}}})
+    assert normalized["home_environment"]["chezmoi"]["source"] == expected
+
+
+def test_normalize_defaults_null_chezmoi_source() -> None:
+    """A null placeholder uses the documented source just like an omitted value."""
+
+    normalized = DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": None}}})
+    assert normalized["home_environment"]["chezmoi"]["source"] == "https://github.com/neilime/workstation-config.git"
+
+
+@pytest.mark.parametrize("source", ["", " ", "\t\n"])
+def test_normalize_rejects_blank_chezmoi_source(source: str) -> None:
+    """An explicitly blank source must not silently initialize the default repository."""
+
+    with pytest.raises(ValueError, match="chezmoi.source must be a non-empty string"):
+        DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": source}}})
+
+
+@pytest.mark.parametrize("source", [12, True, [], {}])
+def test_normalize_rejects_non_string_chezmoi_source(source: object) -> None:
+    """Source values must be strings before they are passed to the Chezmoi command."""
+
+    with pytest.raises(ValueError, match="chezmoi.source must be a string"):
+        DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": source}}})
+
+
+def test_browser_recovery_collection_selector():
+    """The optional browser collection is validated like key collections."""
+    normalizer = DesiredStateConfigNormalizer()
+    config = {
+        "secrets": {
+            "bitwarden": {
+                "server": "https://vault.example.test",
+                "browser_profiles_collection_id": BROWSER_PROFILES_COLLECTION_ID,
+            }
+        }
+    }
+    assert (
+        normalizer.normalize(config, {"USER": "test"})["secrets"]["bitwarden"]["browser_profiles_collection_id"]
+        == BROWSER_PROFILES_COLLECTION_ID
+    )
+    config["secrets"]["bitwarden"]["browser_profiles_collection_id"] = "invalid"
+    with pytest.raises(ValueError, match="browser_profiles_collection_id must be a UUID"):
+        normalizer.normalize(config, {"USER": "test"})
+
+
+def test_browser_profile_collection_requires_server():
+    """A profile collection cannot be fetched without a selected Bitwarden server."""
+
+    config = {
+        "secrets": {
+            "bitwarden": {
+                "server": "",
+                "browser_profiles_collection_id": BROWSER_PROFILES_COLLECTION_ID,
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="bitwarden.server must not be empty"):
+        DesiredStateConfigNormalizer().normalize(config)
+
+
+def test_obsolete_browser_collection_selector_is_rejected():
+    """Do not silently treat the old recovery-only selector as an unconfigured browser."""
+
+    config = {"secrets": {"bitwarden": {"browser_collection_id": BROWSER_PROFILES_COLLECTION_ID}}}
+    with pytest.raises(ValueError, match="use browser_profiles_collection_id with complete profile notes"):
+        DesiredStateConfigNormalizer().normalize(config)

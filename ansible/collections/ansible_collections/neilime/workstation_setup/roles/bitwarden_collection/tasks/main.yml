@@ -7,6 +7,12 @@
       {{ bitwarden_collection_purpose }} requires a non-empty Bitwarden
       collection ID.
 
+- name: Require the configured Bitwarden server
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_resolved.secrets.bitwarden.server | length > 0
+    fail_msg: Bitwarden recovery requires a nonempty secrets.bitwarden.server.
+
 - name: Read Bitwarden automation environment
   ansible.builtin.set_fact:
     bitwarden_collection_email: >-
@@ -21,6 +27,7 @@
   no_log: true
 
 - name: Ensure the Bitwarden CLI is available
+  check_mode: false
   ansible.builtin.command: bw --version
   register: bitwarden_collection_cli
   changed_when: false
@@ -33,7 +40,9 @@
     state: present
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
-  when: bitwarden_collection_cli.rc != 0
+  when:
+    - bitwarden_collection_cli.rc != 0
+    - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))
 
 - name: Download the Bitwarden CLI archive
   become: "{{ workstation_manager_use_become }}"
@@ -41,7 +50,9 @@
     url: https://bitwarden.com/download/?app=cli&platform=linux
     dest: /tmp/bitwarden-cli-linux.zip
     mode: "0644"
-  when: bitwarden_collection_cli.rc != 0
+  when:
+    - bitwarden_collection_cli.rc != 0
+    - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))
 
 - name: Install the Bitwarden CLI binary
   become: "{{ workstation_manager_use_become }}"
@@ -52,9 +63,12 @@
     owner: root
     group: root
     mode: "0755"
-  when: bitwarden_collection_cli.rc != 0
+  when:
+    - bitwarden_collection_cli.rc != 0
+    - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))
 
 - name: Re-check the Bitwarden CLI after installation
+  check_mode: false
   ansible.builtin.command: bw --version
   register: bitwarden_collection_cli
   changed_when: false
@@ -69,6 +83,7 @@
       could not be installed automatically.
 
 - name: Read Bitwarden session status
+  check_mode: false
   ansible.builtin.command: bw status
   register: bitwarden_collection_status_command
   changed_when: false
@@ -80,7 +95,17 @@
     bitwarden_collection_status: >-
       {{ bitwarden_collection_status_command.stdout | from_json }}
 
+- name: Require the correct Bitwarden server before a dry run
+  ansible.builtin.assert:
+    that:
+      - bitwarden_collection_status.serverUrl == workstation_manager_resolved.secrets.bitwarden.server
+    fail_msg: >-
+      The Bitwarden CLI uses a different server. Select the configured secrets.bitwarden.server
+      before retrying; dry runs do not change the CLI server configuration.
+  when: ansible_check_mode or (workstation_backup_dry_run | default(false))
+
 - name: Configure the declared Bitwarden server
+  check_mode: false
   ansible.builtin.command:
     argv:
       - bw
@@ -90,7 +115,9 @@
   changed_when: bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
   environment:
     BW_SESSION: ""
-  when: bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
+  when:
+    - bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
+    - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))
 - name: Ensure Bitwarden authentication data exists before login
   ansible.builtin.assert:
     that:
@@ -109,6 +136,7 @@
   when: bitwarden_collection_status.status == 'unauthenticated'
 
 - name: Login to Bitwarden with the configured API key
+  check_mode: false
   ansible.builtin.command:
     argv:
       - bw
@@ -127,14 +155,17 @@
     - bitwarden_collection_client_secret | length > 0
 
 - name: Login to Bitwarden with the configured email and password
+  check_mode: false
   ansible.builtin.command:
     argv:
       - bw
       - login
       - "{{ bitwarden_collection_email }}"
-      - "{{ bitwarden_collection_password }}"
+      - --passwordenv
+      - BITWARDEN_PASSWORD
       - --raw
   environment:
+    BITWARDEN_PASSWORD: "{{ bitwarden_collection_password }}"
     BW_SESSION: ""
   changed_when: false
   no_log: true
@@ -151,6 +182,7 @@
       vault.
 
 - name: Unlock the Bitwarden vault for this run
+  check_mode: false
   ansible.builtin.command:
     argv:
       - bw
@@ -180,24 +212,32 @@
   no_log: true
 
 - name: Sync the Bitwarden vault before reading collection items
+  check_mode: false
   ansible.builtin.command:
     argv:
       - bw
       - sync
-      - --session
-      - "{{ bitwarden_collection_session }}"
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_session }}"
   changed_when: false
   no_log: true
 
 - name: Read Bitwarden collection items
+  ansible.builtin.command:
+    argv:
+      - bw
+      - list
+      - items
+      - --collectionid
+      - "{{ bitwarden_collection_id }}"
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+  register: bitwarden_collection_items_command
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Collect the Bitwarden collection records
   ansible.builtin.set_fact:
-    bitwarden_collection_items: >-
-      {{
-        lookup(
-          'community.general.bitwarden',
-          None,
-          collection_id=bitwarden_collection_id,
-          bw_session=bitwarden_collection_session
-        )
-      }}
+    bitwarden_collection_items: "{{ bitwarden_collection_items_command.stdout | from_json }}"
   no_log: true

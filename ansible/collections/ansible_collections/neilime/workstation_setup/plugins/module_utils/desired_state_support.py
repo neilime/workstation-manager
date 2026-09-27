@@ -54,11 +54,9 @@ class DesiredStateValueResolver:
 
     @staticmethod
     def value_or_default(value: object, default: object) -> object:
-        """Return a cloned explicit value or a cloned default when missing."""
+        """Select an explicit value or its default before type validation and cloning."""
 
-        if value is None:
-            return deepcopy(default)
-        return deepcopy(value)
+        return default if value is None else value
 
     @classmethod
     def apt_repositories(
@@ -115,27 +113,12 @@ class DesiredStateValueResolver:
         return value
 
 
+# pylint: disable=too-few-public-methods
 class DesiredStateDefaultsSectionNormalizer:
     """Shared scaffolding for section normalizers that depend on defaults."""
 
     def __init__(self, resolver: DesiredStateValueResolver) -> None:
         self._resolver = resolver
-
-    def normalize(
-        self,
-        config: dict[str, object],
-        defaults: dict[str, object],
-    ) -> dict[str, object]:
-        """Return the normalized section."""
-
-        return self._normalize(config, defaults)
-
-    def _normalize(
-        self,
-        config: dict[str, object],
-        defaults: dict[str, object],
-    ) -> dict[str, object]:
-        raise NotImplementedError()
 
 
 class DesiredStateDefaultsFactory:
@@ -148,12 +131,6 @@ class DesiredStateDefaultsFactory:
         """Return the full default desired-state mapping."""
 
         return {
-            "user": {
-                "name": "root",
-                "home": "/home/root",
-                "projects_directory": "/home/root/Documents/dev-projects",
-                "state_dir": f"/home/root/.local/state/{self._state_slug}",
-            },
             "system": {
                 "state_dir": f"/etc/{self._state_slug}",
                 "locale": "en_US.UTF-8",
@@ -170,28 +147,10 @@ class DesiredStateDefaultsFactory:
             },
             "desktop": {
                 "flatpak": {
-                    "enabled": True,
                     "remote": "flathub",
                     "packages": [],
                 },
-                "browser": {
-                    "package": "google-chrome-stable",
-                    "repository": {
-                        "name": "google-chrome",
-                        "source": (
-                            "deb [arch=amd64 "
-                            "signed-by=/usr/share/keyrings/google-linux-signing-key.asc] "
-                            "https://dl.google.com/linux/chrome/deb/ stable main"
-                        ),
-                        "keyring": {
-                            "url": "https://dl.google.com/linux/linux_signing_key.pub",
-                            "path": "/usr/share/keyrings/google-linux-signing-key.asc",
-                        },
-                    },
-                    "default": True,
-                    "profiles": [],
-                    "policies": {},
-                },
+                "browser": "brave",
                 "gnome": {
                     "dark_mode": True,
                     "show_trash": True,
@@ -203,17 +162,15 @@ class DesiredStateDefaultsFactory:
                 "packages": [],
                 "repositories": {"apt": []},
                 "editor_packages": [],
-                "git": {"default_branch": "main", "editor": "nvim"},
                 "mise": {
                     "tools": {},
                 },
                 "settings": {"sysctl": {"fs.inotify.max_user_watches": "524288"}},
-                "runtimes": {},
             },
             "home_environment": {
                 "chezmoi": {
-                    "source": "neilime/workstation-config",
                     "version": "2.70.4",
+                    "source": "https://github.com/neilime/workstation-config.git",
                     "apply": True,
                     "bin_path": "/usr/local/bin/chezmoi",
                     "config_path": ".config/chezmoi/chezmoi.yaml",

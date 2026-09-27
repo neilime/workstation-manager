@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     desired_state_support,
 )
@@ -11,16 +13,19 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the desktop section of the desired-state schema."""
 
-    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+    def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+        """Return the normalized desktop section."""
+
         desktop = self._resolver.mapping(config.get("desktop"), "workstation_manager.desktop")
         flatpak = self._resolver.mapping(desktop.get("flatpak"), "workstation_manager.desktop.flatpak")
-        browser = self._resolver.mapping(desktop.get("browser"), "workstation_manager.desktop.browser")
+        browser = desktop.get("browser", defaults.get("browser"))
+        if not isinstance(browser, str) or re.fullmatch(r"[a-z][a-z0-9_]*", browser) is None:
+            raise ValueError(
+                "workstation_manager.desktop.browser must be a browser identifier matching [a-z][a-z0-9_]*"
+            )
         gnome = self._resolver.mapping(desktop.get("gnome"), "workstation_manager.desktop.gnome")
         default_flatpak = self._resolver.mapping(
             defaults.get("flatpak"), "workstation_manager.desktop.defaults.flatpak"
-        )
-        default_browser = self._resolver.mapping(
-            defaults.get("browser"), "workstation_manager.desktop.defaults.browser"
         )
         default_gnome = self._resolver.mapping(defaults.get("gnome"), "workstation_manager.desktop.defaults.gnome")
 
@@ -38,37 +43,7 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                     "workstation_manager.desktop.flatpak.packages",
                 ),
             },
-            "browser": {
-                "package": self._resolver.first_non_empty_string(
-                    browser.get("package"),
-                    default_browser.get("package"),
-                ),
-                "repository": self._resolver.mapping(
-                    self._resolver.value_or_default(
-                        browser.get("repository"),
-                        default_browser.get("repository"),
-                    ),
-                    "workstation_manager.desktop.browser.repository",
-                ),
-                "default": self._resolver.bool_value(
-                    browser.get("default"),
-                    self._resolver.bool_value(default_browser.get("default"), True),
-                ),
-                "profiles": self._resolver.list_value(
-                    self._resolver.value_or_default(
-                        browser.get("profiles"),
-                        default_browser.get("profiles"),
-                    ),
-                    "workstation_manager.desktop.browser.profiles",
-                ),
-                "policies": self._resolver.mapping(
-                    self._resolver.value_or_default(
-                        browser.get("policies"),
-                        default_browser.get("policies"),
-                    ),
-                    "workstation_manager.desktop.browser.policies",
-                ),
-            },
+            "browser": browser,
             "gnome": {
                 "dark_mode": self._resolver.bool_value(
                     gnome.get("dark_mode"),

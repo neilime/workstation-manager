@@ -11,13 +11,7 @@ class BrowserProfilePathsPlanner:
 
     _profile_id_pattern = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
-    def build_profiles_root_dir(self, user_home: str) -> str:
-        """Return the stable root directory for managed browser profiles."""
-
-        normalized_user_home = self._normalize_required_value(user_home, "user_home")
-        return f"{normalized_user_home}/.local/share/workstation-manager/browser-profiles"
-
-    def build_profile_directory(self, profiles_root_dir: str, profile_id: str) -> str:
+    def build_profile_directory(self, profiles_root_dir: str, profile_id: str, directory: str | None = None) -> str:
         """Return the stable path for one declared browser profile."""
 
         normalized_profiles_root_dir = self._normalize_required_value(
@@ -26,7 +20,15 @@ class BrowserProfilePathsPlanner:
         )
         normalized_profile_id = self.validate_profile_id(profile_id)
 
-        return f"{normalized_profiles_root_dir}/{normalized_profile_id}"
+        basename = self.validate_profile_directory(directory or f"managed-{normalized_profile_id}")
+        return f"{normalized_profiles_root_dir}/{basename}"
+
+    def validate_profile_directory(self, directory: str) -> str:
+        """Allow a single native profile basename, including migrated Profile N names."""
+
+        if not isinstance(directory, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]*", directory):
+            raise ValueError("profile directory must be a safe single directory name")
+        return directory
 
     def has_valid_profile_id(self, profile_id: object) -> bool:
         """Return whether the given profile id matches the supported slug format."""

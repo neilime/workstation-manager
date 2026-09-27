@@ -1,0 +1,65 @@
+---
+- name: Reload browser profiles and recovery records from Bitwarden
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.browser_profile_collection
+
+- name: Inspect native profiles against the Bitwarden collection
+  ansible.builtin.include_role:
+    name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"
+    tasks_from: backup
+
+- name: Report browser profile and synchronization drift
+  ansible.builtin.debug:
+    msg:
+      profiles: "{{ workstation_manager_browser_profiles | map(attribute='id') | list }}"
+      profile_drift: "{{ workstation_backup_browser_inspection.drift }}"
+      sync_configuration_drift: "{{ workstation_backup_browser_inspection.sync_issues }}"
+      live_sync: "{{ workstation_backup_browser_sync_instructions }}"
+
+- name: Decide whether browser recovery still has drift
+  ansible.builtin.set_fact:
+    browser_has_drift: >-
+      {{ workstation_backup_browser_inspection.drift | length > 0
+         or workstation_backup_browser_inspection.sync_issues | length > 0 }}
+
+- name: Require an interactive browser synchronization check
+  ansible.builtin.assert:
+    that:
+      - browser_interactive or (not browser_has_drift and workstation_backup_browser_inspection.profiles | length == 0)
+    fail_msg: >-
+      Browser recovery requires an interactive run to resolve reported drift and confirm live Sync completion.
+  when: not workstation_backup_dry_run
+
+- name: Prompt to reconcile browser recovery drift
+  ansible.builtin.pause:
+    prompt: >-
+      Browser recovery has the drift listed above. Reconcile native profile names, directories, configured theme colors, and avatars with
+      the profile records in the configured Bitwarden browser collection. Add records for new profiles
+      or restore missing local profiles from the collection. Run setup with the browser closed to apply stored theme colors and avatars,
+      or update theme_colors or replace the avatar.png attachment in the corresponding note to keep intentional changes.
+      Keep recovery words only in their secure notes.
+      A profile missing on this computer is not a reason to delete its Bitwarden record.
+      {{ workstation_backup_browser_sync_instructions }}
+      Choose [retry/abort] after resolving the drift. Retry reloads the collection and local profiles.
+  register: browser_drift_choice
+  until: browser_drift_choice.user_input | trim | lower in ['retry', 'abort']
+  retries: 3
+  delay: 0
+  when:
+    - not workstation_backup_dry_run
+    - browser_has_drift
+
+- name: Stop backup when browser recovery drift is unresolved
+  ansible.builtin.fail:
+    msg: Browser recovery was not synchronized; no archive was created.
+  when:
+    - not workstation_backup_dry_run
+    - browser_has_drift
+    - browser_drift_choice.user_input | trim | lower == 'abort'
+
+- name: Recheck browser recovery after the user resolves drift
+  ansible.builtin.include_tasks: verify.yml
+  when:
+    - not workstation_backup_dry_run
+    - browser_has_drift
+    - browser_drift_choice.user_input | trim | lower == 'retry'

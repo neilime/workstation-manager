@@ -24,11 +24,6 @@
       register: workstation_restore_git_inventory_stat
       when: workstation_restore_git_inventory_path | length > 0
 
-    - name: Check whether the bookmark export directory exists
-      ansible.builtin.stat:
-        path: "{{ workstation_restore_bookmarks_dir }}"
-      register: workstation_restore_bookmarks_dir_stat
-
     - name: Load the Git repository inventory
       ansible.builtin.slurp:
         path: "{{ workstation_restore_git_inventory_path }}"
@@ -59,12 +54,6 @@
             }}
           - >-
             {{
-              'bookmark exports available at ' ~ workstation_restore_bookmarks_dir
-              if workstation_restore_bookmarks_dir_stat.stat.exists | default(false)
-              else 'bookmark exports not found next to archive'
-            }}
-          - >-
-            {{
               'git inventory: ' ~
               workstation_restore_git_inventory_path ~
               ' (' ~
@@ -74,6 +63,11 @@
               else 'git inventory not found next to archive'
             }}
       when: ansible_check_mode
+
+    - name: Validate archive paths and links before extraction
+      neilime.workstation_restore.validate_archive:
+        path: "{{ workstation_restore_archive_path }}"
+        target_home: "{{ workstation_restore_target_user_home }}"
 
     - name: Restore backup archive into the target user home
       ansible.builtin.unarchive:
@@ -114,12 +108,6 @@
       ansible.builtin.debug:
         msg:
           - "restore archive applied from {{ workstation_restore_archive_path }}"
-          - >-
-            {{
-              'bookmark exports remain available at ' ~ workstation_restore_bookmarks_dir ~ ' for manual browser import'
-              if workstation_restore_bookmarks_dir_stat.stat.exists | default(false)
-              else 'no standalone bookmark export directory was found next to the archive'
-            }}
           - >-
             {{
               'git repository inventory processed from ' ~ workstation_restore_git_inventory_path

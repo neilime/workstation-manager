@@ -1,0 +1,21 @@
+---
+- name: Inspect native Brave profiles for backup recovery
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.browser_profile_inspection:
+    user_data_dir: "{{ browser_brave_user_data_dir }}"
+    profiles: "{{ workstation_manager_browser_profiles }}"
+  register: browser_brave_backup_inspection
+
+- name: Publish Brave recovery inspection and live Sync instructions
+  ansible.builtin.set_fact:
+    workstation_backup_browser_inspection: >-
+      {{ {'profiles': browser_brave_backup_inspection.profiles,
+          'drift': browser_brave_backup_inspection.drift,
+          'sync_issues': browser_brave_backup_inspection.sync_issues} }}
+    workstation_backup_browser_sync_instructions: >-
+      Open brave://settings/braveSync in each profile, enable Sync everything,
+      and inspect brave://sync-internals for current successful synchronization.
+      Compare the stable first 24 recovery words with that profile's Bitwarden note;
+      the rotating 25th pairing word is not part of the stored recovery secret.
+      After changing settings, close Brave so profile preferences are saved before retrying.

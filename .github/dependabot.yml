@@ -13,20 +13,11 @@ updates:
     cooldown:
       default-days: 7
 
-  - package-ecosystem: "devcontainers"
-    open-pull-requests-limit: 20
-    directory: "/"
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-
   - package-ecosystem: "docker"
     open-pull-requests-limit: 20
     directories:
       - "/"
-      - "/application/backend"
-      - "/application/frontend"
+      - "/docker/tooling"
     schedule:
       interval: "weekly"
     groups:

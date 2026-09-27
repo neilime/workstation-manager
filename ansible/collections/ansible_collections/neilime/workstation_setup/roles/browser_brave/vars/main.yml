@@ -1,0 +1,2 @@
+---
+browser_brave_user_data_dir: "{{ workstation_manager_resolved.user.home }}/.config/BraveSoftware/Brave-Browser"

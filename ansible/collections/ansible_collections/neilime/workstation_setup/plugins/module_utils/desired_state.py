@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     desired_state_desktop,
     desired_state_development,
@@ -24,17 +26,18 @@ class DesiredStateConfigNormalizer:
         self,
         raw_config: dict[str, object] | None,
         env: dict[str, str] | None = None,
-    ) -> dict[str, object]:
-        """Return a normalized workstation_manager mapping with safe defaults."""
+    ) -> dict[str, dict[str, Any]]:
+        """Return normalized configuration sections with safe defaults."""
 
         resolver = desired_state_support.DesiredStateValueResolver()
         defaults_factory = desired_state_support.DesiredStateDefaultsFactory(self._state_slug)
         config = resolver.mapping(raw_config, "workstation_manager")
         environment = env or {}
         defaults = defaults_factory.build()
+        user = desired_state_user.UserSectionNormalizer(resolver, self._state_slug).normalize(config, environment)
 
         return {
-            "user": desired_state_user.UserSectionNormalizer(resolver, self._state_slug).normalize(config, environment),
+            "user": user,
             "system": desired_state_system.SystemSectionNormalizer(resolver).normalize(
                 config,
                 environment,

@@ -1,6 +1,7 @@
 # neilime.workstation_cleanup
 
-Dedicated cleanup collection for the workstation-manager repository.
+Owns cleanup orchestration, managed-state comparison, and drift reporting.
 
-This collection owns cleanup-only orchestration, drift reporting, and removal of
-managed workstation artifacts that no longer belong on the machine.
+See [cleanup](../../../../../docs/usage/cleanup.md) for what is removed and
+preserved, and the [development guide](../../../../../docs/development/README.md)
+for structure and checks.

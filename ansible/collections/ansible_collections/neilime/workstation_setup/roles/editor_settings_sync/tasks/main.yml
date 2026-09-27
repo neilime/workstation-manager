@@ -52,7 +52,7 @@
         neilime.workstation_setup.should_request_vscode_settings_sync(
           {
             'sync_state_exists': workstation_manager_vscode_settings_sync_state_stat.stat.exists,
-            'has_desktop_session': workstation_manager_vscode_settings_sync_session_environment.rc == 0,
+            'has_desktop_session': (workstation_manager_vscode_settings_sync_session_environment.rc | default(1)) == 0,
             'interactive': workstation_manager_vscode_settings_sync_interactive,
             'check_mode': ansible_check_mode,
           }

@@ -4,7 +4,6 @@
   connection: local
   gather_facts: true
   vars:
-    workstation_action: setup
     workstation_use_become: >-
       {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
       default('true', true) | bool }}

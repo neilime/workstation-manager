@@ -12,8 +12,7 @@ tags:
   - tools
 license:
   - MIT
-dependencies:
-  community.general: "*"
+dependencies: {}
 repository: https://github.com/neilime/workstation-manager
 documentation: https://github.com/neilime/workstation-manager/blob/main/README.md
 homepage: https://github.com/neilime/workstation-manager

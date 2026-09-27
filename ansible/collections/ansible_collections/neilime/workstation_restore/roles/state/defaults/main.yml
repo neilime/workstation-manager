@@ -26,14 +26,6 @@ workstation_restore_git_inventory_path: >- # noqa: var-naming[no-role-prefix]
       true
     )
   }}
-workstation_restore_bookmarks_dir: >- # noqa: var-naming[no-role-prefix]
-  {{
-    lookup('env', 'WORKSTATION_MANAGER_RESTORE_BOOKMARKS_DIR') |
-    default(
-      (workstation_restore_archive_path | dirname) ~ '/browser-bookmarks',
-      true
-    )
-  }}
 workstation_restore_target_user_name: >- # noqa: var-naming[no-role-prefix]
   {{
     workstation_manager_resolved.user.name

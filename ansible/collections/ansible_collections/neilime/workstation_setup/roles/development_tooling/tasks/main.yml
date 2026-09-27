@@ -167,7 +167,6 @@
     mode: "0644"
   vars:
     workstation_manager_mise_config_tools: "{{ workstation_manager_resolved.development.mise.tools }}"
-  register: workstation_manager_development_mise_global_config
 
 - name: Render mise shell activation fragment
   become: "{{ workstation_manager_use_become }}"
@@ -354,27 +353,6 @@
     - workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
     - item.stdout | length > 0
 
-- name: Read managed development sysctl configuration
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.slurp:
-    src: /etc/sysctl.d/99-workstation-manager.conf
-  register: workstation_manager_development_managed_sysctl_file
-  failed_when: false
-  changed_when: false
-
-- name: Compute managed development sysctl configuration keys
-  ansible.builtin.set_fact:
-    workstation_manager_development_managed_sysctl_keys: >-
-      {{
-        (
-          workstation_manager_development_managed_sysctl_file.content | default('') | b64decode
-        )
-        | regex_findall('(?m)^([A-Za-z0-9_.]+)\\s*=')
-      }}
-    workstation_manager_development_desired_sysctl_keys: >-
-      {{ workstation_manager_resolved.development.settings.sysctl.keys() | list }}
-  changed_when: false
-
 - name: Remove managed development sysctl configuration when no values are declared
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
@@ -389,23 +367,6 @@
     mode: "0644"
     content: |
       # Managed by workstation-manager.
-  when: workstation_manager_resolved.development.settings.sysctl | length > 0
-
-- name: Remove stale managed development sysctl entries
-  become: "{{ workstation_manager_use_become }}"
-  ansible.posix.sysctl:
-    name: "{{ item }}"
-    state: absent
-    sysctl_file: /etc/sysctl.d/99-workstation-manager.conf
-    reload: false
-  loop: >-
-    {{
-      workstation_manager_development_managed_sysctl_keys
-      | difference(workstation_manager_development_desired_sysctl_keys)
-      | sort
-    }}
-  loop_control:
-    label: "{{ item }}"
   when: workstation_manager_resolved.development.settings.sysctl | length > 0
 
 - name: Apply managed development sysctl entries

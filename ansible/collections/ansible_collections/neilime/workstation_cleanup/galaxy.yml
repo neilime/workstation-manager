@@ -13,8 +13,6 @@ tags:
 license:
   - MIT
 dependencies:
-  ansible.posix: "*"
-  community.general: "*"
   neilime.workstation_setup: "*"
 repository: https://github.com/neilime/workstation-manager
 documentation: https://github.com/neilime/workstation-manager/blob/main/README.md

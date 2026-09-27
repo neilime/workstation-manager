@@ -18,9 +18,16 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
         r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     )
 
-    def _normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+    def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+        """Return the normalized secrets section."""
+
         secrets = self._resolver.mapping(config.get("secrets"), "workstation_manager.secrets")
         bitwarden = self._resolver.mapping(secrets.get("bitwarden"), "workstation_manager.secrets.bitwarden")
+        if "browser_collection_id" in bitwarden:
+            raise ValueError(
+                "workstation_manager.secrets.bitwarden.browser_collection_id is no longer supported; "
+                "use browser_profiles_collection_id with complete profile notes"
+            )
         default_bitwarden = self._resolver.mapping(
             defaults.get("bitwarden"), "workstation_manager.secrets.defaults.bitwarden"
         )
@@ -45,7 +52,14 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             ),
             "workstation_manager.secrets.bitwarden.gpg_collection_id",
         )
-        has_declared_collection = bool(ssh_collection_id or gpg_collection_id)
+        browser_profiles_collection_id = self._optional_uuid_string_value(
+            self._resolver.value_or_default(
+                bitwarden.get("browser_profiles_collection_id"),
+                default_bitwarden.get("browser_profiles_collection_id"),
+            ),
+            "workstation_manager.secrets.bitwarden.browser_profiles_collection_id",
+        )
+        has_declared_collection = bool(ssh_collection_id or gpg_collection_id or browser_profiles_collection_id)
 
         if has_declared_collection and not server:
             raise ValueError("workstation_manager.secrets.bitwarden.server must not be empty")
@@ -55,6 +69,7 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                 "server": server,
                 "ssh_collection_id": ssh_collection_id,
                 "gpg_collection_id": gpg_collection_id,
+                "browser_profiles_collection_id": browser_profiles_collection_id,
             },
         }
 

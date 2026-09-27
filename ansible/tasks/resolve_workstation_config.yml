@@ -27,12 +27,25 @@
 
 - name: Normalize desired state schema
   ansible.builtin.set_fact:
-    workstation_resolved: >-
+    workstation_manager_resolved: >-
       {{ workstation_effective |
       neilime.workstation_setup.normalized_workstation_manager(ansible_env) }}
-
-- name: Bridge workstation variables to collection compatibility facts
-  ansible.builtin.set_fact:
     workstation_manager_use_become: "{{ workstation_use_become }}"
-    workstation_manager_effective: "{{ workstation_effective }}"
-    workstation_manager_resolved: "{{ workstation_resolved }}"
+
+- name: Validate selected browser adapter entrypoints
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.fileglob', workstation_browser_adapter_tasks_dir ~ '/' ~ item ~ '.yml', wantlist=True) | length == 1
+    fail_msg: >-
+      Browser adapter '{{ workstation_manager_resolved.desktop.browser }}' is unavailable or incomplete:
+      expected {{ workstation_browser_adapter_tasks_dir }}/{{ item }}.yml.
+  vars:
+    workstation_browser_adapter_tasks_dir: >-
+      {{
+        playbook_dir ~ '/collections/ansible_collections/neilime/workstation_setup/roles/browser_'
+        ~ workstation_manager_resolved.desktop.browser ~ '/tasks'
+      }}
+  loop:
+    - main
+    - inspect_profiles
+    - backup

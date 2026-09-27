@@ -1,8 +1,6 @@
 ---
 - name: Resolve Chezmoi architecture settings
   ansible.builtin.set_fact:
-    workstation_manager_home_environment_chezmoi_enabled: >-
-      {{ workstation_manager_resolved.home_environment.chezmoi.source | length > 0 }}
     workstation_manager_home_environment_chezmoi_architecture: >-
       {{
         {
@@ -27,18 +25,7 @@
           ~ workstation_manager_resolved.home_environment.chezmoi.config_path
         )
       }}
-    workstation_manager_home_environment_chezmoi_source_url: >-
-      {{
-        workstation_manager_resolved.home_environment.chezmoi.source
-        if (
-          workstation_manager_resolved.home_environment.chezmoi.source.startswith('https://')
-          or workstation_manager_resolved.home_environment.chezmoi.source.startswith('http://')
-          or workstation_manager_resolved.home_environment.chezmoi.source.startswith('git@')
-        )
-        else 'https://github.com/'
-        ~ workstation_manager_resolved.home_environment.chezmoi.source
-        ~ '.git'
-      }}
+    workstation_manager_home_environment_chezmoi_source_url: "{{ workstation_manager_resolved.home_environment.chezmoi.source }}"
     workstation_manager_home_environment_chezmoi_source_dir: >-
       {{ workstation_manager_resolved.user.home ~ '/.local/share/chezmoi' }}
     workstation_manager_home_environment_chezmoi_download_url: >-
@@ -81,7 +68,6 @@
   loop:
     - "{{ workstation_manager_resolved.user.projects_directory }}"
     - "{{ workstation_manager_resolved.user.home }}/.cache"
-    - "{{ workstation_manager_resolved.user.home }}/.cache/nix"
     - "{{ workstation_manager_resolved.user.home }}/.local"
     - "{{ workstation_manager_resolved.user.home }}/.local/share"
     - "{{ workstation_manager_resolved.user.home }}/.local/state"
@@ -94,7 +80,6 @@
     fail_msg: >-
       Chezmoi bootstrap currently supports only amd64 and arm64 Linux targets,
       but ansible_architecture={{ ansible_architecture }}.
-  when: workstation_manager_home_environment_chezmoi_enabled
 
 - name: Check whether Chezmoi is already installed
   ansible.builtin.command:
@@ -104,7 +89,6 @@
   register: workstation_manager_home_environment_chezmoi_version
   changed_when: false
   failed_when: false
-  when: workstation_manager_home_environment_chezmoi_enabled
 
 - name: Install the pinned Chezmoi binary
   become: "{{ workstation_manager_use_become }}"
@@ -115,7 +99,6 @@
     group: root
     mode: "0755"
   when:
-    - workstation_manager_home_environment_chezmoi_enabled
     - >-
       workstation_manager_home_environment_chezmoi_version.rc != 0
       or workstation_manager_resolved.home_environment.chezmoi.version
@@ -129,7 +112,6 @@
     owner: "{{ workstation_manager_resolved.user.name }}"
     group: "{{ workstation_manager_resolved.user.name }}"
     mode: "0755"
-  when: workstation_manager_home_environment_chezmoi_enabled
 
 - name: Render the managed Chezmoi machine-data config
   become: "{{ workstation_manager_use_become }}"
@@ -140,14 +122,12 @@
     mode: "0600"
     content: >-
       {{ {'data': workstation_manager_home_environment_chezmoi_template_data} | to_nice_yaml(indent=2) }}
-  when: workstation_manager_home_environment_chezmoi_enabled
 
 - name: Check whether the managed Chezmoi source directory exists
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.stat:
     path: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
   register: workstation_manager_home_environment_chezmoi_source_dir_stat
-  when: workstation_manager_home_environment_chezmoi_enabled
 
 - name: Initialize the managed Chezmoi source repository
   become: "{{ workstation_manager_use_become }}"
@@ -171,7 +151,6 @@
       }}
   no_log: true
   when:
-    - workstation_manager_home_environment_chezmoi_enabled
     - not ansible_check_mode
     - not workstation_manager_home_environment_chezmoi_source_dir_stat.stat.exists
     - lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') | default('', true) | length > 0
@@ -191,12 +170,10 @@
     XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
     GIT_TERMINAL_PROMPT: "0"
   when:
-    - workstation_manager_home_environment_chezmoi_enabled
     - not ansible_check_mode
     - not workstation_manager_home_environment_chezmoi_source_dir_stat.stat.exists
     - >-
-      lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') |
-      default('', true) | length == 0
+      lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') | default('', true) | length == 0
       or not workstation_manager_home_environment_chezmoi_source_url.startswith('https://github.com/')
 
 - name: Check whether Chezmoi apply would change managed files
@@ -218,7 +195,6 @@
     XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
   check_mode: false
   when:
-    - workstation_manager_home_environment_chezmoi_enabled
     - workstation_manager_resolved.home_environment.chezmoi.apply
     - not ansible_check_mode
 
@@ -234,7 +210,6 @@
     XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
   changed_when: true
   when:
-    - workstation_manager_home_environment_chezmoi_enabled
     - workstation_manager_resolved.home_environment.chezmoi.apply
     - workstation_manager_home_environment_chezmoi_apply_check is changed
     - not ansible_check_mode

@@ -1,0 +1,50 @@
+---
+- name: Initialize browser profiles from the configured recovery source
+  ansible.builtin.set_fact:
+    workstation_manager_browser_profiles: [] # noqa: var-naming[no-role-prefix]
+
+- name: Read the Bitwarden browser profile collection
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.bitwarden_collection
+  vars:
+    bitwarden_collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
+    bitwarden_collection_purpose: Browser profile recovery
+  when: workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id | length > 0
+
+- name: Validate browser profile notes and publish their non-secret metadata # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    workstation_manager_browser_profiles: >-
+      {{ bitwarden_collection_items | neilime.workstation_setup.bitwarden_browser_profiles }}
+  no_log: true
+  when: workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id | length > 0
+
+- name: Read encrypted browser avatar attachments into memory
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import base64, subprocess, sys;
+        print(base64.b64encode(subprocess.check_output(sys.argv[1:], timeout=120)).decode('ascii'))
+      - bw
+      - get
+      - attachment
+      - "{{ item.avatar_attachment_id }}"
+      - --itemid
+      - "{{ item.item_id }}"
+      - --raw
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+  loop: "{{ workstation_manager_browser_profiles | selectattr('avatar_attachment_id', 'defined') | list }}"
+  register: browser_profile_collection_avatars
+  check_mode: false
+  changed_when: false
+  no_log: true
+
+- name: Attach browser avatar data to its profile # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    workstation_manager_browser_profiles: >-
+      {{ (workstation_manager_browser_profiles | rejectattr('id', 'equalto', item.item.id) | list
+          + [item.item | combine({'avatar_png': item.stdout})]) | sort(attribute='id') }}
+  loop: "{{ browser_profile_collection_avatars.results }}"
+  no_log: true

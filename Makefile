@@ -142,16 +142,12 @@ define install_collection_requirements_command
 endef
 
 define check_ansible_command
+	set -e; \
 	$(install_collection_requirements_command); \
-	export ANSIBLE_COLLECTIONS_PATH="/workspace/ansible/vendor-collections:/workspace/ansible/collections"; \
-	if [ -n "$(REPORTS_DIR)" ]; then \
-		python3 /workspace/ci/ansible_syntax_report.py \
-			--inventory ansible/inventory.yml \
-			--report-file "/workspace/$(REPORTS_DIR)/checks/ansible-syntax.sarif" \
-			$(ANSIBLE_PLAYBOOK_FILES); \
-	else \
-		for playbook in $(ANSIBLE_PLAYBOOK_FILES); do ansible-playbook --syntax-check -i ansible/inventory.yml "$$playbook"; done; \
-	fi
+	python3 /workspace/ci/ansible_syntax_report.py \
+		--inventory ansible/inventory.yml \
+		$(if $(strip $(REPORTS_DIR)),--report-file "/workspace/$(REPORTS_DIR)/checks/ansible-syntax.sarif") \
+		$(ANSIBLE_PLAYBOOK_FILES)
 endef
 
 define test_command

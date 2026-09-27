@@ -7,6 +7,7 @@ import pathlib
 import sys
 import types
 import unittest
+from unittest import mock
 
 MODULE_PATH = pathlib.Path(__file__).parents[2] / "ci" / "ansible_syntax_report.py"
 
@@ -79,6 +80,25 @@ Origin: /workspace/ansible/tasks/main.yml:83:3
             result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
             "ansible/setup.yml",
         )
+
+
+class RunTests(unittest.TestCase):
+    """Keep failures visible even when a later playbook passes."""
+
+    def test_preserves_earlier_failure_with_and_without_a_report(self) -> None:
+        """Optional reporting must not change the syntax-check exit status."""
+        for report_file in (None, "/tmp/syntax.sarif"):
+            with self.subTest(report_file=report_file):
+                args = types.SimpleNamespace(
+                    inventory="inventory.yml", report_file=report_file, playbooks=["bad.yml", "good.yml"]
+                )
+                with (
+                    mock.patch.object(ansible_syntax_report, "parse_args", return_value=args),
+                    mock.patch.object(ansible_syntax_report, "stream_command", side_effect=[(17, "failure"), (0, "")]),
+                    mock.patch.object(ansible_syntax_report, "write_sarif") as write_report,
+                ):
+                    self.assertEqual(ansible_syntax_report.run(), 17)
+                    self.assertEqual(write_report.call_count, int(report_file is not None))
 
 
 if __name__ == "__main__":

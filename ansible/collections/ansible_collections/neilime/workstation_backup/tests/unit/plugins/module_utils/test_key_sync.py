@@ -31,7 +31,6 @@ def test_ssh_sync_planner_returns_add_action_for_missing_remote_item() -> None:
             "kind": "ssh",
             "name": "id_ed25519",
             "action": "add",
-            "reason": "missing_in_secret_manager",
             "bitwarden_item_id": None,
             "fields": [
                 {"name": "private_key", "type": 1, "value": "private-material\n"},
@@ -72,7 +71,6 @@ def test_ssh_sync_planner_returns_update_action_for_mismatched_remote_item() -> 
             "kind": "ssh",
             "name": "id_ed25519",
             "action": "update",
-            "reason": "content_mismatch",
             "bitwarden_item_id": "item-123",
             "fields": [
                 {"name": "private_key", "type": 1, "value": "local-private-material\n"},
@@ -164,8 +162,6 @@ def test_gpg_sync_planner_returns_add_action_for_missing_remote_item() -> None:
             "kind": "gpg",
             "name": "Escemi Primary Key",
             "action": "add",
-            "reason": "missing_in_secret_manager",
-            "fingerprint": "0123456789ABCDEF",
             "bitwarden_item_id": None,
             "fields": [
                 {"name": "fingerprint", "type": 0, "value": "0123456789ABCDEF"},
@@ -209,8 +205,6 @@ def test_gpg_sync_planner_returns_update_action_for_mismatched_remote_item() -> 
             "kind": "gpg",
             "name": "Escemi Primary Key",
             "action": "update",
-            "reason": "content_mismatch",
-            "fingerprint": "0123456789ABCDEF",
             "bitwarden_item_id": "item-123",
             "fields": [
                 {"name": "fingerprint", "type": 0, "value": "0123456789ABCDEF"},
@@ -250,3 +244,47 @@ def test_gpg_sync_planner_skips_matching_remote_item() -> None:
     )
 
     assert actions == []
+
+
+def test_ssh_sync_planner_retains_remote_only_keys() -> None:
+    """Backup uploads local keys and must not delete keys from another workstation."""
+
+    assert (
+        BitwardenSshKeySyncPlanner().build(
+            [],
+            [
+                {
+                    "id": "remote-only",
+                    "name": "id_ed25519_other_machine",
+                    "fields": [
+                        {"name": "private_key", "value": "remote-private"},
+                        {"name": "public_key", "value": "remote-public"},
+                    ],
+                }
+            ],
+            "/home/fixture",
+        )
+        == []
+    )
+
+
+def test_gpg_sync_planner_retains_remote_only_keys() -> None:
+    """Remote GPG keys remain untouched when absent from this workstation."""
+
+    assert (
+        BitwardenGpgKeySyncPlanner().build(
+            [],
+            [
+                {
+                    "id": "remote-only",
+                    "name": "Other workstation",
+                    "fields": [
+                        {"name": "fingerprint", "value": "0123456789ABCDEF"},
+                        {"name": "private_key", "value": "remote-private"},
+                        {"name": "public_key", "value": "remote-public"},
+                    ],
+                }
+            ],
+        )
+        == []
+    )

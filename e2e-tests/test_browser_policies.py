@@ -1,14 +1,16 @@
-"""End-to-end checks for primary browser policy files."""
+"""End-to-end checks for the fixed Brave Sync policy."""
+
+import json
 
 
 def test_primary_browser_managed_policy_file_exists(host) -> None:
-    """The install should generate the managed Chrome policy file explicitly."""
+    """The install should generate the managed Brave policy file explicitly."""
 
     # Arrange
-    policy_file = host.file("/etc/opt/chrome/policies/managed/workstation-manager.json")
+    policy_file = host.file("/etc/brave/policies/managed/workstation-manager.json")
 
     # Act
-    mode = host.check_output("stat -c '%a' /etc/opt/chrome/policies/managed/workstation-manager.json")
+    mode = host.check_output("stat -c '%a' /etc/brave/policies/managed/workstation-manager.json")
 
     # Assert
     assert policy_file.exists
@@ -17,20 +19,8 @@ def test_primary_browser_managed_policy_file_exists(host) -> None:
     assert mode == "644"
 
 
-def test_primary_browser_managed_policy_file_contains_expected_entries(host) -> None:
-    """The managed policy file should contain the repository browser defaults."""
+def test_primary_browser_policy_leaves_extensions_and_preferences_to_sync(host) -> None:
+    """Setup must replace legacy extension and preference policies with Sync availability only."""
 
-    # Arrange
-    policy_file = host.file("/etc/opt/chrome/policies/managed/workstation-manager.json")
-
-    # Act
-    has_bitwarden_extension = policy_file.contains('"nngceckbapebfimnlniiiahkandclblb"')
-    has_password_manager_policy = policy_file.contains('"PasswordManagerEnabled": false')
-    has_bookmark_bar_policy = policy_file.contains('"BookmarkBarEnabled": true')
-    has_startup_policy = policy_file.contains('"RestoreOnStartup": 1')
-
-    # Assert
-    assert has_bitwarden_extension
-    assert has_password_manager_policy
-    assert has_bookmark_bar_policy
-    assert has_startup_policy
+    policy_file = host.file("/etc/brave/policies/managed/workstation-manager.json")
+    assert json.loads(policy_file.content_string) == {"SyncDisabled": False}

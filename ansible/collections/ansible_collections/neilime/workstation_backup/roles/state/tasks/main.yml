@@ -8,7 +8,7 @@
   ansible.builtin.file:
     path: "{{ workstation_backup_output_dir }}"
     state: directory
-    mode: "0755"
+    mode: "0700"
 
 - name: Resolve backup timestamp
   ansible.builtin.set_fact:
@@ -61,17 +61,10 @@
           true
         )
       }}
-    workstation_backup_include_paths: []
-    workstation_backup_manifest_lines: []
-    workstation_backup_browser_bookmark_exports: []
 
 - name: Collect filesystem backup sources
   ansible.builtin.import_role:
     name: neilime.workstation_backup.path_sources
-
-- name: Collect browser bookmark exports
-  ansible.builtin.import_role:
-    name: neilime.workstation_backup.browser_bookmarks
 
 - name: Collect Git repository inventory
   ansible.builtin.import_role:
