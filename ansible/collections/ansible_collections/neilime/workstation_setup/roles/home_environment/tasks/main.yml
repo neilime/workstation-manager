@@ -73,6 +73,9 @@
     - "{{ workstation_manager_resolved.user.home }}/.local/state"
     - "{{ workstation_manager_resolved.user.home }}/.config"
 
+- name: Install the managed Oh My Zsh framework
+  ansible.builtin.import_tasks: oh_my_zsh.yml
+
 - name: Assert that the configured Chezmoi target architecture is supported
   ansible.builtin.assert:
     that:

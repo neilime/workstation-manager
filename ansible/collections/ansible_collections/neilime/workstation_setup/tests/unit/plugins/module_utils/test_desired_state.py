@@ -433,3 +433,11 @@ def test_obsolete_browser_collection_selector_is_rejected():
     config = {"secrets": {"bitwarden": {"browser_collection_id": BROWSER_PROFILES_COLLECTION_ID}}}
     with pytest.raises(ValueError, match="use browser_profiles_collection_id with complete profile notes"):
         DesiredStateConfigNormalizer().normalize(config)
+
+
+def test_normalize_does_not_expose_oh_my_zsh_configuration() -> None:
+    """Private configuration cannot choose the setup-owned framework revision."""
+    normalized = DesiredStateConfigNormalizer().normalize(
+        {"home_environment": {"oh_my_zsh": {"version": "unmanaged-revision"}}}
+    )
+    assert normalized["home_environment"] == build_home_environment()

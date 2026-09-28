@@ -42,3 +42,22 @@ def test_chezmoi_bootstrap_from_tracked_repository(host) -> None:
     assert chezmoi_git_config.exists
     assert chezmoi_git_config.contains('[remote "origin"]')
     assert chezmoi_git_config.contains("workstation-config")
+
+
+def test_oh_my_zsh_is_installed_for_the_target_user(host) -> None:
+    """The framework should provide its bundled Git aliases under the user's home."""
+    user_name = host.check_output("whoami")
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    framework = host.file(f"{user_home}/.oh-my-zsh/oh-my-zsh.sh")
+    assert framework.is_file
+    assert framework.user == user_name
+    assert host.run("git -C %s diff --exit-code", f"{user_home}/.oh-my-zsh").succeeded
+    result = host.run(
+        "zsh -dfc %s",
+        'export ZSH="$HOME/.oh-my-zsh"; ZSH_THEME=""; plugins=(git); '
+        "zstyle ':omz:update' mode disabled; "
+        '. "$ZSH/oh-my-zsh.sh"; alias gcasm; alias "gcans!"',
+    )
+    assert result.succeeded
+    assert "git commit --all --signoff --message" in result.stdout
+    assert "--signoff --no-edit --amend" in result.stdout

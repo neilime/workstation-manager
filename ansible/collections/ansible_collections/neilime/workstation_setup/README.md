@@ -1,7 +1,8 @@
 # neilime.workstation_setup
 
 Owns configuration normalization, system and application setup, secrets retrieval,
-home-environment setup, developer tooling, and browser adapters. Developer tool
+home-environment setup (including Oh My Zsh and Chezmoi), developer tooling,
+and browser adapters. Developer tool
 installation uses the GitHub credentials described in the
 [configuration guide](../../../../../docs/usage/configuration.md#automated-runs).
 

@@ -88,6 +88,20 @@ local browser profiles missing from the collection as drift.
 dotfiles to your home directory. An existing checkout is reused; changing the
 source setting does not switch its remote.
 
+Setup installs [Oh My Zsh](https://github.com/ohmyzsh/ohmyzsh) into `~/.oh-my-zsh`
+before applying dotfiles. The installation task pins the framework revision,
+maintained by Renovate. This is an internal setup dependency, with no private
+override setting. Setup updates the checkout to that revision and refuses to
+overwrite tracked local edits. Put personal plugins and themes in its `custom/`
+directory or manage them through Chezmoi.
+
+Enable Oh My Zsh and select plugins in your Chezmoi-managed `.zshrc`. The framework
+supplies aliases and completion; Starship can supply the prompt and mise can
+manage runtimes alongside it. For a pinned installation, put
+`zstyle ':omz:update' mode disabled` before sourcing `~/.oh-my-zsh/oh-my-zsh.sh`;
+setup then owns framework updates. Setup leaves `.zshrc` ownership to Chezmoi and
+does not change the account's login shell.
+
 Maintain dotfiles in that source repository. Before backup, review local changes;
 the [backup workflow](backup-and-restore.md) offers to capture or reapply managed
 files and requires the source checkout to be published to its Git remote.
