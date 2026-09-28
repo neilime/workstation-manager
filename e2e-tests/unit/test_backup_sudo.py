@@ -25,12 +25,7 @@ class BackupPrivilegeTests(unittest.TestCase):
 
     def setUp(self) -> None:
         if AnsibleCollectionConfig.collection_finder is None:
-            init_plugin_loader(
-                prefix_collections_path=[
-                    str(COLLECTIONS_PATH),
-                    str(REPOSITORY_PATH / "ansible/vendor-collections"),
-                ]
-            )
+            init_plugin_loader(prefix_collections_path=[str(COLLECTIONS_PATH)])
         self.loader = DataLoader()
         self.manager = VariableManager(loader=self.loader)
         self.play = Playbook.load(

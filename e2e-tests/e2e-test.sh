@@ -49,9 +49,10 @@ capture_phase_screenshot() {
 }
 
 run_phase_tests() {
-	phase_name="$1"
+	local phase_name="$1"
+	local phase_report_option=()
+	local phase_report_file=""
 	shift
-	phase_report_option=()
 
 	if [[ -n "$report_dir" ]]; then
 		phase_report_file="$report_dir/tests/e2e-${phase_name}.junit.xml"
@@ -64,19 +65,13 @@ run_phase_tests() {
 		--user "$(id -u):$(id -g)" \
 		--env HOME=/tmp \
 		--env XDG_CACHE_HOME=/tmp/.cache \
-		--env PIP_DISABLE_PIP_VERSION_CHECK=1 \
 		--volume /etc/passwd:/etc/passwd:ro \
 		--volume /etc/group:/etc/group:ro \
 		--volume "$workspace_dir:/workspace" \
 		--volume "$host_home/.lima:$host_home/.lima:ro" \
 		--workdir /workspace \
 		"$tooling_image" \
-		bash -lc '
-set -euo pipefail
-python3 -m pip install --user -q -r e2e-tests/requirements.txt
-export PATH="$HOME/.local/bin:$PATH"
-pytest "$@"
-' bash \
+		python3 -m pytest \
 		-q \
 		-o cache_dir=/tmp/pytest-cache \
 		--ssh-config="$ssh_config_path" \
@@ -85,24 +80,38 @@ pytest "$@"
 		"$@"
 }
 
-bash "$script_dir/e2e-backup.sh" "$vm_name"
-run_phase_tests backup e2e-tests/test_backup.py
+finish_e2e_suite() {
+	local suite_status=$?
+	local restore_status=0
+
+	restore_e2e_task_profiling || restore_status=$?
+	if [[ $suite_status -eq 0 ]]; then
+		suite_status=$restore_status
+	fi
+	exit "$suite_status"
+}
+
+trap finish_e2e_suite EXIT
+prepare_e2e_task_profiling
+
+run_e2e_timed_command backup bash "$script_dir/e2e-backup.sh" "$vm_name"
+run_e2e_timed_command backup-assertions run_phase_tests backup e2e-tests/test_backup.py
 setup_status=0
-bash "$script_dir/e2e-setup.sh" "$vm_name" || setup_status=$?
+run_e2e_timed_command setup bash "$script_dir/e2e-setup.sh" "$vm_name" || setup_status=$?
 if [[ $setup_status -eq 0 ]]; then
-	restart_e2e_desktop_session || setup_status=$?
+	run_e2e_timed_command desktop-restart restart_e2e_desktop_session || setup_status=$?
 fi
 if [[ $setup_status -eq 0 ]]; then
-	wait_for_e2e_user_process copyq || setup_status=$?
+	run_e2e_timed_command desktop-autostart wait_for_e2e_user_process copyq || setup_status=$?
 fi
 capture_status=0
-capture_phase_screenshot setup || capture_status=$?
+run_e2e_timed_command setup-screenshot capture_phase_screenshot setup || capture_status=$?
 if [[ $setup_status -ne 0 ]]; then
 	exit "$setup_status"
 fi
-run_phase_tests setup "${setup_test_paths[@]}"
+run_e2e_timed_command setup-assertions run_phase_tests setup "${setup_test_paths[@]}"
 cleanup_status=0
-timeout \
+run_e2e_timed_command cleanup timeout \
 	--kill-after=15s \
 	"${cleanup_phase_timeout_seconds}s" \
 	bash "$script_dir/e2e-cleanup.sh" "$vm_name" || cleanup_status=$?
@@ -113,7 +122,7 @@ if [[ $cleanup_status -ne 0 ]]; then
 	fi
 	exit "$cleanup_status"
 fi
-run_phase_tests cleanup e2e-tests/test_cleanup.py
+run_e2e_timed_command cleanup-assertions run_phase_tests cleanup e2e-tests/test_cleanup.py
 if [[ $capture_status -ne 0 ]]; then
 	exit "$capture_status"
 fi
