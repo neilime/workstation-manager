@@ -9,6 +9,48 @@ E2E_CONTROL_COMMAND_TIMEOUT_SECONDS="${E2E_CONTROL_COMMAND_TIMEOUT_SECONDS:-20}"
 E2E_DETACHED_ACTION_TIMEOUT_SECONDS="${E2E_DETACHED_ACTION_TIMEOUT_SECONDS:-600}"
 E2E_TRANSPORT_FAILURE_TIMEOUT_SECONDS="${E2E_TRANSPORT_FAILURE_TIMEOUT_SECONDS:-120}"
 
+run_e2e_timed_command() (
+	local phase_name="$1"
+	local phase_started_at=$SECONDS
+	shift
+
+	# Called by the EXIT trap below within this subshell.
+	# shellcheck disable=SC2329
+	finish_e2e_timed_command() {
+		local phase_status=$?
+
+		# Log only the phase label: command arguments can contain vault credentials.
+		printf 'E2E timing: phase=%s elapsed=%ss status=%s\n' \
+			"$phase_name" "$((SECONDS - phase_started_at))" "$phase_status" >&2
+		exit "$phase_status"
+	}
+
+	trap finish_e2e_timed_command EXIT
+	printf 'E2E phase: %s\n' "$phase_name" >&2
+	"$@"
+)
+
+prepare_e2e_task_profiling() {
+	if [[ "${E2E_PROFILE_TASKS:-0}" != "1" ]]; then
+		return
+	fi
+
+	E2E_PROFILE_CONFIG_BACKUP="$(
+		run_e2e_lima_control_command 30 sudo -n python3 - prepare /etc/ansible/ansible.cfg \
+			<"$(resolve_e2e_workspace_dir)/e2e-tests/task_profiling.py"
+	)"
+}
+
+restore_e2e_task_profiling() {
+	if [[ -z "${E2E_PROFILE_CONFIG_BACKUP:-}" ]]; then
+		return
+	fi
+
+	run_e2e_lima_control_command 30 sudo -n python3 - restore \
+		/etc/ansible/ansible.cfg "$E2E_PROFILE_CONFIG_BACKUP" \
+		<"$(resolve_e2e_workspace_dir)/e2e-tests/task_profiling.py"
+}
+
 require_e2e_command() {
 	local command_name="$1"
 

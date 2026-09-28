@@ -50,15 +50,29 @@ make check-ansible
 make test
 ```
 
-- `make setup` builds the tooling image if it is absent. Rebuild it after changing
-  its Dockerfile or dependencies.
+- `make setup` builds the tooling image, reusing Docker layers when its inputs
+  are unchanged. CI pulls the image published by its build job.
 - `make lint` builds and runs the separate repository linter image.
 - `make check-ansible` checks all top-level playbooks against the local inventory.
-- `make test` runs host-tool unit tests and first-party collection
-  `ansible-test sanity` and `ansible-test units` checks with Python 3.12.
+- `make test` runs host-tool tests and first-party collection `ansible-test sanity`
+  and `ansible-test units` checks with Python 3.12.
+- `make test-host` runs the isolated host tests with two pytest workers. Set
+  `HOST_TEST_WORKERS=1` for sequential execution.
+- `make test-collections` runs the collection checks separately.
 
-Ansible checks install collection dependencies into `ansible/vendor-collections/`.
-Do not edit that directory or generated reports and test output.
+The tooling image includes Python dependencies for host and end-to-end assertions and
+Ansible collections from [its versioned requirements](../../docker/tooling/requirements.yml).
+Syntax checks and tests use these installed dependencies without downloading them
+again. The image build checks that the tooling and workstation manifests declare
+the same collection names. Run `make setup` after changing either manifest.
+
+CI runs lint independently. Ansible checks, host tests, and end-to-end tests run
+in parallel once the tooling image is available. Each publishes its own result.
+The Ansible job caches only sanity virtual environments in `.cache/ansible-test`,
+keyed by runner architecture and tooling image filesystem layers. Changes to the
+runtime invalidate that cache; changes to image labels alone do not.
+
+Do not edit generated caches, reports, vendored collections, or test output.
 
 Use `make tool-shell` for an interactive tooling container. `make lint-fix`
 rewrites files; `make ci` runs it before syntax and test checks. Review its diff.
@@ -70,7 +84,12 @@ The [Renovate workflow](../../.github/workflows/renovate.yml) runs every Friday
 and supports manual dispatch. Its [configuration](../../.github/renovate/renovate-config.json5)
 updates Ansible dependencies, PHP and Chezmoi pins, and the Helm major track in
 one grouped pull request. Helm minor and patch releases stay within the configured
-major track. Dependabot handles GitHub Actions, Docker images, and Python packages.
+major track. Renovate's `ansible-galaxy` manager automatically discovers and updates
+the collection pins in [the tooling requirements](../../docker/tooling/requirements.yml).
+These pins target the tooling image's Ansible runtime; workstation bootstrap
+resolves its own [collection requirements](../../ansible/collections/requirements.yml).
+Dependabot handles GitHub Actions, Docker images, and Python packages; it does not
+support Ansible Galaxy collections.
 
 Renovate logs debug details to identify failed file replacements. Branch update
 errors fail the workflow; inspect the preceding messages for the dependency and file.
@@ -120,5 +139,8 @@ backup fixture archive.
 
 Set `REPORTS_DIR=.reports` to collect syntax and test reports. The setup desktop
 screenshot defaults to `.reports/screenshots/e2e-setup-desktop.png`; use
-`SCREENSHOTS_DIR` to change its directory. CI runs static checks before the end-to-end
-suite and publishes reports and the screenshot.
+`SCREENSHOTS_DIR` to change its directory. CI publishes reports and the screenshot.
+The suite logs elapsed time and exit status for each action, assertion phase, and
+desktop capture step. Set `E2E_PROFILE_TASKS=1` to also collect Ansible task timings;
+CI enables this automatically. Profiling temporarily updates the disposable
+VM's Ansible configuration and restores it when the suite exits.

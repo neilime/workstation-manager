@@ -29,8 +29,20 @@ RUN groupadd --gid "${TOOLING_GID}" tooling && \
     mkdir -p /workspace && \
     chown tooling:tooling /workspace
 
-COPY docker/tooling/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY docker/tooling/requirements.txt /opt/tooling/requirements.txt
+COPY e2e-tests/requirements.txt /opt/tooling/e2e-requirements.txt
+RUN pip install --no-cache-dir \
+    -r /opt/tooling/requirements.txt \
+    -r /opt/tooling/e2e-requirements.txt
+
+COPY docker/tooling/requirements.yml /opt/ansible/requirements.yml
+COPY ansible/collections/requirements.yml /opt/ansible/production-requirements.yml
+RUN python -c 'import pathlib, sys, yaml; \
+    paths = ["requirements.yml", "production-requirements.yml"]; \
+    manifests = [yaml.safe_load((pathlib.Path("/opt/ansible") / path).read_text()) for path in paths]; \
+    names = [sorted(item["name"] for item in manifest["collections"]) for manifest in manifests]; \
+    sys.exit(0 if names[0] == names[1] else "Update docker/tooling/requirements.yml to match production collections")' && \
+    ansible-galaxy collection install -r /opt/ansible/requirements.yml -p /opt/ansible/collections
 
 HEALTHCHECK --interval=5m --timeout=10s --start-period=30s --retries=3 CMD ["python", "--version"]
 

@@ -57,15 +57,75 @@ jobs:
     secrets:
       oci-registry-password: ${{ secrets.GITHUB_TOKEN }}
 
-  static:
-    name: Static checks
+  static-ansible:
+    name: Ansible checks
     runs-on: ubuntu-latest
-    needs: [linter, build-tooling-image]
+    needs: [build-tooling-image]
     permissions:
       actions: read
       contents: read
       packages: read
       security-events: write
+    env:
+      TOOLING_IMAGE: >-
+        ${{ fromJSON(needs.build-tooling-image.outputs.built-images).tooling.images[0] }}
+      TOOLING_IMAGE_PULL: "1"
+      ANSIBLE_TEST_CACHE_DIR: .cache/ansible-test
+    steps:
+      - name: Checkout
+        # yamllint disable rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # yamllint enable rule:line-length
+        with:
+          persist-credentials: false
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup
+        run: make setup
+
+      - name: Identify tooling runtime
+        id: tooling-runtime
+        run: |
+          runtime_layers=$(docker image inspect --format '{{json .RootFS.Layers}}' "$TOOLING_IMAGE")
+          runtime_hash=$(printf '%s' "$runtime_layers" | sha256sum | cut -d ' ' -f 1)
+          printf 'layers=%s\n' "$runtime_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Ansible test environments
+        # yamllint disable rule:line-length
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # yamllint enable rule:line-length
+        with:
+          path: .cache/ansible-test
+          key: ansible-test-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.tooling-runtime.outputs.layers }}
+
+      - name: Run Ansible syntax checks
+        run: REPORTS_DIR=.reports make check-ansible
+
+      - name: Run Ansible sanity and unit tests
+        run: REPORTS_DIR=.reports make test-collections
+
+      - name: Parse static reports
+        if: ${{ always() }}
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@3a27d31e9ccefbe9609cc9165017ed100ff34a22 # 0.38.0
+        with:
+          report-paths: .reports/checks/*.sarif,.reports/tests/*.xml
+          report-name: Static Validation
+          path-mapping: /workspace:.
+
+  static-host:
+    name: Host tests
+    runs-on: ubuntu-latest
+    needs: [build-tooling-image]
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     env:
       TOOLING_IMAGE: >-
         ${{ fromJSON(needs.build-tooling-image.outputs.built-images).tooling.images[0] }}
@@ -88,30 +148,32 @@ jobs:
       - name: Setup
         run: make setup
 
-      - name: Run Ansible syntax checks
-        run: REPORTS_DIR=.reports make check-ansible
+      - name: Run host tool unit tests
+        run: REPORTS_DIR=.reports make test-host
 
-      - name: Run Ansible sanity and unit tests
-        run: REPORTS_DIR=.reports make test
-
-      - name: Parse static reports
+      - name: Parse host reports
         if: ${{ always() }}
         uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@3a27d31e9ccefbe9609cc9165017ed100ff34a22 # 0.38.0
         with:
-          report-paths: .reports/checks/*.sarif,.reports/tests/*.xml
-          report-name: Static Validation
+          report-paths: .reports/tests/e2e-host-tools.junit.xml
+          report-name: Host Validation
           path-mapping: /workspace:.
 
   e2e:
     name: E2E validation
-    needs: [static]
+    needs: [build-tooling-image]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: ci
     permissions:
       contents: read
       issues: write
+      packages: read
       pull-requests: write
+    env:
+      TOOLING_IMAGE: >-
+        ${{ fromJSON(needs.build-tooling-image.outputs.built-images).tooling.images[0] }}
+      TOOLING_IMAGE_PULL: "1"
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
@@ -119,6 +181,13 @@ jobs:
         # yamllint enable rule:line-length
         with:
           persist-credentials: false
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Lima
         id: lima-setup
@@ -148,6 +217,7 @@ jobs:
           BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
           BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
           BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+          E2E_PROFILE_TASKS: "1"
         run: REPORTS_DIR=.reports make e2e-test
 
       - name: Parse e2e reports

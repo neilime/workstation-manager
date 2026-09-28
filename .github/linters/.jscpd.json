@@ -2,6 +2,7 @@
   "threshold": 7,
   "ignore": [
     "**/.pytest_cache/**",
+    "**/.cache/**",
     "**/__pycache__/**",
     "**/.mypy_cache/**",
     "**/*.pyc**",

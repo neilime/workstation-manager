@@ -9,5 +9,6 @@ scan:
     - misconfig
     - secret
   skip-dirs:
+    - .cache
     - ansible/vendor-collections
     - ansible/collections/ansible_collections/community
