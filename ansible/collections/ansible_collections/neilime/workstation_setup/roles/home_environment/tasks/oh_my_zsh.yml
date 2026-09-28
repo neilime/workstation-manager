@@ -6,7 +6,7 @@
     repo: https://github.com/ohmyzsh/ohmyzsh.git
     dest: "{{ workstation_manager_resolved.user.home }}/.oh-my-zsh"
     # Setup owns this pin; Renovate follows the upstream master branch.
-    version: "a3c88eba72f0b02de70512dac01f51d5dd60ea4a"
+    version: "c5852b11011e73a32b6841d62f1dac06a972c8b4"
     update: true
     force: false
     recursive: false
