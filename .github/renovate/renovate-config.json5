@@ -10,6 +10,18 @@
   customManagers: [
     {
       customType: "regex",
+      description: "Update the setup-owned Oh My Zsh revision",
+      managerFilePatterns: [
+        "/^ansible\\/collections\\/ansible_collections\\/neilime\\/workstation_setup\\/roles\\/home_environment\\/tasks\\/oh_my_zsh\\.yml$/",
+      ],
+      matchStrings: ['version:\\s+"(?<currentDigest>[0-9a-f]{40})"'],
+      depNameTemplate: "ohmyzsh/ohmyzsh",
+      packageNameTemplate: "https://github.com/ohmyzsh/ohmyzsh.git",
+      datasourceTemplate: "git-refs",
+      currentValueTemplate: "master",
+    },
+    {
+      customType: "regex",
       description: "Update pinned PHP defaults in Ansible config",
       managerFilePatterns: [
         "/^ansible\\/(group_vars\\/all|vars\\/private\\.override\\.example)\\.yml$/",
