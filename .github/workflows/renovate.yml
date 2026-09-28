@@ -32,4 +32,4 @@ jobs:
           configurationFile: .github/renovate/renovate-config.json5
           token: ${{ github.token }}
         env:
-          RENOVATE_REPOSITORIES: ${{ github.repository}}
+          RENOVATE_REPOSITORIES: ${{ github.repository }}

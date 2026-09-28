@@ -7,6 +7,12 @@
   prHourlyLimit: 20,
   semanticCommits: "enabled",
   enabledManagers: ["ansible", "ansible-galaxy", "custom.regex"],
+  logLevelRemap: [
+    {
+      matchMessage: "/^Error updating branch/",
+      newLogLevel: "error",
+    },
+  ],
   customManagers: [
     {
       customType: "regex",
@@ -14,12 +20,11 @@
       managerFilePatterns: [
         "/^ansible\\/(group_vars\\/all|vars\\/private\\.override\\.example)\\.yml$/",
       ],
-      matchStrings: ['(?<indent>\\s+)php:\\s+"(?<currentValue>[^"]+)"'],
+      matchStrings: ['php:\\s+"(?<currentValue>[^"]+)"'],
       depNameTemplate: "php/php-src",
       datasourceTemplate: "github-tags",
       extractVersionTemplate: "^php-(?<version>.+)$",
       versioningTemplate: "semver",
-      autoReplaceStringTemplate: '{{{indent}}}php: "{{{newValue}}}"',
     },
     {
       customType: "regex",
@@ -45,14 +50,11 @@
       description: "Update the major-only Helm track in mise defaults",
       managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: [
-        '(?<indent>\\s+)"aqua:helm/helm": "(?<currentValue>\\d+)"',
+        '"aqua:helm/helm": "(?<currentValue>\\d+)"',
       ],
       depNameTemplate: "helm/helm",
       datasourceTemplate: "github-releases",
-      versioningTemplate: "semver",
-      currentValueTemplate: "{{{currentValue}}}.0.0",
-      autoReplaceStringTemplate: '{{{indent}}}"aqua:helm/helm": "{{{newMajor}}}"',
+      versioningTemplate: "semver-partial",
     },
   ],
-  packageRules: [],
 }

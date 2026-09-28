@@ -64,6 +64,17 @@ Use `make tool-shell` for an interactive tooling container. `make lint-fix`
 rewrites files; `make ci` runs it before syntax and test checks. Review its diff.
 Documentation-only changes need applicable lint and local link checks.
 
+## Dependency updates
+
+The [Renovate workflow](../../.github/workflows/renovate.yml) runs every Friday
+and supports manual dispatch. Its [configuration](../../.github/renovate/renovate-config.json5)
+updates Ansible dependencies, PHP and Chezmoi pins, and the Helm major track in
+one grouped pull request. Helm minor and patch releases stay within the configured
+major track. Dependabot handles GitHub Actions, Docker images, and Python packages.
+
+Renovate logs debug details to identify failed file replacements. Branch update
+errors fail the workflow; inspect the preceding messages for the dependency and file.
+
 ## End-to-end tests
 
 Install cURL, Python 3, Lima, `qemu-img`, and `qemu-system-x86_64` on the host.
