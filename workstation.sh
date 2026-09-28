@@ -432,6 +432,15 @@ run_ansible_pull() {
 		ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
 		"$@"
 
+	if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
+		# ansible-pull cannot supply the refspec needed for commits outside branches/tags,
+		# including GitHub PR merge commits. Fetch the exact object before its checkout.
+		"$@" env ANSIBLE_NO_LOG=true ansible localhost -i "localhost," -c local \
+			-m ansible.builtin.git \
+			-a "repo=$authenticated_repository_url dest=$ANSIBLE_CHECKOUT_DIR version=$REPOSITORY_BRANCH refspec=$REPOSITORY_BRANCH" \
+			>/dev/null || fail "Failed to fetch the pinned repository commit. Check repository access and the commit SHA."
+	fi
+
 	set -- "$@" \
 		ansible-pull \
 		--purge \

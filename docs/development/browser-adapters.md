@@ -43,8 +43,10 @@ and expose it through thin modules or filters.
 ## Profile input
 
 Use `neilime.workstation_setup.browser_profile_collection` to load
-`workstation_manager_browser_profiles`. Setup adapters load it from `main.yml`;
-backup and cleanup orchestration load it before calling their adapter entrypoint.
+`workstation_manager_browser_profiles`. Setup adapters and backup orchestration
+use its default entrypoint, which also downloads avatar attachments into memory.
+Cleanup loads `tasks_from: metadata` before calling the inspection entrypoint;
+profile-directory drift does not require avatar images.
 
 The loader reads `secrets.bitwarden.browser_profiles_collection_id`. An empty
 selector produces `[]`; a configured collection must be accessible and nonempty.

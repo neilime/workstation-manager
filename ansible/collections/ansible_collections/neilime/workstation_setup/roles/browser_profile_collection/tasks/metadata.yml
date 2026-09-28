@@ -1,0 +1,19 @@
+---
+- name: Initialize browser profiles from the configured recovery source
+  ansible.builtin.set_fact:
+    workstation_manager_browser_profiles: [] # noqa: var-naming[no-role-prefix]
+
+- name: Read the Bitwarden browser profile collection
+  ansible.builtin.include_role:
+    name: neilime.workstation_setup.bitwarden_collection
+  vars:
+    bitwarden_collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
+    bitwarden_collection_purpose: Browser profile recovery
+  when: workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id | length > 0
+
+- name: Validate browser profile notes and publish their non-secret metadata # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    workstation_manager_browser_profiles: >-
+      {{ bitwarden_collection_items | neilime.workstation_setup.bitwarden_browser_profiles }}
+  no_log: true
+  when: workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id | length > 0

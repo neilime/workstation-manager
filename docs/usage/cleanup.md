@@ -22,7 +22,8 @@ curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/wo
 
 Both commands require access to the private configuration repository and
 Bitwarden. A configured browser profile collection must be accessible before
-cleanup proceeds; see [configuration](configuration.md).
+cleanup proceeds; see [configuration](configuration.md). Cleanup validates the
+profile metadata without downloading avatar attachments.
 
 ## Changes made
 

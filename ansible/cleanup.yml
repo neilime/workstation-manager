@@ -25,6 +25,7 @@
     - name: Load browser profile definitions before inspecting cleanup drift
       ansible.builtin.import_role:
         name: neilime.workstation_setup.browser_profile_collection
+        tasks_from: metadata
 
     - name: Cleanup removable workstation artifacts and report drift
       ansible.builtin.import_role:

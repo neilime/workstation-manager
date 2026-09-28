@@ -9,12 +9,14 @@ from __future__ import annotations
 DOCUMENTATION = r"""
 ---
 module: git_sync
-short_description: Verify or explicitly publish a Git checkout
+short_description: Verify or explicitly reconcile a Git checkout
 version_added: '1.0.0'
 description:
   - Fetches the existing tracking branch and reports unpublished changes.
-  - Publication rejects behind or diverged branches without merging or resetting files.
-  - Commits and pushes only when publication is explicitly requested.
+  - Explicit merging commits local edits and fast-forwards or merges the tracking branch without pushing.
+  - Publication rejects behind or diverged branches until reconciled.
+  - Remote replacement discards local source edits and commits only when explicitly requested.
+  - Pushes only when publication is explicitly requested.
 options:
   source:
     description: Path to the existing Git checkout.
@@ -22,6 +24,21 @@ options:
     required: true
   publish:
     description: Commit all source changes and push the current branch to its upstream.
+    type: bool
+    default: false
+  merge:
+    description:
+      - Commit all source changes, then fast-forward or merge the tracking branch without rewriting history.
+      - Conflicts stop synchronization and must be resolved or aborted manually in the source checkout.
+      - Cannot be combined with O(publish).
+    type: bool
+    default: false
+  reset_to_upstream:
+    description:
+      - Discard tracked source edits, non-ignored untracked files, and local-only commits from the current branch.
+      - Replace the source checkout with the fetched tracking branch without pushing or modifying home files.
+      - Refuses nested repositories, submodules, and replacements that would overwrite ignored files.
+      - Cannot be combined with O(merge) or O(publish). Obtain explicit user confirmation before requesting this action.
     type: bool
     default: false
   github_token:
@@ -32,7 +49,8 @@ author:
   - workstation-manager contributors (@neilime)
 attributes:
   check_mode:
-    description: Inspect local state without fetching, committing, or pushing; remote completion remains unverified.
+    description:
+      - Inspect local state without fetching or modifying Git state; remote completion remains unverified.
     support: full
 """
 
@@ -66,20 +84,30 @@ def main() -> None:
         argument_spec={
             "source": {"type": "path", "required": True},
             "publish": {"type": "bool", "default": False},
+            "merge": {"type": "bool", "default": False},
+            "reset_to_upstream": {"type": "bool", "default": False},
             "github_token": {"type": "str", "default": "", "no_log": True},
         },
         supports_check_mode=True,
     )
+    requested_actions = [
+        action
+        for option, action in (("merge", "merge"), ("publish", "publish"), ("reset_to_upstream", "use-remote"))
+        if module.params[option]
+    ]
+    if len(requested_actions) > 1:
+        module.fail_json(msg="Merging, remote replacement, and publishing require separate decisions.")
+    action = requested_actions[0] if requested_actions else "inspect"
     try:
         result = synchronize_git(
             module.params["source"],
             run_command=module.run_command,
-            publish=module.params["publish"],
+            action=action,
             dry_run=module.check_mode,
             github_token=module.params["github_token"],
         )
     except (OSError, ValueError) as error:
-        module.fail_json(msg=str(error))
+        module.fail_json(msg=str(error), changed=getattr(error, "changed", False))
     module.exit_json(**result)
 
 
