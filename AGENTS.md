@@ -108,8 +108,11 @@ more specific `AGENTS.md` files when working in their directories.
   attachment data out of logs, reports, fixtures, and committed files. Use
   `no_log` and restricted permissions for sensitive Ansible operations.
 - Preserve backup drift checks and verification after synchronization. A backup
-  must fail when required recovery checks or reconciliation remain incomplete;
-  non-interactive runs must not guess synchronization decisions.
+  must fail when required recovery checks or reconciliation remain incomplete
+  unless the user explicitly skips that recovery source. Record skipped coverage
+  in the manifest and final output; never report it as verified. Failed operations
+  and verification of approved changes must still fail. Non-interactive runs must
+  not guess synchronization decisions or skip checks automatically.
 - Preserve archive validation before extraction, including path traversal and
   link protections. Cleanup must preserve browser profiles and unmanaged user
   data according to the documented cleanup contract.

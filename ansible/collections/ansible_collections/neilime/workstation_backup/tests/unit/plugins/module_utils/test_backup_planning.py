@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from ansible_collections.neilime.workstation_backup.plugins.module_utils.backup_planning import (
     BackupManifestContentBuilder,
     BackupPathPlanBuilder,
@@ -95,3 +96,41 @@ def test_manifest_content_builder_renders_header_and_records() -> None:
         "include\tworkstation-manager-user-config\t/home/emilien/.config/workstation-manager\n"
         "export\tgit-repositories\t/tmp/backup/repositories.json\n"
     )
+
+
+def test_manifest_reports_skips_without_claiming_full_recovery() -> None:
+    """Skipped categories must survive in the sidecar without vault item metadata."""
+
+    content = BackupManifestContentBuilder().build(
+        [],
+        {
+            "timestamp": "fixture",
+            "archive_path": "archive.tar.gz",
+            "dry_run": False,
+            "tab_character": "\t",
+            "newline_character": "\n",
+            "recovery_skips": ["chezmoi", "ssh-keys", "ssh-keys", "browser-sync"],
+        },
+    )
+    assert "recovery_status\tincomplete\n" in content
+    assert content.count("recovery_skipped\tssh-keys\n") == 1
+    assert "recovery_skipped\tchezmoi\n" in content
+    assert "recovery_skipped\tbrowser-sync\n" in content
+
+
+@pytest.mark.parametrize("skips", ["chezmoi", ["unknown"], [{"secret": "synthetic"}]])
+def test_manifest_rejects_unknown_or_sensitive_skip_records(skips) -> None:
+    """Only known category labels may enter the public manifest."""
+
+    with pytest.raises(ValueError, match="known backup recovery categories"):
+        BackupManifestContentBuilder().build(
+            [],
+            {
+                "timestamp": "fixture",
+                "archive_path": "archive.tar.gz",
+                "dry_run": False,
+                "tab_character": "\t",
+                "newline_character": "\n",
+                "recovery_skips": skips,
+            },
+        )

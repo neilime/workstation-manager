@@ -22,10 +22,22 @@
 - name: Fetch the latest stable Orca release
   ansible.builtin.uri:
     url: https://api.github.com/repos/stablyai/orca/releases/latest
-    headers:
-      Accept: application/vnd.github+json
+    headers: >-
+      {{
+        {'Accept': 'application/vnd.github+json'} | combine(
+          {'Authorization': 'Bearer ' ~ workstation_manager_orca_github_token}
+          if workstation_manager_orca_github_token | length > 0 else {}
+        )
+      }}
+    unredirected_headers:
+      - Authorization
+    use_netrc: "{{ workstation_manager_orca_github_token | length == 0 }}"
     return_content: true
     timeout: 30
+  vars:
+    workstation_manager_orca_github_token: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
+  no_log: "{{ workstation_manager_orca_github_token | length > 0 }}"
   register: workstation_manager_orca_release
   changed_when: false
   # Read release metadata during previews without downloading or installing packages.

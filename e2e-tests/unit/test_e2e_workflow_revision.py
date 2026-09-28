@@ -232,16 +232,46 @@ class InteractiveBootstrapTests(unittest.TestCase):
             fixture = pathlib.Path(temporary_dir)
             repository = fixture / "repository"
             repository.mkdir()
+            tasks = DataLoader().load_from_file(
+                str(
+                    WORKSPACE
+                    / "ansible/collections/ansible_collections/neilime/workstation_backup"
+                    / "roles/chezmoi/tasks/reconcile_git.yml"
+                )
+            )
+            prompt = next(
+                task["ansible.builtin.pause"]["prompt"]
+                for task in tasks
+                if task["name"] == "Choose how to reconcile the chezmoi tracking branch"
+            )
             (repository / "check.yml").write_text(
                 json.dumps(
                     [
                         {
                             "hosts": "localhost",
                             "gather_facts": False,
+                            "vars": {
+                                "workstation_backup_chezmoi_source_dir": "/fixture/chezmoi",
+                                "workstation_backup_chezmoi_git_preflight": {
+                                    "state": {
+                                        "ahead": 0,
+                                        "behind": 2,
+                                        "upstream": "origin/main",
+                                        "status": "M  README.md\n D home/dot_bashrc",
+                                    }
+                                },
+                                "workstation_backup_chezmoi_git_choices": [
+                                    "merge",
+                                    "use-remote",
+                                    "retry",
+                                    "skip",
+                                    "abort",
+                                ],
+                            },
                             "tasks": [
                                 {
                                     "name": "Request a fixture decision",
-                                    "ansible.builtin.pause": {"prompt": "FIXTURE_DECISION [retry/abort]"},
+                                    "ansible.builtin.pause": {"prompt": prompt},
                                     "register": "decision",
                                 },
                                 {
@@ -287,9 +317,9 @@ class InteractiveBootstrapTests(unittest.TestCase):
                     capture_output=True,
                 )
             # Read the script from a pipe while Ansible reads answers from /dev/tty.
-            command = (
-                "printf '%s\\n' " + shlex.quote(bootstrap_fixture(fixture) + "run_ansible_pull check.yml 0") + " | sh"
-            )
+            bootstrap = bootstrap_fixture(fixture)
+            bootstrap += "COLLECTIONS_INSTALL_DIR=" + shlex.quote(str(WORKSPACE / "ansible/collections")) + "\n"
+            command = "printf '%s\\n' " + shlex.quote(bootstrap + "run_ansible_pull check.yml 0") + " | sh"
             for interrupt in (False, True):
                 with self.subTest(interrupt=interrupt):
                     with subprocess.Popen(
@@ -311,7 +341,8 @@ class InteractiveBootstrapTests(unittest.TestCase):
                         output = bytearray()
 
                         try:
-                            self.wait_for_prompt(process, output, b"FIXTURE_DECISION [retry/abort]:")
+                            self.wait_for_prompt(process, output, b"Choose [merge/use-remote/retry/skip/abort]:")
+                            self.assert_prompt_layout(output)
                             if interrupt:
                                 process.stdin.write(b"\x03")
                                 process.stdin.flush()
@@ -332,6 +363,18 @@ class InteractiveBootstrapTests(unittest.TestCase):
                             if process.poll() is None:
                                 process.terminate()
                                 process.communicate(timeout=5)
+
+    def assert_prompt_layout(self, output: bytearray) -> None:
+        """Check real terminal output for left-aligned lines and unescaped Git status."""
+
+        prompt_start = output.index(b"Chezmoi source: /fixture/chezmoi")
+        self.assertEqual(output[prompt_start - 1], ord("\r"))
+        prompt_output = output[prompt_start - 1 :].replace(b"\r\n", b"\n")
+        for line in prompt_output.split(b"\n"):
+            if line.strip():
+                self.assertTrue(line.startswith(b"\r"), line)
+        self.assertNotIn(b"\\n", prompt_output)
+        self.assertIn(b"Source changes:\n\rM  README.md\n\r D home/dot_bashrc", prompt_output)
 
     def wait_for_prompt(self, process: subprocess.Popen[bytes], output: bytearray, marker: bytes) -> None:
         """Read a visible prompt before sending input, with a bounded wait on regressions."""

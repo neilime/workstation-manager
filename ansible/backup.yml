@@ -21,6 +21,10 @@
     - name: Resolve workstation config inputs
       ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml
 
+    - name: Initialize backup recovery decisions
+      ansible.builtin.set_fact:
+        workstation_backup_recovery_skips: []
+
     - name: Run backup tasks as the managed user
       become: "{{ workstation_manager_use_become }}"
       become_user: "{{ workstation_manager_resolved.user.name }}"

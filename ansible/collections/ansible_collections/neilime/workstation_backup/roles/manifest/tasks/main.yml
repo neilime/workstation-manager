@@ -10,6 +10,7 @@
           'timestamp': workstation_backup_timestamp,
           'archive_path': workstation_backup_archive_path,
           'dry_run': workstation_backup_dry_run,
+          'recovery_skips': workstation_backup_recovery_skips | default([]),
           'tab_character': workstation_backup_tab,
           'newline_character': workstation_backup_newline
         })

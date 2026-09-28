@@ -147,8 +147,9 @@ Provide credentials through your automation's secret store:
 | `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.                                                   |
 
 Setup passes the GitHub token to mise and GitHub CLI extension commands through
-their environment. It does not write the token to mise configuration or shell
-activation files.
+their environment and uses it for the Orca release lookup, including previews.
+The Orca request keeps the token out of logs and redirected requests. Setup does
+not write it to application configuration or shell activation files.
 
 All three Bitwarden values must be present to skip interactive credential prompts.
 Automation must also supply `WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR` for backup.

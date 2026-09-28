@@ -32,7 +32,8 @@
 
 - name: Prompt to reconcile browser recovery drift
   ansible.builtin.pause:
-    prompt: >-
+    prompt: |-
+      {% filter neilime.workstation_backup.terminal_prompt %}
       Browser recovery has the drift listed above. Reconcile native profile names, directories, configured theme colors, and avatars with
       the profile records in the configured Bitwarden browser collection. Add records for new profiles
       or restore missing local profiles from the collection. Run setup with the browser closed to apply stored theme colors and avatars,
@@ -40,14 +41,25 @@
       Keep recovery words only in their secure notes.
       A profile missing on this computer is not a reason to delete its Bitwarden record.
       {{ workstation_backup_browser_sync_instructions }}
-      Choose [retry/abort] after resolving the drift. Retry reloads the collection and local profiles.
+      Retry reloads the collection and local profiles after you resolve the drift.
+      Skip leaves browser state unchanged and skips remaining browser checks.
+      Local browser changes are not added to the archive; recovery stays unverified.
+      Choose [retry/skip/abort]
+      {% endfilter %}
   register: browser_drift_choice
-  until: browser_drift_choice.user_input | trim | lower in ['retry', 'abort']
+  until: browser_drift_choice.user_input | trim | lower in ['retry', 'skip', 'abort']
   retries: 3
   delay: 0
   when:
     - not workstation_backup_dry_run
     - browser_has_drift
+
+- name: Record skipped browser recovery
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_skip
+  vars:
+    workstation_backup_recovery_skip_scope: browser-recovery
+  when: browser_drift_choice.user_input | default('') | trim | lower == 'skip'
 
 - name: Stop backup when browser recovery drift is unresolved
   ansible.builtin.fail:

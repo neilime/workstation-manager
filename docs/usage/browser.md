@@ -100,4 +100,6 @@ After these checks, backup asks you to confirm that every profile has completed
 live Sync and its first 24 recovery words match its Bitwarden note. Verify this
 in Brave before answering `synced`; the tool cannot prove a server upload or
 compare the words automatically. Noninteractive backups with browser profiles
-stop at this requirement. A dry run reports checks without certifying recovery.
+stop at this requirement. In an interactive backup, `skip` leaves browser recovery
+unverified and records incomplete coverage; see [backup skips](backup-and-restore.md#create-a-backup).
+A dry run reports checks without certifying recovery.

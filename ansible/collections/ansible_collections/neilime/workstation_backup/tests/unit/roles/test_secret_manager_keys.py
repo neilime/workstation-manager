@@ -16,7 +16,7 @@ def test_dynamic_key_actions_parse_and_pass_payload_to_encoder() -> None:
 
     if AnsibleCollectionConfig.collection_finder is None:
         init_plugin_loader()
-    task_file = Path(__file__).resolve().parents[3] / "roles/secret_manager_keys/tasks/prompt_and_apply_action.yml"
+    task_file = Path(__file__).resolve().parents[3] / "roles/secret_manager_keys/tasks/apply_action.yml"
     loader = DataLoader()
     tasks = [Task.load(task, loader=loader) for task in loader.load_from_file(str(task_file), trusted_as_template=True)]
 
@@ -43,7 +43,7 @@ def test_saved_key_readback_must_match_content_and_collection(
     if AnsibleCollectionConfig.collection_finder is None:
         init_plugin_loader()
     loader = DataLoader()
-    task_file = Path(__file__).resolve().parents[3] / "roles/secret_manager_keys/tasks/prompt_and_apply_action.yml"
+    task_file = Path(__file__).resolve().parents[3] / "roles/secret_manager_keys/tasks/apply_action.yml"
     task = next(
         Task.load(value, loader=loader)
         for value in loader.load_from_file(str(task_file), trusted_as_template=True)

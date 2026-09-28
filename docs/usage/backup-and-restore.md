@@ -36,15 +36,33 @@ Backup checks recovery sources before creating the archive:
 | Browser profiles      | Reconcile the local profiles with their Bitwarden records, then choose `retry`. See [browser recovery](browser.md).                                    |
 | Browser Sync          | Check every profile has finished syncing and its recovery words match its Bitwarden note; then choose `synced`. Never paste the words into the prompt. |
 
-At a decision prompt, choose `abort` to stop backup. You can also press Ctrl+C,
-then `a` when Ansible asks whether to abort or continue.
+Every drift or recovery confirmation prompt also offers `skip`. It leaves that
+recovery source unchanged at this step and continues the other backup work:
 
-Unresolved checks stop backup. A non-interactive run cannot make these decisions
-and cannot confirm live browser Sync. Saved browser settings do not prove that an
-upload has completed.
+- In a Chezmoi prompt, `skip` skips all remaining Chezmoi checks for this run.
+- In an SSH/GPG prompt, `skip` skips only the current key; other keys still prompt.
+- In browser drift, `skip` skips browser recovery and the live Sync confirmation.
+  At the live Sync prompt, it skips that confirmation alone.
+
+Skipping does not undo actions you already approved. It does not add dotfiles,
+keys, or browser data to the archive automatically. Unsynchronized local changes
+may therefore be unavailable during restoration. An archive can still be created,
+but the final output reports **incomplete recovery coverage**, and its manifest
+contains `recovery_status` set to `incomplete` plus `recovery_skipped` records for
+the affected categories. Key records identify only SSH/GPG categories, not key
+contents or vault records.
+
+Choose `abort` to stop backup. You can also press Ctrl+C, then `a` when Ansible
+asks whether to abort or continue.
+
+Unresolved checks without an explicit skip stop backup. Non-interactive runs never
+choose `skip` automatically and cannot confirm live browser Sync. Invalid
+configuration, failed operations, and failed verification after an approved save
+still stop backup. Saved browser settings do not prove that an upload completed.
 
 Chezmoi must already be initialized. Its Git branch must have an upstream, and a
-successful backup requires a clean checkout synchronized with that remote.
+fully checked Chezmoi recovery requires a clean checkout synchronized with that remote.
+You can explicitly skip its reconciliation; the archive then records incomplete recovery coverage.
 When its branch has incoming changes, local edits, or unpushed commits, backup
 shows the ahead/behind counts and source file status before asking what to do:
 
@@ -65,12 +83,14 @@ shows the ahead/behind counts and source file status before asking what to do:
   reconciliation instead.
 - `retry` fetches and checks again after you reconcile the source in another
   terminal, for example using your preferred rebase workflow.
+- `skip` leaves this step unchanged and skips the remaining Chezmoi recovery
+  checks. It does not publish local changes or add dotfiles to the archive.
 - `abort` stops backup without changing source files or publishing anything.
 
 After Git reconciliation, backup checks managed workstation files against the
-updated source and offers `re-add`, `apply`, or `abort` if they differ. Remaining
-local Git changes still require a separate `publish` approval before backup can
-continue. A remote update during these checks stops backup so you can review it
+updated source and offers `re-add`, `apply`, `skip`, or `abort` if they differ. Remaining
+local Git changes require a separate `publish` approval or an explicit `skip`
+before backup can continue. A remote update during these checks stops backup so you can review it
 on the next run.
 
 To discard local changes in both places, choose **`use-remote`, confirm `discard`,
@@ -119,7 +139,7 @@ Keep these three files together:
 | ------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `.tar.gz`                | Archived user files.                                                                                           |
 | `.git-repositories.json` | Git remotes, branch, commit, and working-tree status for projects discovered under `~/Documents/dev-projects`. |
-| `.manifest.txt`          | Timestamp, archive path, included or missing sources, and Git inventory location.                              |
+| `.manifest.txt`          | Timestamp, archive path, sources, Git inventory location, and explicitly skipped recovery categories.          |
 
 These files are **not encrypted**. Project files can contain secrets, and the
 inventory contains paths and remote URLs. Store them in a private destination;
