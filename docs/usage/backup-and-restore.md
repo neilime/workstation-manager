@@ -36,6 +36,9 @@ Backup checks recovery sources before creating the archive:
 | Browser profiles      | Reconcile the local profiles with their Bitwarden records, then choose `retry`. See [browser recovery](browser.md).                                    |
 | Browser Sync          | Check every profile has finished syncing and its recovery words match its Bitwarden note; then choose `synced`. Never paste the words into the prompt. |
 
+At a decision prompt, choose `abort` to stop backup. You can also press Ctrl+C,
+then `a` when Ansible asks whether to abort or continue.
+
 Unresolved checks stop backup. A non-interactive run cannot make these decisions
 and cannot confirm live browser Sync. Saved browser settings do not prove that an
 upload has completed.

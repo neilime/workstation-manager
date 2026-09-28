@@ -427,8 +427,10 @@ run_ansible_pull() {
 		"WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=$PRIVATE_OVERRIDE_LOCAL_FILE" \
 		"WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
 
+	# ansible-pull relays playbook output; flush prompts before waiting for input.
 	set -- \
 		sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
+		PYTHONUNBUFFERED=1 \
 		ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
 		"$@"
 
