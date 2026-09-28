@@ -9,20 +9,31 @@
 
 - name: Confirm live browser Sync and recovery words for all profiles
   ansible.builtin.pause:
-    prompt: >-
+    prompt: |-
+      {% filter neilime.workstation_backup.terminal_prompt %}
       {{ workstation_backup_browser_sync_instructions }}
       For every collection profile, verify a recent successful Sync with no pending changes/errors,
       and compare its stable recovery words with its Bitwarden secure note without pasting them here.
       Confirm only after all profiles have finished syncing and their recovery notes match.
-      Choose [synced/abort].
+      Skip continues without confirming Sync or recovery words.
+      Local browser changes are not added to the archive; recovery stays unverified.
+      Choose [synced/skip/abort]
+      {% endfilter %}
   register: browser_sync_choice
-  until: browser_sync_choice.user_input | trim | lower in ['synced', 'abort']
+  until: browser_sync_choice.user_input | trim | lower in ['synced', 'skip', 'abort']
   retries: 3
   delay: 0
   when:
     - not workstation_backup_dry_run
     - not browser_has_drift
     - workstation_backup_browser_inspection.profiles | length > 0
+
+- name: Record skipped live browser Sync verification
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_skip
+  vars:
+    workstation_backup_recovery_skip_scope: browser-sync
+  when: browser_sync_choice.user_input | default('') | trim | lower == 'skip'
 
 - name: Require completed browser synchronization
   ansible.builtin.assert:
@@ -33,3 +44,4 @@
     - not workstation_backup_dry_run
     - not browser_has_drift
     - workstation_backup_browser_inspection.profiles | length > 0
+    - browser_sync_choice.user_input | trim | lower != 'skip'

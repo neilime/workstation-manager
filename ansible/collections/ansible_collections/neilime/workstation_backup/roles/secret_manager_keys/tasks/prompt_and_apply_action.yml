@@ -1,11 +1,16 @@
 ---
 - name: Prompt for the Bitwarden key synchronization action
   ansible.builtin.pause:
-    prompt: >-
+    prompt: |-
+      {% filter neilime.workstation_backup.terminal_prompt %}
       {{ item.kind | upper }} key {{ item.name }} is {{ 'missing from' if item.action == 'add' else 'different in' }}
-      Bitwarden. Choose [{{ item.action }}/abort]:
+      Bitwarden.
+      Skip leaves this key unchanged in both places and continues with other keys.
+      Its local changes are not added to the archive; recovery remains unverified.
+      Choose [{{ item.action }}/skip/abort]
+      {% endfilter %}
   register: workstation_backup_secret_manager_user_choice
-  until: workstation_backup_secret_manager_user_choice.user_input | trim | lower in [item.action, 'abort']
+  until: workstation_backup_secret_manager_user_choice.user_input | trim | lower in [item.action, 'skip', 'abort']
   retries: 3
   delay: 0
   no_log: false
@@ -16,101 +21,14 @@
   when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == 'abort'
   no_log: false
 
-- name: Read the current Bitwarden item before updating it
-  ansible.builtin.command:
-    argv:
-      - bw
-      - get
-      - item
-      - "{{ item.bitwarden_item_id }}"
-  environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
-  register: workstation_backup_secret_manager_existing_item
-  changed_when: false
-  when: item.action == 'update'
-  no_log: true
+- name: Record skipped key recovery without exposing key material
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_skip
+  vars:
+    workstation_backup_recovery_skip_scope: "{{ item.kind ~ '-keys' }}"
+  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == 'skip'
 
-- name: Build the Bitwarden item payload for synchronization
-  ansible.builtin.set_fact:
-    workstation_backup_secret_manager_item_payload: >-
-      {{
-        (workstation_backup_secret_manager_existing_item.stdout | from_json)
-        | combine({'name': item.name, 'fields': item.fields}, recursive=True, list_merge='replace')
-      }}
-  when: item.action == 'update'
-  no_log: true
-
-- name: Build the Bitwarden item payload for a new secret-manager item
-  ansible.builtin.set_fact:
-    workstation_backup_secret_manager_item_payload: >-
-      {{
-        {
-          'type': 2,
-          'secureNote': {'type': 0},
-          'notes': '',
-          'collectionIds': [item.collection_id],
-          'name': item.name,
-          'fields': item.fields
-        }
-        | combine({'organizationId': item.organization_id} if item.organization_id | length > 0 else {})
-      }}
-  when: item.action == 'add'
-  no_log: true
-
-- name: Encode the Bitwarden item payload
-  ansible.builtin.command:
-    argv:
-      - bw
-      - encode
-    stdin: "{{ workstation_backup_secret_manager_item_payload | to_json }}"
-  register: workstation_backup_secret_manager_encoded_payload
-  changed_when: false
-  no_log: true
-
-- name: Save the synchronized Bitwarden key item
-  ansible.builtin.command:
-    argv: >-
-      {{
-        ['bw']
-        + (['create', 'item'] if item.action == 'add' else ['edit', 'item', item.bitwarden_item_id])
-      }}
-    stdin: "{{ workstation_backup_secret_manager_encoded_payload.stdout }}"
-  environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
-  register: workstation_backup_secret_manager_saved_item
-  changed_when: true
-  no_log: true
-
-- name: Refresh Bitwarden after saving the key
-  ansible.builtin.command:
-    argv:
-      - bw
-      - sync
-  environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
-  changed_when: false
-  no_log: true
-
-- name: Read back the saved Bitwarden key item
-  ansible.builtin.command:
-    argv:
-      - bw
-      - get
-      - item
-      - "{{ (workstation_backup_secret_manager_saved_item.stdout | from_json).id }}"
-  environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
-  register: workstation_backup_secret_manager_verified_item
-  changed_when: false
-  no_log: true
-
-- name: Require the saved key to match before backup continues
-  ansible.builtin.assert:
-    that:
-      - >-
-        ((workstation_backup_secret_manager_verified_item.stdout | from_json).fields
-        | items2dict(key_name='name', value_name='value'))
-        == (item.fields | items2dict(key_name='name', value_name='value'))
-      - item.collection_id in (workstation_backup_secret_manager_verified_item.stdout | from_json).collectionIds
-    fail_msg: "Bitwarden did not retain the expected key content and collection; backup stopped."
+- name: Apply only the explicitly approved key synchronization action
+  ansible.builtin.include_tasks: apply_action.yml
+  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action
   no_log: true

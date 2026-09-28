@@ -191,7 +191,7 @@
     msg: >-
       Backup found SSH or GPG keys that are not synchronized with Bitwarden, but
       this run is non-interactive. Re-run with an interactive terminal to choose
-      add/update or abort the backup.
+      add/update, skip this key, or abort the backup.
   when:
     - not workstation_backup_dry_run
     - workstation_backup_secret_manager_actions | length > 0

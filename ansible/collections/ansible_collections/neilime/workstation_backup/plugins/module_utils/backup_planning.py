@@ -86,4 +86,13 @@ class BackupManifestContentBuilder:
             f"archive{tab_character}{archive_path}",
             f"dry_run{tab_character}{'1' if dry_run else '0'}",
         ]
+        recovery_skips = metadata.get("recovery_skips", [])
+        allowed_scopes = {"chezmoi", "ssh-keys", "gpg-keys", "browser-recovery", "browser-sync"}
+        if not isinstance(recovery_skips, list) or any(
+            not isinstance(scope, str) or scope not in allowed_scopes for scope in recovery_skips
+        ):
+            raise ValueError("recovery_skips must list known backup recovery categories")
+        if recovery_skips:
+            header_lines.append(f"recovery_status{tab_character}incomplete")
+            header_lines.extend(f"recovery_skipped{tab_character}{scope}" for scope in dict.fromkeys(recovery_skips))
         return newline_character.join(header_lines + manifest_lines) + newline_character

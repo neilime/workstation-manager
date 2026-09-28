@@ -16,9 +16,9 @@
       {{ workstation_backup_chezmoi_git_preflight.state.behind > 0 or workstation_backup_chezmoi_git_preflight.state.needs_publish }}
     workstation_backup_chezmoi_git_choices: >-
       {{
-        ['merge', 'use-remote', 'retry', 'abort']
+        ['merge', 'use-remote', 'retry', 'skip', 'abort']
         if workstation_backup_chezmoi_git_preflight.state.behind > 0
-        else ['keep', 'use-remote', 'retry', 'abort']
+        else ['keep', 'use-remote', 'retry', 'skip', 'abort']
       }}
 
 - name: Report unpublished chezmoi state during backup dry runs
@@ -42,24 +42,34 @@
 
 - name: Choose how to reconcile the chezmoi tracking branch
   ansible.builtin.pause:
-    prompt: >-
-      Chezmoi source {{ workstation_backup_chezmoi_source_dir }} is
-      {{ workstation_backup_chezmoi_git_preflight.state.ahead }} commits ahead and
-      {{ workstation_backup_chezmoi_git_preflight.state.behind }} commits behind
-      {{ workstation_backup_chezmoi_git_preflight.state.upstream }}.
-      Choose [{{ workstation_backup_chezmoi_git_choices | join('/') }}].
-      {{
-        'Merge commits all source edits with message "Update managed dotfiles", then fast-forwards '
-        ~ 'or merges upstream without rewriting local history. Conflicts stop backup for manual resolution.'
-        if workstation_backup_chezmoi_git_preflight.state.behind > 0
-        else 'Keep retains local source edits and commits for a later publication decision.'
-      }}
-      Use-remote replaces the source checkout with the fetched remote version, discarding source edits,
-      non-ignored untracked files, and local-only commits from this branch after a separate confirmation.
-      These actions do not push; publication requires a separate approval.
-      To reconcile manually (for example with rebase), use another terminal, then enter retry.
+    prompt: |-
+      {% filter neilime.workstation_backup.terminal_prompt %}
+      Chezmoi source: {{ workstation_backup_chezmoi_source_dir }}
+      Tracking: {{ workstation_backup_chezmoi_git_preflight.state.upstream }}
+      Ahead: {{ workstation_backup_chezmoi_git_preflight.state.ahead }} commits; behind: {{ workstation_backup_chezmoi_git_preflight.state.behind }} commits.
+
+      Source changes:
+      {{ workstation_backup_chezmoi_git_preflight.state.status or '(none)' }}
+
+      {% if workstation_backup_chezmoi_git_preflight.state.behind > 0 %}
+      merge      Commit all source edits as "Update managed dotfiles", then
+                 fast-forward or merge upstream without rewriting local history.
+                 Conflicts stop backup for manual resolution.
+      {% else %}
+      keep       Retain local source edits and commits for later publication.
+      {% endif %}
+      use-remote Replace the source with the fetched remote version. Discards
+                 source edits, non-ignored untracked files, and local-only
+                 commits after a separate confirmation.
+      retry      Recheck after you reconcile manually in another terminal.
+      skip       Leave Chezmoi unchanged and skip its remaining recovery checks.
+                 Local dotfile changes are not added to the archive.
+      abort      Stop backup.
+
+      These actions do not push; publication requires separate approval.
       Managed workstation files will be checked after reconciliation.
-      Source changes: {{ '\n' ~ workstation_backup_chezmoi_git_preflight.state.status }}
+      Choose [{{ workstation_backup_chezmoi_git_choices | join('/') }}]
+      {% endfilter %}
   register: workstation_backup_chezmoi_reconcile_choice
   until: workstation_backup_chezmoi_reconcile_choice.user_input | trim | lower in workstation_backup_chezmoi_git_choices
   retries: 3
@@ -69,6 +79,13 @@
     - workstation_backup_chezmoi_git_needs_decision
     - workstation_backup_chezmoi_interactive
 
+- name: Skip the remaining chezmoi checks when reconciliation is skipped
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_skip
+  vars:
+    workstation_backup_recovery_skip_scope: chezmoi
+  when: workstation_backup_chezmoi_reconcile_choice.user_input | default('') | trim | lower == 'skip'
+
 - name: Stop backup when chezmoi tracking branch reconciliation is declined
   ansible.builtin.fail:
     msg: Backup stopped because the chezmoi tracking branch has not been reconciled.
@@ -76,21 +93,35 @@
 
 - name: Confirm discarding local chezmoi source changes
   ansible.builtin.pause:
-    prompt: >-
-      Replace {{ workstation_backup_chezmoi_source_dir }} with
-      {{ workstation_backup_chezmoi_git_preflight.state.upstream }}?
-      This discards staged and unstaged source edits, deletes non-ignored untracked source files,
-      and removes {{ workstation_backup_chezmoi_git_preflight.state.ahead }} local-only commits from this branch.
-      It does not save edits in a commit or stash, and it does not push.
+    prompt: |-
+      {% filter neilime.workstation_backup.terminal_prompt %}
+      Replace {{ workstation_backup_chezmoi_source_dir }}
+      with {{ workstation_backup_chezmoi_git_preflight.state.upstream }}?
+
+      This discards staged and unstaged source edits and deletes non-ignored
+      untracked source files. It also removes
+      {{ workstation_backup_chezmoi_git_preflight.state.ahead }} local-only commits from this branch.
+      No commit or stash saves these edits, and nothing is pushed.
       Workstation files require a separate apply decision afterward.
-      Type [discard/abort] to confirm or stop.
+
+      Skip leaves Chezmoi unchanged and skips its remaining recovery checks.
+      Local dotfile changes are not added to the archive.
+      Type [discard/skip/abort]
+      {% endfilter %}
   register: workstation_backup_chezmoi_discard_choice
-  until: workstation_backup_chezmoi_discard_choice.user_input | trim | lower in ['discard', 'abort']
+  until: workstation_backup_chezmoi_discard_choice.user_input | trim | lower in ['discard', 'skip', 'abort']
   retries: 3
   delay: 0
   when:
     - not workstation_backup_dry_run
     - workstation_backup_chezmoi_reconcile_choice.user_input | default('') | trim | lower == 'use-remote'
+
+- name: Skip the remaining chezmoi checks when discarding is skipped
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_skip
+  vars:
+    workstation_backup_recovery_skip_scope: chezmoi
+  when: workstation_backup_chezmoi_discard_choice.user_input | default('') | trim | lower == 'skip'
 
 - name: Stop backup when discarding chezmoi source changes is declined
   ansible.builtin.fail:

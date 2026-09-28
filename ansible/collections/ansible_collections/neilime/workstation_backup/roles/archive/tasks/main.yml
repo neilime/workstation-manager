@@ -26,3 +26,14 @@
   ansible.builtin.debug:
     msg: "backup manifest written to {{ workstation_backup_manifest_path }}"
   when: not workstation_backup_dry_run
+
+- name: Report incomplete recovery coverage after explicit skips
+  ansible.builtin.debug:
+    msg: >-
+      Archive created with incomplete recovery coverage.
+      Skipped checks: {{ workstation_backup_recovery_skips | join(', ') }}.
+      Skipping did not add those recovery sources to the archive.
+      See the recovery_skipped records in {{ workstation_backup_manifest_path }}.
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_recovery_skips | default([]) | length > 0

@@ -1,0 +1,5 @@
+---
+- name: Record the explicitly skipped recovery source
+  ansible.builtin.set_fact:
+    workstation_backup_recovery_skips: >-
+      {{ ((workstation_backup_recovery_skips | default([])) + [workstation_backup_recovery_skip_scope]) | unique | list }}

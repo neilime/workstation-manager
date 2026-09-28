@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import select
-import shlex
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
+
+from backup_prompt_helpers import run_interactive
 
 COLLECTIONS_PATH = pathlib.Path(__file__).parents[2] / "ansible" / "collections"
 
@@ -92,6 +91,15 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
                         "gather_facts": False,
                         "vars": variables,
                         "roles": ["neilime.workstation_backup.chezmoi"],
+                        "tasks": [
+                            {
+                                "ansible.builtin.copy": {
+                                    "dest": str(self.fixture / "recovery-skips.json"),
+                                    "content": "{{ workstation_backup_recovery_skips | default([]) | to_json }}",
+                                    "mode": "0600",
+                                }
+                            }
+                        ],
                     }
                 ]
             )
@@ -114,66 +122,67 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         command = ["ansible-playbook", "--inventory", "localhost,", str(self.fixture / "playbook.json")]
         if check:
             command.append("--check")
-        # script gives Ansible a controlling terminal and foreground process group.
-        command = ["script", "--quiet", "--return", "--command", shlex.join(command), os.devnull]
-        pending = list(answers)
-        output = ""
-        unread = ""
-        with subprocess.Popen(
-            command,
-            cwd=self.fixture,
-            env=self.environment,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=0,
-        ) as process:
-            assert process.stdin is not None and process.stdout is not None
-            deadline = time.monotonic() + 60
-            try:
-                while process.poll() is None:
-                    self.assertLess(time.monotonic(), deadline, output)
-                    if not select.select([process.stdout], [], [], 0.2)[0]:
-                        continue
-                    data = os.read(process.stdout.fileno(), 65536)
-                    if not data:
-                        break
-                    text = data.decode(errors="replace")
-                    output += text
-                    unread += text
-                    if pending and pending[0][0] in unread:
-                        _prompt, answer = pending.pop(0)
-                        if callable(answer):
-                            answer = answer()
-                        # Ansible flushes pending input just after printing its prompt.
-                        time.sleep(0.1)
-                        process.stdin.write((answer + "\n").encode())
-                        process.stdin.flush()
-                        unread = ""
-                returncode = process.wait(timeout=5)
-            finally:
-                if process.poll() is None:
-                    process.kill()
-            self.assertFalse(pending, output)
-            return returncode, output
+        return run_interactive(command, self.fixture, self.environment, answers)
+
+    def test_skip_tracking_or_discard_preserves_all_local_changes(self) -> None:
+        """Either skip must leave staged edits, workstation files, and both branches intact."""
+
+        (self.source / "dot_settings").write_text("local edit\n")
+        self.git(self.source, "add", ".")
+        for answers in (
+            (("[merge/use-remote/retry/skip/abort]", "skip"),),
+            (("[merge/use-remote/retry/skip/abort]", "use-remote"), ("[discard/skip/abort]", "skip")),
+        ):
+            with self.subTest(answers=answers):
+                code, output = self.run_backup(answers)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
+                self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
+                self.assertEqual(self.git(self.source, "diff", "--cached", "--name-only"), "dot_settings")
+                self.assertEqual((self.source / "dot_settings").read_text(), "local edit\n")
+                self.assertEqual((self.home / ".settings").read_text(), "original\n")
+                self.assertEqual(json.loads((self.fixture / "recovery-skips.json").read_text()), ["chezmoi"])
+                self.assertNotIn("Choose [re-add/apply/skip/abort]", output)
+                self.assertNotIn("Choose [publish/skip/abort]", output)
+
+    def test_skip_file_drift_or_publication_keeps_prior_approved_changes(self) -> None:
+        """Skipping a later decision neither rolls back a merge nor implicitly publishes it."""
+
+        for stage in ("files", "publication"):
+            with self.subTest(stage=stage):
+                self.git(self.source, "reset", "--hard", self.original)
+                answers = [("[merge/use-remote/retry/skip/abort]", "merge")]
+                answers.append(("[re-add/apply/skip/abort]", "skip" if stage == "files" else "re-add"))
+                if stage == "publication":
+                    answers.append(("[publish/skip/abort]", "skip"))
+                code, output = self.run_backup(answers)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.upstream)
+                self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
+                expected = "upstream\n" if stage == "files" else "original\n"
+                self.assertEqual((self.source / "dot_settings").read_text(), expected)
+                self.assertEqual((self.home / ".settings").read_text(), "original\n")
+                self.assertEqual(json.loads((self.fixture / "recovery-skips.json").read_text()), ["chezmoi"])
 
     def test_merge_then_apply_checks_new_upstream_file_drift(self) -> None:
         """Updating Git must prompt for the resulting change to managed files."""
 
-        code, output = self.run_backup((("[merge/use-remote/retry/abort]", "merge"), ("[re-add/apply/abort]", "apply")))
+        code, output = self.run_backup(
+            (("[merge/use-remote/retry/skip/abort]", "merge"), ("[re-add/apply/skip/abort]", "apply"))
+        )
         self.assertEqual(code, 0, output)
         self.assertEqual((self.home / ".settings").read_text(), "upstream\n")
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.upstream)
-        self.assertNotIn("Choose [publish/abort]", output)
+        self.assertNotIn("Choose [publish/skip/abort]", output)
 
     def test_merge_then_readd_requires_separate_publication(self) -> None:
         """Keeping workstation files after a merge requires approving their new commit."""
 
         code, output = self.run_backup(
             (
-                ("[merge/use-remote/retry/abort]", "merge"),
-                ("[re-add/apply/abort]", "re-add"),
-                ("[publish/abort]", "publish"),
+                ("[merge/use-remote/retry/skip/abort]", "merge"),
+                ("[re-add/apply/skip/abort]", "re-add"),
+                ("[publish/skip/abort]", "publish"),
             )
         )
         self.assertEqual(code, 0, output)
@@ -184,7 +193,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
     def test_abort_preserves_source_worktree_and_remote(self) -> None:
         """Declining reconciliation must stop backup before touching managed files."""
 
-        code, output = self.run_backup((("[merge/use-remote/retry/abort]", "abort"),))
+        code, output = self.run_backup((("[merge/use-remote/retry/skip/abort]", "abort"),))
         self.assertNotEqual(code, 0, output)
         self.assertIn("has not been reconciled", output)
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
@@ -194,7 +203,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
     def test_retry_does_not_bypass_unresolved_drift(self) -> None:
         """Retry rechecks the upstream instead of assuming manual work is complete."""
 
-        code, output = self.run_backup((("[merge/use-remote/retry/abort]", "retry"),))
+        code, output = self.run_backup((("[merge/use-remote/retry/skip/abort]", "retry"),))
         self.assertNotEqual(code, 0, output)
         self.assertIn("still behind", output)
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
@@ -207,7 +216,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
             return "retry"
 
         code, output = self.run_backup(
-            (("[merge/use-remote/retry/abort]", reconcile_manually), ("[re-add/apply/abort]", "apply"))
+            (("[merge/use-remote/retry/skip/abort]", reconcile_manually), ("[re-add/apply/skip/abort]", "apply"))
         )
         self.assertEqual(code, 0, output)
         self.assertEqual((self.home / ".settings").read_text(), "upstream\n")
@@ -218,9 +227,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
 
         code, output = self.run_backup(
             (
-                ("[merge/use-remote/retry/abort]", "merge"),
-                ("[re-add/apply/abort]", "re-add"),
-                ("[publish/abort]", "abort"),
+                ("[merge/use-remote/retry/skip/abort]", "merge"),
+                ("[re-add/apply/skip/abort]", "re-add"),
+                ("[publish/skip/abort]", "abort"),
             )
         )
         self.assertNotEqual(code, 0, output)
@@ -239,9 +248,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.home / ".settings").write_text("unwanted workstation edit\n")
         code, output = self.run_backup(
             (
-                ("[merge/use-remote/retry/abort]", "use-remote"),
-                ("[discard/abort]", "discard"),
-                ("[re-add/apply/abort]", "apply"),
+                ("[merge/use-remote/retry/skip/abort]", "use-remote"),
+                ("[discard/skip/abort]", "discard"),
+                ("[re-add/apply/skip/abort]", "apply"),
             )
         )
         self.assertEqual(code, 0, output)
@@ -249,7 +258,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         self.assertFalse((self.source / "untracked").exists())
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.upstream)
         self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
-        self.assertNotIn("Choose [publish/abort]", output)
+        self.assertNotIn("Choose [publish/skip/abort]", output)
 
     def test_declining_discard_preserves_local_edits_and_commits(self) -> None:
         """Selecting use-remote alone is not sufficient approval to discard edits."""
@@ -258,7 +267,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         self.git(self.source, "commit", "-am", "Local")
         local_head = self.git(self.source, "rev-parse", "HEAD")
         (self.source / "dot_settings").write_text("local edit\n")
-        code, output = self.run_backup((("[merge/use-remote/retry/abort]", "use-remote"), ("[discard/abort]", "abort")))
+        code, output = self.run_backup(
+            (("[merge/use-remote/retry/skip/abort]", "use-remote"), ("[discard/skip/abort]", "abort"))
+        )
         self.assertNotEqual(code, 0, output)
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), local_head)
         self.assertEqual((self.source / "dot_settings").read_text(), "local edit\n")
@@ -272,9 +283,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.source / "dot_settings").write_text("unwanted local edit\n")
         code, output = self.run_backup(
             (
-                ("[keep/use-remote/retry/abort]", "use-remote"),
-                ("[discard/abort]", "discard"),
-                ("[re-add/apply/abort]", "apply"),
+                ("[keep/use-remote/retry/skip/abort]", "use-remote"),
+                ("[discard/skip/abort]", "discard"),
+                ("[re-add/apply/skip/abort]", "apply"),
             )
         )
         self.assertEqual(code, 0, output)
@@ -289,9 +300,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.source / "dot_settings").write_text("wanted local edit\n")
         code, output = self.run_backup(
             (
-                ("[keep/use-remote/retry/abort]", "keep"),
-                ("[re-add/apply/abort]", "apply"),
-                ("[publish/abort]", "publish"),
+                ("[keep/use-remote/retry/skip/abort]", "keep"),
+                ("[re-add/apply/skip/abort]", "apply"),
+                ("[publish/skip/abort]", "publish"),
             )
         )
         self.assertEqual(code, 0, output)

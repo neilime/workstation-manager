@@ -1,0 +1,252 @@
+---
+- name: Reconcile the chezmoi tracking branch before comparing managed files
+  ansible.builtin.include_tasks: reconcile_git.yml
+
+- name: Check whether chezmoi status has drift before backup
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - status
+      - --path-style
+      - absolute
+  register: workstation_backup_chezmoi_status
+  changed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  check_mode: false
+
+- name: Report chezmoi drift during backup dry runs
+  ansible.builtin.debug:
+    msg: |-
+      Backup would require chezmoi synchronization before archiving managed home state.
+      Current drift:
+      {{ workstation_backup_chezmoi_status.stdout }}
+  when:
+    - workstation_backup_dry_run
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
+
+- name: Fail when chezmoi drift requires an interactive decision
+  ansible.builtin.fail:
+    msg: >-
+      Backup found managed chezmoi drift, but this run is non-interactive.
+      Re-run with an interactive terminal to choose re-add, apply, skip, or abort.
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
+    - not workstation_backup_chezmoi_interactive
+
+- name: Prompt for the chezmoi synchronization action
+  ansible.builtin.pause:
+    prompt: |-
+      {% filter neilime.workstation_backup.terminal_prompt %}
+      Managed chezmoi files are out of sync before backup.
+
+      Current drift:
+      {{ workstation_backup_chezmoi_status.stdout }}
+
+      re-add Capture current workstation files in the source.
+      apply  Overwrite managed workstation files with the source, including
+             any newly merged upstream changes.
+      skip   Leave these files unchanged and skip remaining Chezmoi checks.
+             Local dotfile changes are not added to the archive.
+      abort  Stop backup.
+
+      Choose [re-add/apply/skip/abort]
+      {% endfilter %}
+  register: workstation_backup_chezmoi_user_choice
+  until: workstation_backup_chezmoi_user_choice.user_input | trim | lower in ['re-add', 'apply', 'skip', 'abort']
+  retries: 3
+  delay: 0
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
+    - workstation_backup_chezmoi_interactive
+
+- name: Skip the remaining chezmoi checks when file synchronization is skipped
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_skip
+  vars:
+    workstation_backup_recovery_skip_scope: chezmoi
+  when: workstation_backup_chezmoi_user_choice.user_input | default('') | trim | lower == 'skip'
+
+- name: Stop backup when chezmoi synchronization is declined
+  ansible.builtin.fail:
+    msg: Backup stopped because managed chezmoi files are not synchronized.
+  when:
+    - workstation_backup_chezmoi_user_choice.user_input | default('') | trim | lower == 'abort'
+
+- name: Re-add modified managed files into the chezmoi source state
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - re-add
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  changed_when: true
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
+    - workstation_backup_chezmoi_interactive
+    - workstation_backup_chezmoi_user_choice.user_input | trim | lower == 're-add'
+
+- name: Apply chezmoi source state to the managed target files
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - apply
+      - --force
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  changed_when: true
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
+    - workstation_backup_chezmoi_interactive
+    - workstation_backup_chezmoi_user_choice.user_input | trim | lower == 'apply'
+
+- name: Re-check chezmoi status after synchronization action
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - status
+      - --path-style
+      - absolute
+  register: workstation_backup_chezmoi_status_after_sync
+  changed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    CHEZMOI_CONFIG_FILE: "{{ workstation_backup_chezmoi_config_path }}"
+  when:
+    - not workstation_backup_dry_run
+
+- name: Assert that chezmoi is synchronized after the chosen action
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_status_after_sync.stdout | trim | length == 0
+    fail_msg: >-
+      Backup could not fully synchronize managed chezmoi files. Remaining drift:
+      {{ workstation_backup_chezmoi_status_after_sync.stdout }}
+  when:
+    - not workstation_backup_dry_run
+
+- name: Inspect chezmoi Git recovery state
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_backup.git_sync:
+    source: "{{ workstation_backup_chezmoi_source_dir }}"
+    github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+  check_mode: "{{ workstation_backup_dry_run }}"
+  register: workstation_backup_chezmoi_git_inspection
+  when:
+    - not workstation_backup_dry_run
+
+- name: Require the tracking branch to remain reconciled after managed file synchronization
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_git_inspection.state.behind == 0
+    fail_msg: The Chezmoi tracking branch changed during synchronization. Retry backup to review its new changes.
+  when:
+    - not workstation_backup_dry_run
+
+- name: Require an interactive decision before publishing chezmoi changes
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_interactive
+    fail_msg: >-
+      Chezmoi has uncommitted or unpushed changes. Publish them manually, or rerun backup
+      in an interactive terminal to review and approve committing and pushing them.
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_git_inspection.state.needs_publish
+
+- name: Confirm publication of chezmoi source changes
+  ansible.builtin.pause:
+    prompt: |-
+      {% filter neilime.workstation_backup.terminal_prompt %}
+      Chezmoi recovery requires publishing {{ workstation_backup_chezmoi_source_dir }}.
+      Branch: {{ workstation_backup_chezmoi_git_inspection.state.branch }}
+      Tracking: {{ workstation_backup_chezmoi_git_inspection.state.upstream }}
+      Ahead: {{ workstation_backup_chezmoi_git_inspection.state.ahead }} commits.
+
+      Source changes:
+      {{ workstation_backup_chezmoi_git_inspection.state.status or '(none)' }}
+
+      publish Commit all source changes as "Update managed dotfiles" and push
+              this branch to its tracking branch without force.
+      skip    Continue without publishing or verifying Chezmoi recovery.
+              Local dotfile changes are not added to the archive.
+      abort   Stop backup without publishing.
+
+      Choose [publish/skip/abort]
+      {% endfilter %}
+  register: workstation_backup_chezmoi_publish_choice
+  until: workstation_backup_chezmoi_publish_choice.user_input | trim | lower in ['publish', 'skip', 'abort']
+  retries: 3
+  delay: 0
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_git_inspection.state.needs_publish
+    - workstation_backup_chezmoi_interactive
+
+- name: Skip chezmoi recovery verification when publication is skipped
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_skip
+  vars:
+    workstation_backup_recovery_skip_scope: chezmoi
+  when: workstation_backup_chezmoi_publish_choice.user_input | default('') | trim | lower == 'skip'
+
+- name: Stop backup when chezmoi publication is declined
+  ansible.builtin.fail:
+    msg: Backup stopped because chezmoi changes have not been published to their recovery repository.
+  when:
+    - workstation_backup_chezmoi_publish_choice.user_input | default('') | trim | lower == 'abort'
+
+- name: Publish approved chezmoi source changes and verify completion
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_backup.git_sync:
+    source: "{{ workstation_backup_chezmoi_source_dir }}"
+    publish: true
+    github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+  register: workstation_backup_chezmoi_git_publication
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_publish_choice.user_input | default('') | trim | lower == 'publish'
+
+- name: Publish verified chezmoi Git state for subsequent recovery checks
+  ansible.builtin.set_fact:
+    workstation_backup_chezmoi_git_state: >-
+      {{
+        workstation_backup_chezmoi_git_publication.state
+        | default(workstation_backup_chezmoi_git_inspection.state)
+        | default(workstation_backup_chezmoi_git_preflight.state)
+      }}
+
+- name: Require complete chezmoi remote synchronization before backup
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_git_state.remote_verified
+      - not workstation_backup_chezmoi_git_state.needs_publish
+      - workstation_backup_chezmoi_git_state.behind == 0
+    fail_msg: Chezmoi is not fully published. Resolve its remaining Git changes before backup.
+  when:
+    - not workstation_backup_dry_run
