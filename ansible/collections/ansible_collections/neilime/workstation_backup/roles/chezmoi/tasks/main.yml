@@ -85,6 +85,10 @@
       but it is not available on this machine.
   when: workstation_backup_chezmoi_bootstrapped
 
+- name: Reconcile the chezmoi tracking branch before comparing managed files
+  ansible.builtin.include_tasks: reconcile_git.yml
+  when: workstation_backup_chezmoi_bootstrapped
+
 - name: Check whether chezmoi status has drift before backup
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
@@ -95,7 +99,7 @@
       - --path-style
       - absolute
   register: workstation_backup_chezmoi_status
-  changed_when: "{{ workstation_backup_chezmoi_status.stdout | trim | length > 0 }}"
+  changed_when: false
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
     XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
@@ -112,7 +116,7 @@
   when:
     - workstation_backup_chezmoi_bootstrapped
     - workstation_backup_dry_run
-    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
 
 - name: Fail when chezmoi drift requires an interactive decision
   ansible.builtin.fail:
@@ -122,14 +126,15 @@
   when:
     - workstation_backup_chezmoi_bootstrapped
     - not workstation_backup_dry_run
-    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
     - not workstation_backup_chezmoi_interactive
 
 - name: Prompt for the chezmoi synchronization action
   ansible.builtin.pause:
     prompt: >-
       Managed chezmoi files are out of sync before backup.
-      Choose [re-add/apply/abort].
+      Choose [re-add/apply/abort]. Re-add captures current workstation files in the source;
+      apply overwrites managed workstation files with the source, including any newly merged upstream changes.
       Current drift:
       {{ '\n' ~ workstation_backup_chezmoi_status.stdout }}
   register: workstation_backup_chezmoi_user_choice
@@ -139,7 +144,7 @@
   when:
     - workstation_backup_chezmoi_bootstrapped
     - not workstation_backup_dry_run
-    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
     - workstation_backup_chezmoi_interactive
 
 - name: Stop backup when chezmoi synchronization is declined
@@ -163,7 +168,7 @@
   when:
     - workstation_backup_chezmoi_bootstrapped
     - not workstation_backup_dry_run
-    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
     - workstation_backup_chezmoi_interactive
     - workstation_backup_chezmoi_user_choice.user_input | trim | lower == 're-add'
 
@@ -174,6 +179,7 @@
     argv:
       - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
       - apply
+      - --force
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
     XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
@@ -182,7 +188,7 @@
   when:
     - workstation_backup_chezmoi_bootstrapped
     - not workstation_backup_dry_run
-    - workstation_backup_chezmoi_status is changed
+    - workstation_backup_chezmoi_status.stdout | trim | length > 0
     - workstation_backup_chezmoi_interactive
     - workstation_backup_chezmoi_user_choice.user_input | trim | lower == 'apply'
 
@@ -226,24 +232,15 @@
     HOME: "{{ workstation_manager_resolved.user.home }}"
   check_mode: "{{ workstation_backup_dry_run }}"
   register: workstation_backup_chezmoi_git_inspection
-  when: workstation_backup_chezmoi_bootstrapped
-
-- name: Report unpublished chezmoi state during backup dry runs
-  ansible.builtin.debug:
-    msg: >-
-      Chezmoi remote completion is unverified in a dry run; no fetch, commit, or push was performed.
-      Local tracking state: {{ workstation_backup_chezmoi_git_inspection.state }}
   when:
     - workstation_backup_chezmoi_bootstrapped
-    - workstation_backup_dry_run
+    - not workstation_backup_dry_run
 
-- name: Require manual reconciliation of behind or diverged chezmoi branches
+- name: Require the tracking branch to remain reconciled after managed file synchronization
   ansible.builtin.assert:
     that:
       - workstation_backup_chezmoi_git_inspection.state.behind == 0
-    fail_msg: >-
-      Chezmoi is behind or diverged from its tracking branch.
-      Review and reconcile {{ workstation_backup_chezmoi_source_dir }} manually, then retry backup.
+    fail_msg: The Chezmoi tracking branch changed during synchronization. Retry backup to review its new changes.
   when:
     - workstation_backup_chezmoi_bootstrapped
     - not workstation_backup_dry_run
@@ -302,7 +299,11 @@
 - name: Publish verified chezmoi Git state for subsequent recovery checks
   ansible.builtin.set_fact:
     workstation_backup_chezmoi_git_state: >-
-      {{ workstation_backup_chezmoi_git_publication.state | default(workstation_backup_chezmoi_git_inspection.state) }}
+      {{
+        workstation_backup_chezmoi_git_publication.state
+        | default(workstation_backup_chezmoi_git_inspection.state)
+        | default(workstation_backup_chezmoi_git_preflight.state)
+      }}
   when: workstation_backup_chezmoi_bootstrapped
 
 - name: Require complete chezmoi remote synchronization before backup

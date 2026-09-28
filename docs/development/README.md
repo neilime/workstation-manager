@@ -111,6 +111,11 @@ bootstrap workflow. The default source is the checkout's `origin` and current
 branch, falling back to its commit when detached. Set `E2E_REPOSITORY_URL` and
 `E2E_REPOSITORY_REF` to test a different repository or ref. The selected ref must
 already contain the changes on GitHub; local uncommitted changes are not deployed.
+In CI, the bootstrap uses the exact checked-out commit from the workflow
+repository. Pull request runs use GitHub's merge commit so the installed code
+includes the same base-branch changes as the assertions. The entrypoint explicitly
+fetches pinned commits so PR commits outside normal branches and tags are available
+to `ansible-pull`.
 
 ```sh
 make e2e-up

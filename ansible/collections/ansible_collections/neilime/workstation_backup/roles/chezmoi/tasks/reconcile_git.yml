@@ -1,0 +1,124 @@
+---
+- name: Inspect the chezmoi tracking branch before synchronization
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_backup.git_sync:
+    source: "{{ workstation_backup_chezmoi_source_dir }}"
+    github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+  check_mode: "{{ workstation_backup_dry_run }}"
+  register: workstation_backup_chezmoi_git_preflight
+
+- name: Resolve the available chezmoi source decisions
+  ansible.builtin.set_fact:
+    workstation_backup_chezmoi_git_needs_decision: >-
+      {{ workstation_backup_chezmoi_git_preflight.state.behind > 0 or workstation_backup_chezmoi_git_preflight.state.needs_publish }}
+    workstation_backup_chezmoi_git_choices: >-
+      {{
+        ['merge', 'use-remote', 'retry', 'abort']
+        if workstation_backup_chezmoi_git_preflight.state.behind > 0
+        else ['keep', 'use-remote', 'retry', 'abort']
+      }}
+
+- name: Report unpublished chezmoi state during backup dry runs
+  ansible.builtin.debug:
+    msg: >-
+      Chezmoi remote completion is unverified in a dry run; no fetch or source changes were performed.
+      Local tracking state: {{ workstation_backup_chezmoi_git_preflight.state }}
+  when: workstation_backup_dry_run
+
+- name: Require an interactive decision before reconciling the chezmoi tracking branch
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_interactive
+    fail_msg: >-
+      Chezmoi source differs from {{ workstation_backup_chezmoi_git_preflight.state.upstream }}.
+      Re-run backup in an interactive terminal to choose how to reconcile the source, or reconcile it manually.
+      Source: {{ workstation_backup_chezmoi_source_dir }}.
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_git_needs_decision
+
+- name: Choose how to reconcile the chezmoi tracking branch
+  ansible.builtin.pause:
+    prompt: >-
+      Chezmoi source {{ workstation_backup_chezmoi_source_dir }} is
+      {{ workstation_backup_chezmoi_git_preflight.state.ahead }} commits ahead and
+      {{ workstation_backup_chezmoi_git_preflight.state.behind }} commits behind
+      {{ workstation_backup_chezmoi_git_preflight.state.upstream }}.
+      Choose [{{ workstation_backup_chezmoi_git_choices | join('/') }}].
+      {{
+        'Merge commits all source edits with message "Update managed dotfiles", then fast-forwards '
+        ~ 'or merges upstream without rewriting local history. Conflicts stop backup for manual resolution.'
+        if workstation_backup_chezmoi_git_preflight.state.behind > 0
+        else 'Keep retains local source edits and commits for a later publication decision.'
+      }}
+      Use-remote replaces the source checkout with the fetched remote version, discarding source edits,
+      non-ignored untracked files, and local-only commits from this branch after a separate confirmation.
+      These actions do not push; publication requires a separate approval.
+      To reconcile manually (for example with rebase), use another terminal, then enter retry.
+      Managed workstation files will be checked after reconciliation.
+      Source changes: {{ '\n' ~ workstation_backup_chezmoi_git_preflight.state.status }}
+  register: workstation_backup_chezmoi_reconcile_choice
+  until: workstation_backup_chezmoi_reconcile_choice.user_input | trim | lower in workstation_backup_chezmoi_git_choices
+  retries: 3
+  delay: 0
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_git_needs_decision
+    - workstation_backup_chezmoi_interactive
+
+- name: Stop backup when chezmoi tracking branch reconciliation is declined
+  ansible.builtin.fail:
+    msg: Backup stopped because the chezmoi tracking branch has not been reconciled.
+  when: workstation_backup_chezmoi_reconcile_choice.user_input | default('') | trim | lower == 'abort'
+
+- name: Confirm discarding local chezmoi source changes
+  ansible.builtin.pause:
+    prompt: >-
+      Replace {{ workstation_backup_chezmoi_source_dir }} with
+      {{ workstation_backup_chezmoi_git_preflight.state.upstream }}?
+      This discards staged and unstaged source edits, deletes non-ignored untracked source files,
+      and removes {{ workstation_backup_chezmoi_git_preflight.state.ahead }} local-only commits from this branch.
+      It does not save edits in a commit or stash, and it does not push.
+      Workstation files require a separate apply decision afterward.
+      Type [discard/abort] to confirm or stop.
+  register: workstation_backup_chezmoi_discard_choice
+  until: workstation_backup_chezmoi_discard_choice.user_input | trim | lower in ['discard', 'abort']
+  retries: 3
+  delay: 0
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_reconcile_choice.user_input | default('') | trim | lower == 'use-remote'
+
+- name: Stop backup when discarding chezmoi source changes is declined
+  ansible.builtin.fail:
+    msg: Backup stopped without discarding local chezmoi source changes.
+  when: workstation_backup_chezmoi_discard_choice.user_input | default('') | trim | lower == 'abort'
+
+- name: Reconcile or recheck the chezmoi tracking branch after the chosen action
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_backup.git_sync:
+    source: "{{ workstation_backup_chezmoi_source_dir }}"
+    merge: "{{ workstation_backup_chezmoi_reconcile_choice.user_input | trim | lower == 'merge' }}"
+    reset_to_upstream: "{{ workstation_backup_chezmoi_discard_choice.user_input | default('') | trim | lower == 'discard' }}"
+    github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+  register: workstation_backup_chezmoi_git_reconciliation
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_reconcile_choice.user_input | default('') | trim | lower in ['merge', 'keep', 'use-remote', 'retry']
+
+- name: Require completed chezmoi tracking branch reconciliation
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_chezmoi_git_reconciliation.state.behind == 0
+    fail_msg: >-
+      Chezmoi is still behind its tracking branch. Reconcile {{ workstation_backup_chezmoi_source_dir }}
+      and retry backup; no archive has been created.
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_chezmoi_git_needs_decision

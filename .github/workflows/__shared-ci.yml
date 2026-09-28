@@ -210,15 +210,18 @@ jobs:
         timeout-minutes: 35
         env:
           # yamllint disable rule:line-length
-          E2E_REPOSITORY_URL: ${{ github.event.pull_request.head.repo.clone_url || format('https://github.com/{0}.git', github.repository) }}
-          E2E_REPOSITORY_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+          E2E_REPOSITORY_URL: ${{ format('https://github.com/{0}.git', github.repository) }}
           WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
           # yamllint enable rule:line-length
           BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
           BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
           BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
           E2E_PROFILE_TASKS: "1"
-        run: REPORTS_DIR=.reports make e2e-test
+        run: |
+          # Bootstrap the same commit that supplies the assertions, including PR merge commits.
+          E2E_REPOSITORY_REF="$(git rev-parse HEAD)"
+          export E2E_REPOSITORY_REF
+          REPORTS_DIR=.reports make e2e-test
 
       - name: Parse e2e reports
         if: ${{ always() }}

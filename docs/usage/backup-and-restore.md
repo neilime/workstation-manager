@@ -31,7 +31,7 @@ Backup checks recovery sources before creating the archive:
 | Check                 | Required action when out of sync                                                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Chezmoi managed files | Choose `re-add` to capture local changes, `apply` to overwrite local changes with source state, or `abort`.                                            |
-| Chezmoi Git checkout  | Approve `publish` to commit all source changes and push them. Resolve a behind or diverged branch manually, then rerun backup.                         |
+| Chezmoi Git checkout  | Choose how to reconcile local and remote source changes, then approve `publish` separately if keeping local changes.                                   |
 | Local SSH/GPG keys    | Approve each missing or changed key being added to or updated in Bitwarden. Saved values are read back and verified. Extra vault keys are retained.    |
 | Browser profiles      | Reconcile the local profiles with their Bitwarden records, then choose `retry`. See [browser recovery](browser.md).                                    |
 | Browser Sync          | Check every profile has finished syncing and its recovery words match its Bitwarden note; then choose `synced`. Never paste the words into the prompt. |
@@ -42,6 +42,40 @@ upload has completed.
 
 Chezmoi must already be initialized. Its Git branch must have an upstream, and a
 successful backup requires a clean checkout synchronized with that remote.
+When its branch has incoming changes, local edits, or unpushed commits, backup
+shows the ahead/behind counts and source file status before asking what to do:
+
+- `merge` is available when the branch is behind or diverged. It commits all
+  uncommitted source changes, then fast-forwards or merges the
+  upstream branch while preserving local commits. It does not push. A conflict
+  stops backup; inspect `git status` in the displayed source directory, resolve
+  and complete the merge or run `git merge --abort`, then retry backup. Any commit
+  made to save local edits remains available after aborting the merge.
+- `keep` retains local source changes when the branch has no incoming commits;
+  publication still requires separate approval later.
+- `use-remote` offers to replace the source checkout with its fetched tracking
+  branch. Type `discard` at the confirmation prompt to discard staged and unstaged
+  source edits, delete non-ignored untracked source files, and remove local-only
+  commits from the current branch. No commit or stash is created to save the
+  edits, and nothing is pushed. Choose `abort` to cancel. Nested repositories,
+  submodules, and ignored files that would be overwritten require manual
+  reconciliation instead.
+- `retry` fetches and checks again after you reconcile the source in another
+  terminal, for example using your preferred rebase workflow.
+- `abort` stops backup without changing source files or publishing anything.
+
+After Git reconciliation, backup checks managed workstation files against the
+updated source and offers `re-add`, `apply`, or `abort` if they differ. Remaining
+local Git changes still require a separate `publish` approval before backup can
+continue. A remote update during these checks stops backup so you can review it
+on the next run.
+
+To discard local changes in both places, choose **`use-remote`, confirm `discard`,
+then choose `apply`** when prompted about managed workstation files. Choosing
+`re-add` would capture the workstation's current contents back into the source.
+Files no longer managed by the remote source are not automatically deleted from
+your home.
+
 Publish changes to your private overrides too; see
 [configuration](configuration.md). A separately supplied local override is not
 checked for publication.
@@ -132,9 +166,9 @@ project recovery as complete. Without the inventory, only files are restored.
 ## Preview
 
 Add `--dry-run` to either command. Backup reports pending synchronization and
-archive work without creating an archive, changing vault records, or committing
-and pushing Git changes. Restore validates the archive without extracting it or
-cloning projects.
+archive work without creating an archive, changing vault records, or modifying
+Git source files and history. Restore validates the archive without
+extracting it or cloning projects.
 
 A preview still bootstraps dependencies, downloads configuration, and can
 authenticate to Bitwarden and refresh its local cache. It does not certify remote
