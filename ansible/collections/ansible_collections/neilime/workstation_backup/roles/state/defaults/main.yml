@@ -11,12 +11,12 @@ workstation_backup_dry_run: >- # noqa: var-naming[no-role-prefix]
 workstation_backup_extra_paths_raw: >- # noqa: var-naming[no-role-prefix]
   {{ lookup('env', 'WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS') | default('', true) }}
 workstation_backup_projects_directory: >- # noqa: var-naming[no-role-prefix]
-  {{ ansible_env.HOME }}/Documents/dev-projects
+  {{ workstation_manager_resolved.user.home }}/Documents/dev-projects
 workstation_backup_default_paths: # noqa: var-naming[no-role-prefix]
   - label: dev-projects
     path: "{{ workstation_backup_projects_directory }}"
   - label: workstation-manager-user-config
-    path: "{{ ansible_env.HOME }}/.config/workstation-manager"
+    path: "{{ workstation_manager_resolved.user.home }}/.config/workstation-manager"
 workstation_backup_archive_exclusion_patterns: # noqa: var-naming[no-role-prefix]
   - "*/.git"
   - "*/.git/*"

@@ -6,7 +6,7 @@
         workstation_backup_default_paths |
         neilime.workstation_backup.backup_requested_paths(
           workstation_backup_extra_paths_raw,
-          ansible_env.HOME
+          workstation_manager_resolved.user.home
         )
       }}
 

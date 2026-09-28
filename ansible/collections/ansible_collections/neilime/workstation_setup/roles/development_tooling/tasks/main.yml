@@ -186,10 +186,21 @@
       - install
   args:
     chdir: "{{ workstation_manager_resolved.user.home }}"
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-    MISE_BACKENDS_PHP: vfox:mise-plugins/vfox-php
+  vars:
+    workstation_manager_development_github_token: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
+  environment: >-
+    {{
+      {
+        'HOME': workstation_manager_resolved.user.home,
+        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config',
+        'MISE_BACKENDS_PHP': 'vfox:mise-plugins/vfox-php'
+      } | combine(
+        {'MISE_GITHUB_TOKEN': workstation_manager_development_github_token}
+        if workstation_manager_development_github_token | length > 0 else {}
+      )
+    }}
+  no_log: "{{ workstation_manager_development_github_token | length > 0 }}"
   changed_when: false
   when:
     - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
@@ -272,9 +283,20 @@
   register: workstation_manager_development_gh_extensions
   changed_when: false
   failed_when: false
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  vars:
+    workstation_manager_development_github_token: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
+  environment: >-
+    {{
+      {
+        'HOME': workstation_manager_resolved.user.home,
+        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config'
+      } | combine(
+        {'GH_TOKEN': workstation_manager_development_github_token}
+        if workstation_manager_development_github_token | length > 0 else {}
+      )
+    }}
+  no_log: "{{ workstation_manager_development_github_token | length > 0 }}"
   when:
     - workstation_manager_resolved.development.mise.gh_extensions | length > 0
     - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
@@ -291,9 +313,20 @@
         . "$HOME/.config/workstation-manager/mise.sh"
         gh extension install {{ item | quote }}
   changed_when: true
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  vars:
+    workstation_manager_development_github_token: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
+  environment: >-
+    {{
+      {
+        'HOME': workstation_manager_resolved.user.home,
+        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config'
+      } | combine(
+        {'GH_TOKEN': workstation_manager_development_github_token}
+        if workstation_manager_development_github_token | length > 0 else {}
+      )
+    }}
+  no_log: "{{ workstation_manager_development_github_token | length > 0 }}"
   loop: "{{ workstation_manager_resolved.development.mise.gh_extensions }}"
   loop_control:
     label: "{{ item }}"

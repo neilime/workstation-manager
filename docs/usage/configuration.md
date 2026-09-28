@@ -125,12 +125,16 @@ settings. Override only the values you need to change.
 
 Provide credentials through your automation's secret store:
 
-| Environment variable               | Purpose                             |
-| ---------------------------------- | ----------------------------------- |
-| `WORKSTATION_MANAGER_GITHUB_TOKEN` | Access private GitHub repositories. |
-| `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.            |
-| `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.        |
-| `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.         |
+| Environment variable               | Purpose                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `WORKSTATION_MANAGER_GITHUB_TOKEN` | Access private GitHub repositories and authenticate developer tool downloads. |
+| `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.                                                      |
+| `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.                                                  |
+| `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.                                                   |
+
+Setup passes the GitHub token to mise and GitHub CLI extension commands through
+their environment. It does not write the token to mise configuration or shell
+activation files.
 
 All three Bitwarden values must be present to skip interactive credential prompts.
 Automation must also supply `WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR` for backup.

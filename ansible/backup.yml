@@ -21,18 +21,30 @@
     - name: Resolve workstation config inputs
       ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml
 
-    - name: Synchronize managed chezmoi state before backup
-      ansible.builtin.import_role:
-        name: neilime.workstation_backup.chezmoi
+    - name: Run backup tasks as the managed user
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      environment:
+        HOME: "{{ workstation_manager_resolved.user.home }}"
+        SSH_AUTH_SOCK: "{{ lookup('ansible.builtin.env', 'SSH_AUTH_SOCK') }}"
+        GPG_TTY: "{{ lookup('ansible.builtin.env', 'GPG_TTY') }}"
+        DISPLAY: "{{ lookup('ansible.builtin.env', 'DISPLAY') }}"
+        WAYLAND_DISPLAY: "{{ lookup('ansible.builtin.env', 'WAYLAND_DISPLAY') }}"
+        XDG_RUNTIME_DIR: "{{ lookup('ansible.builtin.env', 'XDG_RUNTIME_DIR') }}"
+        DBUS_SESSION_BUS_ADDRESS: "{{ lookup('ansible.builtin.env', 'DBUS_SESSION_BUS_ADDRESS') }}"
+      block:
+        - name: Synchronize managed chezmoi state before backup
+          ansible.builtin.import_role:
+            name: neilime.workstation_backup.chezmoi
 
-    - name: Synchronize managed SSH and GPG key material with Bitwarden
-      ansible.builtin.import_role:
-        name: neilime.workstation_backup.secret_manager_keys
+        - name: Synchronize managed SSH and GPG key material with Bitwarden
+          ansible.builtin.import_role:
+            name: neilime.workstation_backup.secret_manager_keys
 
-    - name: Verify browser profile recovery and completed Sync
-      ansible.builtin.import_role:
-        name: neilime.workstation_backup.browser
+        - name: Verify browser profile recovery and completed Sync
+          ansible.builtin.import_role:
+            name: neilime.workstation_backup.browser
 
-    - name: Run backup workflow
-      ansible.builtin.import_role:
-        name: neilime.workstation_backup.state
+        - name: Run backup workflow
+          ansible.builtin.import_role:
+            name: neilime.workstation_backup.state
