@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import select
+import shlex
 import subprocess
 import tempfile
+import time
 import unittest
 
 from ansible.parsing.dataloader import DataLoader
@@ -125,6 +128,27 @@ class E2EWorkflowRevisionTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
 
 
+def bootstrap_fixture(fixture: pathlib.Path) -> str:
+    """Load the entrypoint with isolated target paths and a non-privileged sudo stub."""
+
+    (fixture / "bin").mkdir()
+    sudo = fixture / "bin/sudo"
+    sudo.write_text('#!/bin/sh\nshift\nunset PYTHONUNBUFFERED\nexec "$@"\n')
+    sudo.chmod(0o755)
+    definitions = (WORKSPACE / "workstation.sh").read_text().splitlines()
+    if definitions.pop() != 'main "$@"':
+        raise AssertionError("The entrypoint must end with its main invocation")
+    (fixture / "entrypoint.sh").write_text("\n".join(definitions) + "\n")
+    # CI's numeric container UID may have no passwd entry; provide the target context.
+    return (
+        ". ./entrypoint.sh\n"
+        'TARGET_USER="$USER"\n'
+        'TARGET_USER_HOME="$HOME"\n'
+        'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
+        'ANSIBLE_CHECKOUT_DIR="$HOME/checkout"\n'
+    )
+
+
 class PinnedCommitBootstrapTests(unittest.TestCase):
     """Exercise the real Git module and ansible-pull with a commit reachable only via a PR ref."""
 
@@ -178,24 +202,12 @@ class PinnedCommitBootstrapTests(unittest.TestCase):
             # file:// uses Git transport instead of copying all local objects into the clone.
             git("clone", environment["REPOSITORY_URL"], str(fixture / "regular-clone"))
             self.assertNotIn(revision, git("-C", str(fixture / "regular-clone"), "rev-list", "--all").splitlines())
-            (fixture / "bin").mkdir()
-            sudo = fixture / "bin/sudo"
-            sudo.write_text('#!/bin/sh\nshift\nexec "$@"\n')
-            sudo.chmod(0o755)
-            definitions = (WORKSPACE / "workstation.sh").read_text().splitlines()
-            self.assertEqual(definitions.pop(), 'main "$@"')
-            (fixture / "entrypoint.sh").write_text("\n".join(definitions) + "\n")
+            bootstrap = bootstrap_fixture(fixture)
             result = subprocess.run(
                 [
                     "sh",
                     "-c",
-                    # CI's numeric container UID may have no passwd entry; use an isolated target context.
-                    ". ./entrypoint.sh\n"
-                    'TARGET_USER="$USER"\n'
-                    'TARGET_USER_HOME="$HOME"\n'
-                    'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
-                    'ANSIBLE_CHECKOUT_DIR="$HOME/checkout"\n'
-                    "run_ansible_pull ansible/check.yml 0",
+                    bootstrap + "run_ansible_pull ansible/check.yml 0",
                 ],
                 cwd=fixture,
                 env=environment,
@@ -208,6 +220,131 @@ class PinnedCommitBootstrapTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertIn("PR_REF_BOOTSTRAPPED", result.stdout)
             self.assertFalse((fixture / "checkout").exists(), "ansible-pull must still purge its checkout")
+
+
+class InteractiveBootstrapTests(unittest.TestCase):
+    """Exercise prompt answers and keyboard cancellation with an isolated repository."""
+
+    def test_pull_flushes_prompts_and_accepts_answers_and_interrupts(self) -> None:
+        """Buffered relay output must not hide either the decision or the abort prompt."""
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            repository = fixture / "repository"
+            repository.mkdir()
+            (repository / "check.yml").write_text(
+                json.dumps(
+                    [
+                        {
+                            "hosts": "localhost",
+                            "gather_facts": False,
+                            "tasks": [
+                                {
+                                    "name": "Request a fixture decision",
+                                    "ansible.builtin.pause": {"prompt": "FIXTURE_DECISION [retry/abort]"},
+                                    "register": "decision",
+                                },
+                                {
+                                    "name": "Verify the answer",
+                                    "ansible.builtin.assert": {"that": "decision.user_input == 'retry'"},
+                                },
+                                {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
+                            ],
+                        }
+                    ]
+                )
+            )
+            # Do not inherit the tooling image's PYTHONUNBUFFERED: the entrypoint must set it after sudo.
+            environment = {
+                "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
+                "HOME": str(fixture),
+                "USER": "fixture",
+                "ANSIBLE_HOME": str(fixture / ".ansible"),
+                "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "REPOSITORY_URL": repository.as_uri(),
+            }
+            (fixture / "ansible.cfg").write_text("[defaults]\n")
+            for arguments in (
+                ["init", "--initial-branch=main"],
+                ["add", "."],
+                [
+                    "-c",
+                    "user.name=Fixture",
+                    "-c",
+                    "user.email=fixture@example.invalid",
+                    "commit",
+                    "-m",
+                    "Fixture",
+                ],
+            ):
+                subprocess.run(
+                    ["git", *arguments],
+                    cwd=repository,
+                    env=environment,
+                    check=True,
+                    capture_output=True,
+                )
+            # Read the script from a pipe while Ansible reads answers from /dev/tty.
+            command = (
+                "printf '%s\\n' " + shlex.quote(bootstrap_fixture(fixture) + "run_ansible_pull check.yml 0") + " | sh"
+            )
+            for interrupt in (False, True):
+                with self.subTest(interrupt=interrupt):
+                    with subprocess.Popen(
+                        [
+                            "script",
+                            "--quiet",
+                            "--return",
+                            "--command",
+                            command,
+                            os.devnull,
+                        ],
+                        cwd=fixture,
+                        env=environment,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                    ) as process:
+                        assert process.stdin is not None
+                        output = bytearray()
+
+                        try:
+                            self.wait_for_prompt(process, output, b"FIXTURE_DECISION [retry/abort]:")
+                            if interrupt:
+                                process.stdin.write(b"\x03")
+                                process.stdin.flush()
+                                self.wait_for_prompt(process, output, b"to abort")
+                                process.stdin.write(b"a")
+                            else:
+                                process.stdin.write(b"retry\n")
+                            process.stdin.flush()
+                            remaining, _ = process.communicate(timeout=20)
+                            output.extend(remaining)
+                            if interrupt:
+                                self.assertNotEqual(process.returncode, 0, output)
+                                self.assertNotIn(b"FIXTURE_COMPLETED", output)
+                            else:
+                                self.assertEqual(process.returncode, 0, output)
+                                self.assertIn(b"FIXTURE_COMPLETED", output)
+                        finally:
+                            if process.poll() is None:
+                                process.terminate()
+                                process.communicate(timeout=5)
+
+    def wait_for_prompt(self, process: subprocess.Popen[bytes], output: bytearray, marker: bytes) -> None:
+        """Read a visible prompt before sending input, with a bounded wait on regressions."""
+
+        assert process.stdout is not None
+        deadline = time.monotonic() + 20
+        while marker not in output:
+            self.assertLess(time.monotonic(), deadline, output.decode(errors="replace"))
+            self.assertIsNone(process.poll(), output.decode(errors="replace"))
+            if select.select([process.stdout], [], [], 0.1)[0]:
+                output.extend(os.read(process.stdout.fileno(), 65536))
+        # pause flushes pending input immediately after displaying the prompt.
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":
