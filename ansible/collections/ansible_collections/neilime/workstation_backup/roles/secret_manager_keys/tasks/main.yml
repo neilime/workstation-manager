@@ -76,6 +76,7 @@
 
 - name: Ensure GPG tooling is installed for key synchronization
   become: "{{ workstation_manager_use_become }}"
+  become_user: root
   ansible.builtin.apt:
     name:
       - gpg

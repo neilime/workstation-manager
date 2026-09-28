@@ -156,10 +156,10 @@ class TerminalPromptTests(unittest.TestCase):
 
 
 class AnsibleTargetContextTests(unittest.TestCase):
-    """Pass the resolved account and home to every Ansible runner."""
+    """Authenticate the controller while preserving the managed account and home."""
 
-    def test_runners_preserve_resolved_home_and_check_mode(self) -> None:
-        """Backup and root actions must agree even when passwd uses a custom home."""
+    def test_actions_preserve_resolved_home_and_check_mode(self) -> None:
+        """Every action must preserve the target context when passwd uses a custom home."""
         definitions = ENTRYPOINT_PATH.read_text().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -169,7 +169,12 @@ class AnsibleTargetContextTests(unittest.TestCase):
             commands = {
                 "id": '#!/bin/sh\nprintf "%s\n" "$TEST_PROCESS_USER"\n',
                 "getent": ('#!/bin/sh\nprintf "runner:x:1000:1000::%s:/bin/sh\n" "$TEST_TARGET_HOME"\n'),
-                "sudo": ('#!/bin/sh\nshift\nif [ "${1:-}" = "-u" ]; then shift 2; fi\nexec "$@"\n'),
+                "sudo": (
+                    "#!/bin/sh\nshift\n"
+                    "export TEST_CONTROLLER_PRIVILEGED=1\n"
+                    "unset WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS SSH_AUTH_SOCK\n"
+                    'exec "$@"\n'
+                ),
                 "ansible-pull": (
                     f"#!{sys.executable}\n"
                     "import json, os, sys\n"
@@ -178,6 +183,9 @@ class AnsibleTargetContextTests(unittest.TestCase):
                     '    "home": os.environ.get("WORKSTATION_MANAGER_USER_HOME"),\n'
                     '    "collections": os.environ.get("ANSIBLE_COLLECTIONS_PATH"),\n'
                     '    "args": sys.argv[1:],\n'
+                    '    "privileged": os.environ.get("TEST_CONTROLLER_PRIVILEGED"),\n'
+                    '    "extra_paths": os.environ.get("WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS"),\n'
+                    '    "ssh_auth_sock": os.environ.get("SSH_AUTH_SOCK"),\n'
                     "}))\n"
                 ),
             }
@@ -186,18 +194,21 @@ class AnsibleTargetContextTests(unittest.TestCase):
                 (fixture / name).chmod(0o700)
 
             for target_home in ("/home/runner", "/home/runner.guest"):
-                for runner, process_user, dry_run in (
-                    ("user", "runner", "0"),
-                    ("root", "runner", "0"),
-                    ("user", "root", "1"),
+                for action, process_user, dry_run in (
+                    ("backup", "runner", "0"),
+                    ("backup", "root", "1"),
+                    ("setup", "runner", "0"),
+                    ("cleanup", "runner", "1"),
                 ):
-                    with self.subTest(home=target_home, runner=runner, process_user=process_user):
+                    with self.subTest(home=target_home, action=action, process_user=process_user):
                         environment = {
                             "PATH": f"{fixture}:/usr/bin:/bin",
                             "HOME": target_home if process_user == "runner" else "/root",
                             "USER": process_user,
                             "TEST_PROCESS_USER": process_user,
                             "TEST_TARGET_HOME": target_home,
+                            "WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS": "~/notes:/mnt/project files",
+                            "SSH_AUTH_SOCK": "/tmp/fixture-ssh-agent",
                         }
                         if process_user == "root":
                             environment["SUDO_USER"] = "runner"
@@ -207,10 +218,13 @@ class AnsibleTargetContextTests(unittest.TestCase):
                                 "-c",
                                 '. "$1"\n'
                                 "has_interactive_terminal() { return 1; }\n"
-                                'run_ansible_pull "$2" ansible/backup.yml "$3"',
+                                "prepare_action_dependencies() { :; }\n"
+                                "prompt_for_bitwarden_credentials_if_needed() { :; }\n"
+                                "prompt_for_backup_output_dir_if_needed() { :; }\n"
+                                'run_"$2" "$3"',
                                 "entrypoint-test",
                                 str(wrapper),
-                                runner,
+                                action,
                                 dry_run,
                             ],
                             env=environment,
@@ -219,14 +233,18 @@ class AnsibleTargetContextTests(unittest.TestCase):
                             text=True,
                             timeout=10,
                         )
-                        invocation = json.loads(result.stdout)
+                        invocation = json.loads(result.stdout.splitlines()[-1])
                         self.assertEqual(invocation["name"], "runner")
                         self.assertEqual(invocation["home"], target_home)
                         self.assertEqual(
                             invocation["collections"],
                             f"{target_home}/.ansible/collections:/usr/share/ansible/collections",
                         )
-                        self.assertIn("ansible/backup.yml", invocation["args"])
+                        self.assertEqual(invocation["privileged"], "1")
+                        self.assertEqual(invocation["ssh_auth_sock"], "/tmp/fixture-ssh-agent")
+                        if action == "backup":
+                            self.assertEqual(invocation["extra_paths"], "~/notes:/mnt/project files")
+                        self.assertIn(f"ansible/{action}.yml", invocation["args"])
                         self.assertEqual("--check" in invocation["args"], dry_run == "1")
                         self.assertEqual("--diff" in invocation["args"], dry_run == "1")
 

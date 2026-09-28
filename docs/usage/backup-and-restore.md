@@ -21,6 +21,11 @@ curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/wo
   WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=/media/backup/workstation sh -s -- backup
 ```
 
+Backup authenticates with sudo before launching Ansible. Your local sudo password
+is separate from your Bitwarden vault password. Recovery checks, user caches, and
+archive creation run as the managed user; dependency installation runs as root.
+Non-interactive runs must allow sudo to launch Ansible without prompting.
+
 Backup checks recovery sources before creating the archive:
 
 | Check                 | Required action when out of sync                                                                                                                       |

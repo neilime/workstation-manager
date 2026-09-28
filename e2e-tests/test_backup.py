@@ -76,6 +76,19 @@ def test_backup_git_inventory_exists(host) -> None:
     assert backup_git_inventory.is_file
 
 
+def test_backup_outputs_are_owned_by_the_managed_user(host) -> None:
+    """Elevating the controller must not create root-owned recovery artifacts."""
+
+    expected_user = host.check_output("id -un")
+    for path in (
+        BACKUP_ROOT,
+        resolve_backup_archive_path(host),
+        resolve_backup_manifest_path(host),
+        resolve_backup_git_inventory_path(host),
+    ):
+        assert host.file(path).user == expected_user
+
+
 def test_backup_manifest_records_expected_entries(host) -> None:
     """The backup manifest should reflect the generated archive and core inputs."""
 

@@ -179,21 +179,6 @@ initialize_target_context() {
 	COLLECTIONS_INSTALL_DIR="$TARGET_USER_HOME/.ansible/collections"
 }
 
-run_as_target_user() {
-	initialize_target_context
-
-	if [ "$(id -un)" = "$TARGET_USER" ] && [ "${HOME:-}" = "$TARGET_USER_HOME" ]; then
-		env "$@"
-		return
-	fi
-
-	sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD -u "$TARGET_USER" env \
-		HOME="$TARGET_USER_HOME" \
-		USER="$TARGET_USER" \
-		LOGNAME="$TARGET_USER" \
-		"$@"
-}
-
 install_ansible_packages() {
 	if command -v ansible-playbook >/dev/null 2>&1 &&
 		command -v ansible-pull >/dev/null 2>&1; then
@@ -413,10 +398,9 @@ prepare_action_dependencies() {
 }
 
 run_ansible_pull() {
-	runner_kind="$1"
-	playbook_path="$2"
-	dry_run="$3"
-	shift 3
+	playbook_path="$1"
+	dry_run="$2"
+	shift 2
 	initialize_target_context
 	authenticated_repository_url="$(resolve_authenticated_repository_url "$REPOSITORY_URL")"
 
@@ -437,28 +421,16 @@ run_ansible_pull() {
 		"DISPLAY=${DISPLAY:-}" \
 		"WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" \
 		"GPG_TTY=${GPG_TTY:-}" \
+		"SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}" \
 		"WORKSTATION_MANAGER_USER=$TARGET_USER" \
 		"WORKSTATION_MANAGER_USER_HOME=$TARGET_USER_HOME" \
 		"WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=$PRIVATE_OVERRIDE_LOCAL_FILE" \
 		"WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
 
-	case "$runner_kind" in
-	root)
-		set -- \
-			sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
-			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
-			"$@"
-		;;
-	user)
-		set -- \
-			run_as_target_user \
-			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
-			"$@"
-		;;
-	*)
-		fail "unsupported ansible runner: $runner_kind"
-		;;
-	esac
+	set -- \
+		sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
+		ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
+		"$@"
 
 	set -- "$@" \
 		ansible-pull \
@@ -498,7 +470,7 @@ run_setup() {
 			WORKSTATION_MANAGER_RESTORE_ARCHIVE="$RESTORE_ARCHIVE_PATH"
 	fi
 
-	run_ansible_pull root ansible/setup.yml "$dry_run" "$@"
+	run_ansible_pull ansible/setup.yml "$dry_run" "$@"
 }
 
 run_backup() {
@@ -509,10 +481,14 @@ run_backup() {
 
 	info "Running workstation backup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
 	run_ansible_pull \
-		user \
 		ansible/backup.yml \
 		"$dry_run" \
-		WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR="$BACKUP_OUTPUT_DIR"
+		WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR="$BACKUP_OUTPUT_DIR" \
+		WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS="${WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS:-}" \
+		WORKSTATION_MANAGER_BACKUP_ARCHIVE="${WORKSTATION_MANAGER_BACKUP_ARCHIVE:-}" \
+		WORKSTATION_MANAGER_BACKUP_MANIFEST="${WORKSTATION_MANAGER_BACKUP_MANIFEST:-}" \
+		WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY="${WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY:-}" \
+		WORKSTATION_MANAGER_BACKUP_DRY_RUN="${WORKSTATION_MANAGER_BACKUP_DRY_RUN:-0}"
 }
 
 run_cleanup() {
@@ -521,7 +497,7 @@ run_cleanup() {
 	prompt_for_bitwarden_credentials_if_needed "cleanup" "Browser profile drift inspection"
 
 	info "Running workstation cleanup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
-	run_ansible_pull root ansible/cleanup.yml "$dry_run"
+	run_ansible_pull ansible/cleanup.yml "$dry_run"
 }
 
 main() {
