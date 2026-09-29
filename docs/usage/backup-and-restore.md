@@ -36,6 +36,13 @@ Backup checks recovery sources before creating the archive:
 | Browser profiles      | Reconcile the local profiles with their Bitwarden records, then choose `retry`. See [browser recovery](browser.md).                                    |
 | Browser Sync          | Check every profile has finished syncing and its recovery words match its Bitwarden note; then choose `synced`. Never paste the words into the prompt. |
 
+SSH keys are identified by their contents. If backup reports private-key material
+in a `.pub` file, check the local filenames and the Bitwarden `private_key` and
+`public_key` fields. Preserve existing files before correcting the pair: the
+private key belongs in `~/.ssh/<name>` with mode `0600`, and its matching public
+key belongs in `~/.ssh/<name>.pub`. Setup rejects private-key material in a
+Bitwarden `public_key` field.
+
 Every drift or recovery confirmation prompt also offers `skip`. It leaves that
 recovery source unchanged at this step and continues the other backup work:
 

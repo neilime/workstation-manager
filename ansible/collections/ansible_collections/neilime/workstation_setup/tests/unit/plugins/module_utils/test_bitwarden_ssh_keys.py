@@ -8,7 +8,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarde
 )
 
 
-def test_build_plan_uses_notes_and_public_key_field_defaults() -> None:
+def test_build_plan_uses_declared_key_fields_and_item_name() -> None:
     """The planner should derive file paths from the Bitwarden item name."""
 
     # Arrange
@@ -16,7 +16,6 @@ def test_build_plan_uses_notes_and_public_key_field_defaults() -> None:
     item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "id_rsa_escemi",
-        "notes": "ssh-private-material-line-1\nssh-private-material-line-2",
         "fields": [
             {
                 "name": "private_key",
@@ -107,3 +106,27 @@ def test_build_plan_rejects_missing_private_key_field() -> None:
     # Act / Assert
     with pytest.raises(ValueError, match="missing field 'private_key'"):
         planner.build_plan(item_payload, "/home/emilien")
+
+
+@pytest.mark.parametrize("key_format", ["OPENSSH ", "RSA ", "EC ", "DSA ", "ENCRYPTED ", ""])
+@pytest.mark.parametrize("prefix", ["", "ssh-ed25519 synthetic-public-key fixture@example\n"])
+def test_build_plan_rejects_private_key_material_in_public_field(key_format: str, prefix: str) -> None:
+    """Private material must never be restored into a public file with mode 0644."""
+
+    planner = BitwardenSshKeyRestorePlanner()
+    private_content = f"-----BEGIN {key_format}PRIVATE KEY-----\nsynthetic-sensitive-material\n"
+    item_payload: dict[str, object] = {
+        "id": "item-123",
+        "name": "id_client",
+        "fields": [
+            {"name": "private_key", "value": "synthetic-private-key"},
+            {"name": "public_key", "value": f"{prefix}{private_content}"},
+        ],
+    }
+
+    with pytest.raises(ValueError, match="private key material in 'public_key'") as error:
+        planner.build_plan(item_payload, "/home/emilien")
+
+    assert "id_client" in str(error.value)
+    assert "swapped" in str(error.value)
+    assert "synthetic-sensitive-material" not in str(error.value)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TypedDict
 
@@ -44,6 +45,14 @@ class BitwardenSshKeyRestorePlanner:
         """Return the file restore plan for a Bitwarden SSH-key item."""
 
         item_name = self._key_name(item_payload.get("name"))
+        private_key = self._reader.field_value(item_payload, "private_key")
+        public_key = self._reader.field_value(item_payload, "public_key")
+        if re.search(r"^-----BEGIN ([A-Z0-9]+ )?PRIVATE KEY-----", public_key, re.MULTILINE):
+            raise ValueError(
+                f"Bitwarden SSH key {item_name!r} has private key material in 'public_key'. "
+                "Check whether 'private_key' and 'public_key' are swapped before restoring."
+            )
+
         private_path = str(Path(user_home) / ".ssh" / item_name)
         public_path = f"{private_path}.pub"
 
@@ -54,7 +63,7 @@ class BitwardenSshKeyRestorePlanner:
                 "dest": private_path,
                 "mode": "0600",
                 "content": self._reader.content_with_trailing_newline(
-                    self._reader.field_value(item_payload, "private_key"),
+                    private_key,
                     "private_key",
                 ),
             },
@@ -62,7 +71,7 @@ class BitwardenSshKeyRestorePlanner:
                 "dest": public_path,
                 "mode": "0644",
                 "content": self._reader.content_with_trailing_newline(
-                    self._reader.field_value(item_payload, "public_key"),
+                    public_key,
                     "public_key",
                 ),
             },

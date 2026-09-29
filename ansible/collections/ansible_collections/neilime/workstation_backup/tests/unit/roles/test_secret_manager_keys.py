@@ -11,6 +11,37 @@ from ansible.template import Templar
 from ansible.utils.collection_loader._collection_config import AnsibleCollectionConfig
 
 
+@pytest.mark.parametrize("filename", ["fixture", "fixture.pub"])
+@pytest.mark.parametrize("public_is_regular", [False, True])
+def test_missing_public_key_reports_misnamed_private_key(filename: str, public_is_regular: bool) -> None:
+    """Missing companions must fail with actionable diagnostics for misnamed private keys."""
+
+    if AnsibleCollectionConfig.collection_finder is None:
+        init_plugin_loader()
+    loader = DataLoader()
+    task_file = Path(__file__).resolve().parents[3] / "roles/secret_manager_keys/tasks/collect_ssh_key.yml"
+    task = next(
+        Task.load(value, loader=loader)
+        for value in loader.load_from_file(str(task_file), trusted_as_template=True)
+        if value["name"] == "Require a public key for each local SSH private key"
+    )
+    templar = Templar(
+        loader=loader,
+        variables={
+            "item": {"path": f"/home/fixture/.ssh/{filename}"},
+            "workstation_backup_secret_manager_public_key_stat": {"stat": {"isreg": public_is_regular}},
+        },
+    )
+    assert all(templar.evaluate_conditional(condition) for condition in task.args["that"]) is public_is_regular
+    message = templar.template(task.args["fail_msg"])
+    if filename.endswith(".pub"):
+        assert "contains SSH private-key material despite its .pub filename" in message
+        assert "Bitwarden private_key/public_key fields" in message
+        assert ".pub.pub" not in message
+    else:
+        assert f"without its public key /home/fixture/.ssh/{filename}.pub" in message
+
+
 def test_dynamic_key_actions_parse_and_pass_payload_to_encoder() -> None:
     """Dynamic includes must parse and send the item payload on command stdin."""
 

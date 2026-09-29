@@ -1,7 +1,8 @@
 # neilime.workstation_backup
 
 Owns key and browser recovery checks, Chezmoi synchronization, archive creation,
-Git repository inventory, and backup manifests. The entrypoint launches Ansible
+Git repository inventory, and backup manifests. SSH key discovery uses file
+contents; a private key with a `.pub` filename is not skipped. The entrypoint launches Ansible
 with sudo; backup tasks run as the resolved managed user, while dependency
 installation explicitly runs as root. Chezmoi branch reconciliation and
 publication require explicit decisions before backup can continue. Replacing
