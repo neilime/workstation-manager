@@ -12,6 +12,8 @@ categories appear in the manifest and final report as incomplete recovery covera
 failed operations and verification of approved changes still stop backup.
 GPG ownertrust is exported from the managed user's trust database and matched to
 each key by fingerprint; see the recovery guide for missing-record behavior.
+Deferred SSH/GPG writes use the current unlocked Bitwarden session after both
+collections have been read, and check session status before saving.
 
 See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
 user workflow and recovery limits, and the

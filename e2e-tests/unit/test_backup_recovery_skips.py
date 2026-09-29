@@ -197,17 +197,25 @@ class BackupRecoverySkipTests(unittest.TestCase):
     def prepare_keys(self) -> list[dict]:
         """Use a fake CLI that logs operations and enforces post-write verification."""
 
+        self.variables["bitwarden_collection_session"] = "synthetic-current-session"
         cli = self.fixture / "bin/bw"
         cli.write_text(
             f"#!{sys.executable}\n"
-            "import json\nimport os\nimport pathlib\nimport sys\n"
+            "import base64\nimport json\nimport os\nimport pathlib\nimport sys\n"
             "root = pathlib.Path(os.environ['HOME'])\n"
             "command = sys.argv[1:]\n"
             "with (root / 'bw-calls').open('a') as log: log.write(command[0] + '\\n')\n"
             "store = root / 'saved-item.json'\n"
-            "if command == ['encode']: print(sys.stdin.read())\n"
+            "unlocked = os.environ.get('BW_SESSION') == 'synthetic-current-session'\n"
+            "if command == ['status']:\n"
+            "    print(json.dumps({'status': 'unlocked' if unlocked else 'locked'})); sys.exit(0)\n"
+            "if command != ['encode'] and not unlocked: sys.exit(1)\n"
+            "if command != ['encode'] and os.environ.get('BW_NOINTERACTION') != 'true': sys.exit(3)\n"
+            "if command == ['encode']: print(base64.b64encode(sys.stdin.buffer.read()).decode())\n"
             "elif command[0] in ('create', 'edit'):\n"
-            "    item = json.load(sys.stdin); item['id'] = 'fixture-id'\n"
+            "    item = json.loads(base64.b64decode(sys.stdin.read())); item['id'] = 'fixture-id'\n"
+            "    if (root / 'save-fails').exists():\n"
+            "        print(json.dumps(item), os.environ['BW_SESSION'], file=sys.stderr); sys.exit(2)\n"
             "    store.write_text(json.dumps(item)); print(json.dumps(item))\n"
             "elif command == ['sync']: pass\n"
             "elif command[:2] == ['get', 'item']:\n"
@@ -226,7 +234,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
                 "collection_id": "fixture-collection",
                 "organization_id": "",
                 "bitwarden_item_id": "fixture-id",
-                "bitwarden_session": "synthetic-session",
+                # A token captured before another collection unlock is obsolete.
+                "bitwarden_session": "synthetic-stale-session",
                 "fields": [{"name": "private_key", "value": "synthetic-private-key"}],
             }
             for kind, action in (("ssh", "add"), ("gpg", "update"))
@@ -255,7 +264,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertFalse((self.fixture / "bw-calls").exists())
         self.assertNotIn("synthetic-private-key", output)
-        self.assertNotIn("synthetic-session", output)
+        self.assertNotIn("synthetic-current-session", output)
+        self.assertNotIn("synthetic-stale-session", output)
         self.assert_archive(["ssh-keys", "gpg-keys"])
 
     def test_key_skip_does_not_skip_the_next_approved_key(self) -> None:
@@ -269,7 +279,10 @@ class BackupRecoverySkipTests(unittest.TestCase):
             ),
         )
         self.assertEqual(code, 0, output)
-        self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["get", "encode", "edit", "sync", "get"])
+        self.assertEqual(
+            (self.fixture / "bw-calls").read_text().splitlines(),
+            ["status", "get", "encode", "edit", "sync", "get"],
+        )
         self.assert_archive(["ssh-keys"])
 
     def test_key_verification_failure_after_a_skip_still_stops_backup(self) -> None:
@@ -286,6 +299,47 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertNotEqual(code, 0, output)
         self.assertFalse((self.fixture / "backup.tar.gz").exists())
         self.assertNotIn("synthetic-private-key", output)
+
+    def test_approved_keys_use_the_latest_unlocked_session(self) -> None:
+        """Deferred SSH and GPG writes must ignore tokens superseded by another unlock."""
+
+        code, output = self.run_backup(
+            self.prepare_keys(),
+            (("[add/skip/abort]", "add"), ("[update/skip/abort]", "update")),
+        )
+        self.assertEqual(code, 0, output)
+        self.assertEqual(
+            (self.fixture / "bw-calls").read_text().splitlines(),
+            ["status", "encode", "create", "sync", "get", "status", "get", "encode", "edit", "sync", "get"],
+        )
+        for sensitive in ("synthetic-private-key", "synthetic-current-session", "synthetic-stale-session"):
+            self.assertNotIn(sensitive, output)
+        self.assert_archive([])
+
+    def test_expired_session_stops_before_saving_with_a_safe_error(self) -> None:
+        """An invalidated session must fail clearly without exposing keys or tokens."""
+
+        tasks = self.prepare_keys()
+        self.variables["bitwarden_collection_session"] = "synthetic-expired-session"
+        code, output = self.run_backup(tasks, (("[add/skip/abort]", "add"),))
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("Bitwarden session is locked or expired", output)
+        self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status"])
+        self.assertFalse((self.fixture / "backup.tar.gz").exists())
+        self.assertNotIn("synthetic-private-key", output)
+        self.assertNotIn("synthetic-expired-session", output)
+
+    def test_failed_key_save_still_stops_backup_without_reporting_a_change(self) -> None:
+        """A valid session cannot hide a rejected save or expose sensitive CLI errors."""
+
+        (self.fixture / "save-fails").touch()
+        code, output = self.run_backup(self.prepare_keys(), (("[add/skip/abort]", "add"),))
+        self.assertNotEqual(code, 0, output)
+        self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status", "encode", "create"])
+        self.assertIn("changed=0", output)
+        self.assertFalse((self.fixture / "backup.tar.gz").exists())
+        self.assertNotIn("synthetic-private-key", output)
+        self.assertNotIn("synthetic-current-session", output)
 
 
 if __name__ == "__main__":

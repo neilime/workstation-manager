@@ -66,8 +66,7 @@
             'combine',
             {
               'collection_id': workstation_manager_resolved.secrets.bitwarden.ssh_collection_id,
-              'organization_id': ((workstation_backup_secret_manager_ssh_collection.stdout | from_json).organizationId | default('', true)),
-              'bitwarden_session': bitwarden_collection_session
+              'organization_id': ((workstation_backup_secret_manager_ssh_collection.stdout | from_json).organizationId | default('', true))
             }
           )
         | list
@@ -158,8 +157,7 @@
             'combine',
             {
               'collection_id': workstation_manager_resolved.secrets.bitwarden.gpg_collection_id,
-              'organization_id': ((workstation_backup_secret_manager_gpg_collection.stdout | from_json).organizationId | default('', true)),
-              'bitwarden_session': bitwarden_collection_session
+              'organization_id': ((workstation_backup_secret_manager_gpg_collection.stdout | from_json).organizationId | default('', true))
             }
           )
         | list

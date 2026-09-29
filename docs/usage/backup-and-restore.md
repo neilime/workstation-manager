@@ -47,6 +47,10 @@ GPG synchronization includes the key's ownertrust record when one exists. Keys
 without an ownertrust record can still be synchronized; a failed ownertrust
 export stops backup.
 
+If a key save reports that the Bitwarden session is locked or expired, rerun
+backup to unlock the vault. Avoid locking or unlocking the same Bitwarden CLI
+profile in another terminal while backup is waiting for your decisions.
+
 Every drift or recovery confirmation prompt also offers `skip`. It leaves that
 recovery source unchanged at this step and continues the other backup work:
 
