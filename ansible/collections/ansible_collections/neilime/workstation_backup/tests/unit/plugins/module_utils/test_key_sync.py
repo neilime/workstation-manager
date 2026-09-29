@@ -246,45 +246,27 @@ def test_gpg_sync_planner_skips_matching_remote_item() -> None:
     assert actions == []
 
 
-def test_ssh_sync_planner_retains_remote_only_keys() -> None:
-    """Backup uploads local keys and must not delete keys from another workstation."""
+@pytest.mark.parametrize("kind", ["ssh", "gpg"])
+def test_remote_only_keys_offer_restore_without_deleting_the_record(kind: str) -> None:
+    """Remote-only keys need a separate restore decision and can never become uploads or deletions."""
 
-    assert (
-        BitwardenSshKeySyncPlanner().build(
-            [],
-            [
-                {
-                    "id": "remote-only",
-                    "name": "id_ed25519_other_machine",
-                    "fields": [
-                        {"name": "private_key", "value": "remote-private"},
-                        {"name": "public_key", "value": "remote-public"},
-                    ],
-                }
-            ],
-            "/home/fixture",
-        )
-        == []
-    )
-
-
-def test_gpg_sync_planner_retains_remote_only_keys() -> None:
-    """Remote GPG keys remain untouched when absent from this workstation."""
-
-    assert (
-        BitwardenGpgKeySyncPlanner().build(
-            [],
-            [
-                {
-                    "id": "remote-only",
-                    "name": "Other workstation",
-                    "fields": [
-                        {"name": "fingerprint", "value": "0123456789ABCDEF"},
-                        {"name": "private_key", "value": "remote-private"},
-                        {"name": "public_key", "value": "remote-public"},
-                    ],
-                }
-            ],
-        )
-        == []
-    )
+    item: dict = {
+        "id": "remote-only",
+        "name": "other-key",
+        "fields": [
+            {"name": "fingerprint", "value": "0123456789ABCDEF"},
+            {"name": "private_key", "value": "remote-private"},
+            {"name": "public_key", "value": "remote-public"},
+        ],
+    }
+    if kind == "ssh":
+        actions = BitwardenSshKeySyncPlanner().build([], [item], "/home/fixture")
+    else:
+        actions = BitwardenGpgKeySyncPlanner().build([], [item])
+    assert len(actions) == 1
+    assert actions[0]["action"] == "restore"
+    assert actions[0]["bitwarden_item_id"] == "remote-only"
+    assert actions[0]["name"] == "other-key"
+    fields = actions[0]["fields"]
+    assert isinstance(fields, list)
+    assert {field["name"]: field["value"] for field in fields}["private_key"] == "remote-private\n"

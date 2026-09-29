@@ -93,11 +93,23 @@ optional value stops managing it and leaves the existing local appearance intact
 [Backup](backup-and-restore.md) compares local profiles with the collection,
 including names, directories, declared main colors, logos, and saved Sync
 configuration. Name checks use the names shown in Brave's profile picker.
-The prompt groups detected problems by action and lists the affected profiles
-with their native directories. Follow those steps, then select `retry` to reload
-profiles and Bitwarden records. A local profile missing from Bitwarden needs a
-record; a missing local profile can be recreated by setup. Cleanup preserves all
-browser profiles.
+The prompt groups detected problems and names the affected profiles. Close Brave,
+then choose the source for supported metadata changes:
+
+- `from-remote` restores stored names, colors, and logos locally and recreates
+  missing profiles. Other preferences, browsing data, and existing Sync chains
+  are preserved.
+- `from-local` updates existing Bitwarden records from local names, colors, and
+  logos. It preserves recovery words, unrelated fields, and secondary palette
+  colors. An absent or disabled managed logo is removed from its note; a local
+  default or extension theme removes the managed `theme_colors` field.
+
+Each direction verifies the changes it makes. The available choices depend on
+which side has usable data. Neither direction deletes profiles or vault records.
+A new local profile still needs a secure note containing its recovery words;
+create that note in Bitwarden. Pairing a restored profile and enabling Sync still
+happen in Brave. Choose `retry` after those manual steps to reload both sides.
+Cleanup preserves all browser profiles.
 
 After these checks, backup asks you to confirm that every profile has completed
 live Sync and its first 24 recovery words match its Bitwarden note. Verify this

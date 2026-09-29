@@ -331,7 +331,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
                         output = bytearray()
 
                         try:
-                            self.wait_for_prompt(process, output, b"Choose [merge/use-remote/retry/skip/abort]:")
+                            self.wait_for_prompt(process, output, b"Choose [from-local/from-remote/retry/skip/abort]:")
                             self.assert_prompt_layout(output)
                             if interrupt:
                                 process.stdin.write(b"\x03")

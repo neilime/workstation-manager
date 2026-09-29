@@ -23,3 +23,8 @@
   ansible.builtin.set_fact:
     workstation_backup_browser_recovery_report: >-
       {{ workstation_backup_browser_inspection | neilime.workstation_setup.browser_recovery_report }}
+
+- name: Publish available Brave synchronization directions
+  ansible.builtin.set_fact:
+    workstation_backup_browser_sync_actions: >-
+      {{ workstation_backup_browser_inspection | neilime.workstation_setup.browser_sync_directions }}

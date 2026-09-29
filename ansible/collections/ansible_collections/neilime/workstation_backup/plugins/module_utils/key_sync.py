@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import cast
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden_gpg_keys import (
@@ -13,6 +14,17 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarde
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden_ssh_keys import (
     BitwardenSshKeyRestorePlanner,
 )
+
+
+def normalize_ownertrust(value: object) -> str | None:
+    """Treat an absent ownertrust entry and explicitly undefined trust as unassigned."""
+
+    if value is None:
+        return None
+    value = BitwardenItemFieldReader().required_string(value, "ownertrust")
+    if re.fullmatch(r"[0-9A-Fa-f]+:2:\s*", value):
+        return None
+    return value.rstrip("\n") + "\n"
 
 
 # pylint: disable=too-few-public-methods
@@ -29,13 +41,15 @@ class BitwardenSshKeySyncPlanner:
         bitwarden_items: list[dict[str, object]],
         user_home: str,
     ) -> list[dict[str, object]]:
-        """Return add/update actions needed to align Bitwarden with local SSH keys."""
+        """Return upload or restore decisions for keys missing or different on either side."""
 
         remote_items_by_name = self._remote_items_by_name(bitwarden_items, user_home)
         actions: list[dict[str, object]] = []
 
+        local_identities = set()
         for local_item in local_items:
             normalized_local_item = self._normalized_local_item(local_item)
+            local_identities.add(normalized_local_item["name"])
             remote_item = remote_items_by_name.get(normalized_local_item["name"])
 
             if remote_item is None:
@@ -58,6 +72,13 @@ class BitwardenSshKeySyncPlanner:
                 )
             )
 
+        for name, remote_item in remote_items_by_name.items():
+            if name not in local_identities:
+                actions.append(
+                    self._action_payload(
+                        {**remote_item, "name": name}, action="restore", bitwarden_item_id=remote_item["item_id"]
+                    )
+                )
         return actions
 
     def _remote_items_by_name(
@@ -131,14 +152,16 @@ class BitwardenGpgKeySyncPlanner:
         local_items: list[dict[str, object]],
         bitwarden_items: list[dict[str, object]],
     ) -> list[dict[str, object]]:
-        """Return add/update actions needed to align Bitwarden with local GPG keys."""
+        """Return upload or restore decisions for keys missing or different on either side."""
 
         remote_items_by_fingerprint = self._remote_items_by_fingerprint(bitwarden_items)
         actions: list[dict[str, object]] = []
 
+        local_identities = set()
         for local_item in local_items:
             normalized_local_item = self._normalized_local_item(local_item)
             fingerprint = cast(str, normalized_local_item["fingerprint"])
+            local_identities.add(fingerprint)
             remote_item = remote_items_by_fingerprint.get(fingerprint)
 
             if remote_item is None:
@@ -161,6 +184,15 @@ class BitwardenGpgKeySyncPlanner:
                 )
             )
 
+        for fingerprint, remote_item in remote_items_by_fingerprint.items():
+            if fingerprint not in local_identities:
+                actions.append(
+                    self._action_payload(
+                        {**remote_item, "fingerprint": fingerprint},
+                        action="restore",
+                        bitwarden_item_id=remote_item["item_id"],
+                    )
+                )
         return actions
 
     def _remote_items_by_fingerprint(
@@ -177,9 +209,10 @@ class BitwardenGpgKeySyncPlanner:
 
             remote_items_by_fingerprint[fingerprint] = {
                 "item_id": str(restore_plan["item_id"]),
+                "name": str(restore_plan["name"]),
                 "private_key": str(restore_plan["private_key"]),
                 "public_key": str(restore_plan["public_key"]),
-                "ownertrust": self._optional_string(restore_plan.get("ownertrust")),
+                "ownertrust": normalize_ownertrust(restore_plan.get("ownertrust")),
             }
 
         return remote_items_by_fingerprint
@@ -206,18 +239,8 @@ class BitwardenGpgKeySyncPlanner:
                 self._reader.required_string(local_item.get("public_key"), "local_gpg_key.public_key"),
                 "local_gpg_key.public_key",
             ),
-            "ownertrust": self._optional_content_with_trailing_newline(local_item.get("ownertrust")),
+            "ownertrust": normalize_ownertrust(local_item.get("ownertrust")),
         }
-
-    def _optional_content_with_trailing_newline(self, value: object) -> str | None:
-        if value is None:
-            return None
-
-        normalized_value = self._reader.required_string(value, "local_gpg_key.ownertrust")
-        return f"{normalized_value.rstrip('\n')}\n"
-
-    def _optional_string(self, value: object) -> str | None:
-        return None if value is None else str(value)
 
     def _contents_match(
         self,

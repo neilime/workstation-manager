@@ -147,7 +147,9 @@ def _plan_avatar(path: Path, preferences: dict, entry: dict, value: object) -> l
     return []
 
 
-def _plan_profile(path: Path, declaration: dict, info_cache: dict) -> list[tuple[Path, dict | bytes]]:
+def _plan_profile(
+    path: Path, declaration: dict, info_cache: dict, replace_names: bool
+) -> list[tuple[Path, dict | bytes]]:
     """Register a profile and plan changes while preserving browser-owned settings."""
 
     label = declaration.get("label") or declaration["id"]
@@ -159,7 +161,7 @@ def _plan_profile(path: Path, declaration: dict, info_cache: dict) -> list[tuple
     if not preferences_path.exists():
         preferences = {"profile": {"name": label, "using_default_name": False}}
     _apply_theme(preferences, declaration.get("theme_colors"))
-    # Existing profiles keep their own display name, including manual renames.
+    # Setup preserves names; an explicit remote reconciliation replaces them.
     profile_preferences = preferences.get("profile", {})
     if not isinstance(profile_preferences, dict):
         raise ValueError("Expected a JSON object for profile")
@@ -168,6 +170,9 @@ def _plan_profile(path: Path, declaration: dict, info_cache: dict) -> list[tuple
             "name": profile_preferences.get("name", label),
             "is_using_default_name": False,
         }
+    if replace_names:
+        _object(preferences, "profile").update(name=label, using_default_name=False)
+        _object(info_cache, path.name).update(name=label, is_using_default_name=False)
     planned_files = []
     if declaration.get("avatar_png") is not None:
         planned_files.extend(_plan_avatar(path, preferences, _object(info_cache, path.name), declaration["avatar_png"]))
@@ -176,10 +181,13 @@ def _plan_profile(path: Path, declaration: dict, info_cache: dict) -> list[tuple
     return planned_files
 
 
-def seed_browser_profiles(user_data_dir: str, profiles: list[dict], check_mode: bool = False) -> bool:
+def seed_browser_profiles(
+    user_data_dir: str, profiles: list[dict], check_mode: bool = False, *, replace_names: bool = False
+) -> bool:
     """Register profiles and restore their declared native theme color and avatar.
 
-    Brave owns other settings after creation, including names, pinned tabs, and sync.
+    Existing names change only with explicit replace_names approval.
+    Brave owns other settings after creation, including pinned tabs and Sync.
     Check mode computes the complete plan but never creates directories or files.
     """
 
@@ -195,7 +203,7 @@ def seed_browser_profiles(user_data_dir: str, profiles: list[dict], check_mode: 
     info_cache = _object(profile_state, "info_cache")
     planned_files = []
     for path, declaration in _profile_paths(root, profiles):
-        planned_files.extend(_plan_profile(path, declaration, info_cache))
+        planned_files.extend(_plan_profile(path, declaration, info_cache, replace_names))
     profile_state.setdefault("last_used", next(iter(info_cache)))
     if json.dumps(local_state, sort_keys=True) != original_local_state:
         planned_files.append((local_state_path, local_state))

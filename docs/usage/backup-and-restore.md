@@ -30,10 +30,10 @@ Backup checks recovery sources before creating the archive:
 
 | Check                 | Required action when out of sync                                                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Chezmoi managed files | Choose `re-add` to capture local changes, `apply` to overwrite local changes with source state, or `abort`.                                            |
+| Chezmoi managed files | Choose `from-local` to capture workstation files, or `from-remote` to apply source state locally.                                                      |
 | Chezmoi Git checkout  | Choose how to reconcile local and remote source changes, then approve `publish` separately if keeping local changes.                                   |
-| Local SSH/GPG keys    | Approve each missing or changed key being added to or updated in Bitwarden. Saved values are read back and verified. Extra vault keys are retained.    |
-| Browser profiles      | Reconcile the local profiles with their Bitwarden records, then choose `retry`. See [browser recovery](browser.md).                                    |
+| Local SSH/GPG keys    | Choose `from-local` to save a key in Bitwarden, or `from-remote` to restore it locally. Each result is verified.                                       |
+| Browser profiles      | Choose a direction for names, colors and logos; use `retry` after manual pairing or record creation. See [browser recovery](browser.md).               |
 | Browser Sync          | Check every profile has finished syncing and its recovery words match its Bitwarden note; then choose `synced`. Never paste the words into the prompt. |
 
 SSH keys are identified by their contents. If backup reports private-key material
@@ -51,9 +51,20 @@ If a key save reports that the Bitwarden session is locked or expired, rerun
 backup to unlock the vault. Avoid locking or unlocking the same Bitwarden CLI
 profile in another terminal while backup is waiting for your decisions.
 
-Recovery prompts follow the same pattern: review the reported problem, choose
-one of its listed actions, then let backup recheck the result. Each prompt also
-offers `skip` and `abort`; an earlier approval never selects a later action.
+Recovery prompts use the same direction names, chosen separately at each step:
+
+- `from-local` uses this computer as the source and updates its recovery record.
+- `from-remote` uses the recovery source and replaces the corresponding local values.
+
+Only directions with usable source data are offered. A key present on just one
+side offers copying from that side; neither direction deletes unrelated keys or
+remote records. SSH restoration replaces the selected private/public pair. GPG
+restoration imports the selected key and ownertrust, verifies the resulting key
+material, and stops if local-only packets prevent a match. An omitted ownertrust
+entry restores undefined trust. Unlock protected GPG keys before restoration.
+
+Backup verifies each applied change. Live browser Sync remains a manual check.
+Each prompt also offers `skip` and `abort`; an earlier approval never selects a later action.
 `skip` leaves that recovery source unchanged at this step and continues the other
 backup work:
 
@@ -84,15 +95,16 @@ You can explicitly skip its reconciliation; the archive then records incomplete 
 When its branch has incoming changes, local edits, or unpushed commits, backup
 shows the ahead/behind counts and source file status before asking what to do:
 
-- `merge` is available when the branch is behind or diverged. It commits all
+- `from-local` preserves local source changes. When the branch is behind or
+  diverged, it commits all
   uncommitted source changes, then fast-forwards or merges the
   upstream branch while preserving local commits. It does not push. A conflict
   stops backup; inspect `git status` in the displayed source directory, resolve
   and complete the merge or run `git merge --abort`, then retry backup. Any commit
   made to save local edits remains available after aborting the merge.
-- `keep` retains local source changes when the branch has no incoming commits;
-  publication still requires separate approval later.
-- `use-remote` offers to replace the source checkout with its fetched tracking
+  When there are no incoming commits, it keeps local changes for the separate
+  publication approval.
+- `from-remote` offers to replace the source checkout with its fetched tracking
   branch. Type `discard` at the confirmation prompt to discard staged and unstaged
   source edits, delete non-ignored untracked source files, and remove local-only
   commits from the current branch. No commit or stash is created to save the
@@ -106,14 +118,14 @@ shows the ahead/behind counts and source file status before asking what to do:
 - `abort` stops backup without changing source files or publishing anything.
 
 After Git reconciliation, backup checks managed workstation files against the
-updated source and offers `re-add`, `apply`, `skip`, or `abort` if they differ. Remaining
+updated source and offers `from-local`, `from-remote`, `skip`, or `abort` if they differ. Remaining
 local Git changes require a separate `publish` approval or an explicit `skip`
 before backup can continue. A remote update during these checks stops backup so you can review it
 on the next run.
 
-To discard local changes in both places, choose **`use-remote`, confirm `discard`,
-then choose `apply`** when prompted about managed workstation files. Choosing
-`re-add` would capture the workstation's current contents back into the source.
+To discard local changes in both places, choose **`from-remote`, confirm `discard`,
+then choose `from-remote`** when prompted about managed workstation files. Choosing
+`from-local` would capture the workstation's current contents back into the source.
 Files no longer managed by the remote source are not automatically deleted from
 your home.
 

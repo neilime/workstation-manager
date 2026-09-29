@@ -31,35 +31,35 @@ _ACTIONS = {
     ),
     "missing": (
         "Restore missing local profiles.",
-        "Close Brave and run workstation.sh setup, then join their stored Sync chains. Keep their Bitwarden records.",
+        "Close Brave and choose from-remote, then join their stored Sync chains. Keep their Bitwarden records.",
     ),
     "renamed": (
         "Match profile names with Bitwarden.",
-        "Rename the profile in Brave, or update its Bitwarden note name if the local rename is intentional.",
+        "Choose from-remote for the stored name, or from-local to keep the local name in Bitwarden.",
     ),
     "theme_color": (
         "Reconcile profile colors.",
-        "Close Brave and run workstation.sh setup to apply stored colors, or update theme_colors in Bitwarden.",
+        "Choose from-remote for stored colors, or from-local to save the local color choice.",
     ),
     "missing_avatar_file": (
         "Restore missing profile logos.",
-        "Close Brave and run workstation.sh setup to restore the logos from Bitwarden.",
+        "Close Brave and choose from-remote to restore the logos from Bitwarden.",
     ),
     "avatar_content_changed": (
         "Reconcile changed profile logos.",
-        "Close Brave and run workstation.sh setup, or replace avatar.png in Bitwarden to keep the local logo.",
+        "Choose from-remote for stored logos, or from-local to save the local logo choice.",
     ),
     "avatar_disabled": (
         "Select the stored profile logos.",
-        "Close Brave and run workstation.sh setup to select the logos from Bitwarden.",
+        "Choose from-remote to select stored logos, or from-local to stop storing the disabled logos.",
     ),
     "unregistered": (
         "Register profiles in Brave's profile picker.",
-        "Close Brave and run workstation.sh setup to register these existing profiles.",
+        "Close Brave and choose from-remote to register these existing profiles once their records exist.",
     ),
     "missing_preferences": (
         "Restore missing profile settings.",
-        "Close Brave and run workstation.sh setup, then open and close these profiles to save their settings.",
+        "Close Brave and choose from-remote, then open and close these profiles to save their settings.",
     ),
 }
 _SYNC_ISSUES = frozenset(
