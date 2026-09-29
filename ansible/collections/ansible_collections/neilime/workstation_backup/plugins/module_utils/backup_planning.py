@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from ansible_collections.neilime.workstation_backup.plugins.module_utils.recovery import (
+    RECOVERY_SCOPES,
+)
+
 # pylint: disable=too-few-public-methods
 
 
@@ -87,9 +91,8 @@ class BackupManifestContentBuilder:
             f"dry_run{tab_character}{'1' if dry_run else '0'}",
         ]
         recovery_skips = metadata.get("recovery_skips", [])
-        allowed_scopes = {"chezmoi", "ssh-keys", "gpg-keys", "browser-recovery", "browser-sync"}
         if not isinstance(recovery_skips, list) or any(
-            not isinstance(scope, str) or scope not in allowed_scopes for scope in recovery_skips
+            not isinstance(scope, str) or scope not in RECOVERY_SCOPES for scope in recovery_skips
         ):
             raise ValueError("recovery_skips must list known backup recovery categories")
         if recovery_skips:

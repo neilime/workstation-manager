@@ -7,9 +7,12 @@ with sudo; backup tasks run as the resolved managed user, while dependency
 installation explicitly runs as root. Chezmoi branch reconciliation and
 publication require explicit decisions before backup can continue. Replacing
 local source changes with the remote version also requires a discard confirmation.
-Every drift and recovery confirmation prompt allows an explicit skip. Skipped
-categories appear in the manifest and final report as incomplete recovery coverage;
-failed operations and verification of approved changes still stop backup.
+The shared [recovery_decision role](roles/recovery_decision) handles all drift and
+recovery confirmation prompts: explicit choices, input retries, previews,
+noninteractive failures, aborts, and recorded skips. Source roles own inspection,
+approved actions, and verification. Skipped categories appear in the manifest and
+final report as incomplete recovery coverage; failed operations and verification
+of approved changes still stop backup.
 GPG ownertrust is exported from the managed user's trust database and matched to
 each key by fingerprint; see the recovery guide for missing-record behavior.
 Deferred SSH/GPG writes use the current unlocked Bitwarden session after both

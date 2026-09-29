@@ -239,11 +239,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
                     / "roles/chezmoi/tasks/reconcile_git.yml"
                 )
             )
-            prompt = next(
-                task["ansible.builtin.pause"]["prompt"]
-                for task in tasks
-                if task["name"] == "Choose how to reconcile the chezmoi tracking branch"
-            )
+            decision_task = next(task for task in tasks if task["name"] == "Resolve chezmoi tracking branch drift")
             (repository / "check.yml").write_text(
                 json.dumps(
                     [
@@ -260,23 +256,16 @@ class InteractiveBootstrapTests(unittest.TestCase):
                                         "status": "M  README.md\n D home/dot_bashrc",
                                     }
                                 },
-                                "workstation_backup_chezmoi_git_choices": [
-                                    "merge",
-                                    "use-remote",
-                                    "retry",
-                                    "skip",
-                                    "abort",
-                                ],
+                                "workstation_backup_chezmoi_git_needs_decision": True,
+                                "workstation_backup_dry_run": False,
                             },
                             "tasks": [
-                                {
-                                    "name": "Request a fixture decision",
-                                    "ansible.builtin.pause": {"prompt": prompt},
-                                    "register": "decision",
-                                },
+                                decision_task,
                                 {
                                     "name": "Verify the answer",
-                                    "ansible.builtin.assert": {"that": "decision.user_input == 'retry'"},
+                                    "ansible.builtin.assert": {
+                                        "that": "workstation_backup_recovery_choices['chezmoi-git'] == 'retry'"
+                                    },
                                 },
                                 {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
                             ],
@@ -294,6 +283,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
                 "GIT_CONFIG_GLOBAL": os.devnull,
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "REPOSITORY_URL": repository.as_uri(),
+                "WORKSTATION_MANAGER_INTERACTIVE": "1",
             }
             (fixture / "ansible.cfg").write_text("[defaults]\n")
             for arguments in (

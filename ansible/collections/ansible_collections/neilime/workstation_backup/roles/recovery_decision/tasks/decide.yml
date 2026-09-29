@@ -1,0 +1,54 @@
+---
+- name: Validate the recovery decision and prepare its prompt
+  ansible.builtin.set_fact:
+    workstation_backup_recovery_spec: >-
+      {{ workstation_backup_recovery_request | neilime.workstation_backup.recovery_decision }}
+  no_log: true
+
+- name: Report recovery work when a decision cannot be requested
+  ansible.builtin.debug:
+    msg: "{{ workstation_backup_recovery_spec.summary.splitlines() }}"
+  when: workstation_backup_recovery_preview or not workstation_backup_recovery_interactive
+  no_log: false
+
+- name: Require an interactive terminal for recovery decisions
+  ansible.builtin.assert:
+    that:
+      - workstation_backup_recovery_interactive
+    quiet: true
+    fail_msg: >-
+      Backup recovery requires an interactive run. Re-run in an interactive terminal
+      to review the available actions, explicitly skip this check, or abort.
+  when: not workstation_backup_recovery_preview
+  no_log: false
+
+- name: Choose the recovery action
+  ansible.builtin.pause:
+    prompt: "{{ workstation_backup_recovery_spec.prompt | neilime.workstation_backup.terminal_prompt }}"
+  register: workstation_backup_recovery_answer
+  until: workstation_backup_recovery_answer.user_input | trim | lower in workstation_backup_recovery_spec.choices
+  retries: 3
+  delay: 0
+  when: not workstation_backup_recovery_preview
+  no_log: false
+
+- name: Record the explicit recovery decision
+  ansible.builtin.set_fact:
+    workstation_backup_recovery_choices: >-
+      {{ workstation_backup_recovery_choices
+         | combine({workstation_backup_recovery_id: workstation_backup_recovery_answer.user_input | trim | lower}) }}
+  when: not workstation_backup_recovery_preview
+  no_log: true
+
+- name: Stop backup when recovery is declined
+  ansible.builtin.fail:
+    msg: "{{ workstation_backup_recovery_spec.abort_message }}"
+  when: workstation_backup_recovery_choices[workstation_backup_recovery_id] == 'abort'
+  no_log: false
+
+- name: Record the explicitly skipped recovery source
+  ansible.builtin.set_fact:
+    workstation_backup_recovery_skips: >-
+      {{ ((workstation_backup_recovery_skips | default([])) + [workstation_backup_recovery_spec.scope]) | unique | list }}
+  when: workstation_backup_recovery_choices[workstation_backup_recovery_id] == 'skip'
+  no_log: true

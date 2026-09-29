@@ -34,8 +34,9 @@ Add the role under
 
 Setup invokes `main.yml` after archive restoration and before GNOME preferences
 and editor sign-in. The special `browser` favorite resolves to the published
-desktop entry. Backup owns retry/skip/abort prompts and the final live Sync
-confirmation. Cleanup invokes only the inspection entrypoint.
+desktop entry. Backup uses the shared recovery decision role for
+retry/skip/abort and live Sync confirmation, then reloads and inspects profiles on
+retry. Cleanup invokes only the inspection entrypoint.
 
 Use `workstation_manager_resolved.user` for the target account and
 `workstation_manager_use_become` for privilege escalation. Namespace internal

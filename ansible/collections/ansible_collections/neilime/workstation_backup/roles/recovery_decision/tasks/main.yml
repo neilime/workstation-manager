@@ -1,0 +1,15 @@
+---
+- name: Initialize a fresh recovery decision
+  ansible.builtin.set_fact:
+    workstation_backup_recovery_choices: >-
+      {{ (workstation_backup_recovery_choices | default({}))
+         | combine({(workstation_backup_recovery_id | neilime.workstation_backup.recovery_decision_id): ''}) }}
+    workstation_backup_recovery_interactive: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
+    workstation_backup_recovery_preview: >-
+      {{ ansible_check_mode or (workstation_backup_dry_run | default(false)) }}
+  no_log: true
+
+- name: Resolve the required recovery decision
+  ansible.builtin.include_tasks: decide.yml
+  when: workstation_backup_recovery_needed

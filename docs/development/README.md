@@ -38,6 +38,12 @@ Keep orchestration in playbooks and roles, reusable Python in
 changes must update the defaults, normalizers, private override example, tests,
 and relevant guide together.
 
+Backup source roles use the shared
+[recovery decision contract](../../ansible/collections/ansible_collections/neilime/workstation_backup/roles/recovery_decision)
+for prompting and recording explicit choices. Keep source inspection, mutations,
+and verification in their owning roles. Each decision starts with an empty result;
+callers must execute only the currently approved action and recheck its outcome.
+
 See [browser adapters](browser-adapters.md) for that extension contract and
 [AGENTS.md](../../AGENTS.md) for repository-wide contribution rules.
 
