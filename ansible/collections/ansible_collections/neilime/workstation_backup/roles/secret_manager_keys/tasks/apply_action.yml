@@ -1,4 +1,26 @@
 ---
+- name: Check the current Bitwarden session before synchronizing the key
+  ansible.builtin.command:
+    argv:
+      - bw
+      - status
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+    BW_NOINTERACTION: "true"
+  register: workstation_backup_secret_manager_session_status
+  changed_when: false
+  no_log: true
+
+- name: Require an unlocked Bitwarden session for key synchronization
+  ansible.builtin.assert:
+    that:
+      - (workstation_backup_secret_manager_session_status.stdout | from_json).status == 'unlocked'
+    fail_msg: >-
+      Bitwarden session is locked or expired. Re-run backup to unlock the vault
+      before synchronizing keys. Another CLI unlock or lock can invalidate the
+      session while backup is waiting for a decision.
+  no_log: false
+
 - name: Read the current Bitwarden item before updating it
   ansible.builtin.command:
     argv:
@@ -7,7 +29,8 @@
       - item
       - "{{ item.bitwarden_item_id }}"
   environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+    BW_NOINTERACTION: "true"
   register: workstation_backup_secret_manager_existing_item
   changed_when: false
   when: item.action == 'update'
@@ -59,9 +82,10 @@
       }}
     stdin: "{{ workstation_backup_secret_manager_encoded_payload.stdout }}"
   environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+    BW_NOINTERACTION: "true"
   register: workstation_backup_secret_manager_saved_item
-  changed_when: true
+  changed_when: workstation_backup_secret_manager_saved_item.rc == 0
   no_log: true
 
 - name: Refresh Bitwarden after saving the key
@@ -70,7 +94,8 @@
       - bw
       - sync
   environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+    BW_NOINTERACTION: "true"
   changed_when: false
   no_log: true
 
@@ -82,7 +107,8 @@
       - item
       - "{{ (workstation_backup_secret_manager_saved_item.stdout | from_json).id }}"
   environment:
-    BW_SESSION: "{{ item.bitwarden_session }}"
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+    BW_NOINTERACTION: "true"
   register: workstation_backup_secret_manager_verified_item
   changed_when: false
   no_log: true
