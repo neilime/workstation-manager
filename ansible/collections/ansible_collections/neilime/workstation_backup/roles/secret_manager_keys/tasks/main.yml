@@ -1,9 +1,4 @@
 ---
-- name: Read the backup interactivity flag
-  ansible.builtin.set_fact:
-    workstation_backup_secret_manager_interactive: >-
-      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
-
 - name: Check whether the managed SSH directory exists
   ansible.builtin.stat:
     path: "{{ workstation_manager_resolved.user.home }}/.ssh"
@@ -173,35 +168,9 @@
       }}
   no_log: true
 
-- name: Report synchronized key state during backup dry runs
-  ansible.builtin.debug:
-    msg: |-
-      {% for action in workstation_backup_secret_manager_actions %}
-      Would {{ action.action }} {{ action.kind }} key {{ action.name }} in Bitwarden
-      because it is {{ 'missing' if action.action == 'add' else 'out of sync' }}.
-      {% endfor %}
-  when:
-    - workstation_backup_dry_run
-    - workstation_backup_secret_manager_actions | length > 0
-
-- name: Fail when backup needs Bitwarden key decisions in non-interactive mode
-  ansible.builtin.fail:
-    msg: >-
-      Backup found SSH or GPG keys that are not synchronized with Bitwarden, but
-      this run is non-interactive. Re-run with an interactive terminal to choose
-      add/update, skip this key, or abort the backup.
-  when:
-    - not workstation_backup_dry_run
-    - workstation_backup_secret_manager_actions | length > 0
-    - not workstation_backup_secret_manager_interactive
-
-- name: Prompt and apply Bitwarden key synchronization actions
+- name: Resolve and apply Bitwarden key synchronization actions
   ansible.builtin.include_tasks: prompt_and_apply_action.yml
   loop: "{{ workstation_backup_secret_manager_actions }}"
   loop_control:
     label: "{{ item.action }} {{ item.kind }} {{ item.name }}"
-  when:
-    - not workstation_backup_dry_run
-    - workstation_backup_secret_manager_actions | length > 0
-    - workstation_backup_secret_manager_interactive
   no_log: true

@@ -1,47 +1,18 @@
 ---
-- name: Read browser backup interactivity
-  ansible.builtin.set_fact:
-    browser_interactive: >-
-      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
-
 - name: Verify browser recovery and resolve drift before archiving
   ansible.builtin.include_tasks: verify.yml
 
 - name: Confirm live browser Sync and recovery words for all profiles
-  ansible.builtin.pause:
-    prompt: |-
-      {% filter neilime.workstation_backup.terminal_prompt %}
-      {{ workstation_backup_browser_sync_instructions }}
-      Confirm only after all profiles pass these checks.
-
-      synced = all profiles finished syncing and their recovery notes match
-      skip = continue; browser recovery stays unverified and browser changes are not archived
-      abort = stop without creating an archive
-      Choose [synced/skip/abort]
-      {% endfilter %}
-  register: browser_sync_choice
-  until: browser_sync_choice.user_input | trim | lower in ['synced', 'skip', 'abort']
-  retries: 3
-  delay: 0
-  when:
-    - not workstation_backup_dry_run
-    - not browser_has_drift
-    - workstation_backup_browser_inspection.profiles | length > 0
-
-- name: Record skipped live browser Sync verification
   ansible.builtin.include_role:
-    name: neilime.workstation_backup.recovery_skip
+    name: neilime.workstation_backup.recovery_decision
   vars:
-    workstation_backup_recovery_skip_scope: browser-sync
-  when: browser_sync_choice.user_input | default('') | trim | lower == 'skip'
-
-- name: Require completed browser synchronization
-  ansible.builtin.assert:
-    that:
-      - browser_sync_choice.user_input | trim | lower == 'synced'
-    fail_msg: Browser Sync completion was not confirmed; no archive was created.
-  when:
-    - not workstation_backup_dry_run
-    - not browser_has_drift
-    - workstation_backup_browser_inspection.profiles | length > 0
-    - browser_sync_choice.user_input | trim | lower != 'skip'
+    workstation_backup_recovery_id: browser-sync
+    workstation_backup_recovery_needed: >-
+      {{ not workstation_backup_browser_has_drift and workstation_backup_browser_inspection.profiles | length > 0 }}
+    workstation_backup_recovery_request:
+      scope: browser-sync
+      summary: "{{ workstation_backup_browser_sync_instructions }}"
+      actions:
+        synced: Confirm all profiles finished syncing and their recovery notes match.
+      skip: Continue without confirming live browser Sync or recovery words.
+      abort_message: Browser Sync completion was not confirmed; no archive was created.

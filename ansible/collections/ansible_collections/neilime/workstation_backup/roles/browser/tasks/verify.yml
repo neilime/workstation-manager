@@ -10,61 +10,29 @@
 
 - name: Decide whether browser recovery still has drift
   ansible.builtin.set_fact:
-    browser_has_drift: >-
+    workstation_backup_browser_has_drift: >-
       {{ workstation_backup_browser_inspection.drift | length > 0
          or workstation_backup_browser_inspection.sync_issues | length > 0 }}
 
-- name: Report browser recovery issues and next steps
+- name: Report matching saved browser settings
   ansible.builtin.debug:
     msg: "{{ workstation_backup_browser_recovery_report.splitlines() }}"
-  when: workstation_backup_dry_run or not browser_interactive or not browser_has_drift
+  when: not workstation_backup_browser_has_drift
 
-- name: Require interactive browser recovery decisions
-  ansible.builtin.assert:
-    quiet: true
-    that:
-      - browser_interactive or (not browser_has_drift and workstation_backup_browser_inspection.profiles | length == 0)
-    fail_msg: >-
-      Browser recovery requires an interactive run to resolve reported drift and confirm live Sync completion.
-  when: not workstation_backup_dry_run
-
-- name: Prompt to reconcile browser recovery drift
-  ansible.builtin.pause:
-    prompt: |-
-      {% filter neilime.workstation_backup.terminal_prompt %}
-      {{ workstation_backup_browser_recovery_report }}
-
-      retry = check again after you fix these issues
-      skip = continue; browser recovery stays unverified and browser changes are not archived
-      abort = stop without creating an archive
-      Choose [retry/skip/abort]
-      {% endfilter %}
-  register: browser_drift_choice
-  until: browser_drift_choice.user_input | trim | lower in ['retry', 'skip', 'abort']
-  retries: 3
-  delay: 0
-  when:
-    - not workstation_backup_dry_run
-    - browser_has_drift
-
-- name: Record skipped browser recovery
+- name: Resolve browser recovery drift
   ansible.builtin.include_role:
-    name: neilime.workstation_backup.recovery_skip
+    name: neilime.workstation_backup.recovery_decision
   vars:
-    workstation_backup_recovery_skip_scope: browser-recovery
-  when: browser_drift_choice.user_input | default('') | trim | lower == 'skip'
-
-- name: Stop backup when browser recovery drift is unresolved
-  ansible.builtin.fail:
-    msg: Browser recovery was not synchronized; no archive was created.
-  when:
-    - not workstation_backup_dry_run
-    - browser_has_drift
-    - browser_drift_choice.user_input | trim | lower == 'abort'
+    workstation_backup_recovery_id: browser-recovery
+    workstation_backup_recovery_needed: "{{ workstation_backup_browser_has_drift }}"
+    workstation_backup_recovery_request:
+      scope: browser-recovery
+      summary: "{{ workstation_backup_browser_recovery_report }}"
+      actions:
+        retry: Recheck profiles and Bitwarden after you fix these issues.
+      skip: Leave browser state unchanged and skip the remaining browser recovery checks.
+      abort_message: Browser recovery was not synchronized; no archive was created.
 
 - name: Recheck browser recovery after the user resolves drift
   ansible.builtin.include_tasks: verify.yml
-  when:
-    - not workstation_backup_dry_run
-    - browser_has_drift
-    - browser_drift_choice.user_input | trim | lower == 'retry'
+  when: workstation_backup_recovery_choices['browser-recovery'] == 'retry'

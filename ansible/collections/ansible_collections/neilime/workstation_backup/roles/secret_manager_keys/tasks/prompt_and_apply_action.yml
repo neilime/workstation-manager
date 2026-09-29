@@ -1,34 +1,22 @@
 ---
-- name: Prompt for the Bitwarden key synchronization action
-  ansible.builtin.pause:
-    prompt: |-
-      {% filter neilime.workstation_backup.terminal_prompt %}
-      {{ item.kind | upper }} key {{ item.name }} is {{ 'missing from' if item.action == 'add' else 'different in' }}
-      Bitwarden.
-      Skip leaves this key unchanged in both places and continues with other keys.
-      Its local changes are not added to the archive; recovery remains unverified.
-      Choose [{{ item.action }}/skip/abort]
-      {% endfilter %}
-  register: workstation_backup_secret_manager_user_choice
-  until: workstation_backup_secret_manager_user_choice.user_input | trim | lower in [item.action, 'skip', 'abort']
-  retries: 3
-  delay: 0
-  no_log: false
-
-- name: Stop backup when key synchronization is declined
-  ansible.builtin.fail:
-    msg: "Backup stopped: {{ item.kind }} key {{ item.name }} is not synchronized with Bitwarden."
-  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == 'abort'
-  no_log: false
-
-- name: Record skipped key recovery without exposing key material
+- name: Resolve the Bitwarden key synchronization action
   ansible.builtin.include_role:
-    name: neilime.workstation_backup.recovery_skip
+    name: neilime.workstation_backup.recovery_decision
   vars:
-    workstation_backup_recovery_skip_scope: "{{ item.kind ~ '-keys' }}"
-  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == 'skip'
+    workstation_backup_recovery_id: key
+    workstation_backup_recovery_request:
+      scope: "{{ item.kind ~ '-keys' }}"
+      summary: >-
+        {{ item.kind | upper }} key {{ item.name }} is
+        {{ 'missing from' if item.action == 'add' else 'different in' }} Bitwarden.
+      actions: "{{ {item.action: 'Save this local key in Bitwarden and verify the saved values.'} }}"
+      skip: Leave this key unchanged in both places and continue with other keys.
+      abort_message: "Backup stopped: {{ item.kind }} key {{ item.name }} is not synchronized with Bitwarden."
 
 - name: Apply only the explicitly approved key synchronization action
   ansible.builtin.include_tasks: apply_action.yml
-  when: workstation_backup_secret_manager_user_choice.user_input | trim | lower == item.action
+  when:
+    - not workstation_backup_dry_run
+    - not ansible_check_mode
+    - workstation_backup_recovery_choices['key'] == item.action
   no_log: true

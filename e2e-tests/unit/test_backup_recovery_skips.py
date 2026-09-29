@@ -168,7 +168,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertEqual(output.count("Restore missing profile logos."), 1)
         self.assertIn("Fixture (Default)", output)
         self.assertIn("workstation.sh setup", output)
-        self.assertIn("stop without creating an archive", output)
+        self.assertIn("stop backup without creating an archive", output)
         self.assertNotIn("profile_drift", output)
         self.assertNotIn("avatar_disabled", output)
         self.assertNotIn("theme_colors", output)

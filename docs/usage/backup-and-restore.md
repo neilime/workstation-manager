@@ -51,8 +51,11 @@ If a key save reports that the Bitwarden session is locked or expired, rerun
 backup to unlock the vault. Avoid locking or unlocking the same Bitwarden CLI
 profile in another terminal while backup is waiting for your decisions.
 
-Every drift or recovery confirmation prompt also offers `skip`. It leaves that
-recovery source unchanged at this step and continues the other backup work:
+Recovery prompts follow the same pattern: review the reported problem, choose
+one of its listed actions, then let backup recheck the result. Each prompt also
+offers `skip` and `abort`; an earlier approval never selects a later action.
+`skip` leaves that recovery source unchanged at this step and continues the other
+backup work:
 
 - In a Chezmoi prompt, `skip` skips all remaining Chezmoi checks for this run.
 - In an SSH/GPG prompt, `skip` skips only the current key; other keys still prompt.

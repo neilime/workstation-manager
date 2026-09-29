@@ -15,8 +15,6 @@
       }}
     workstation_backup_chezmoi_source_dir: >-
       {{ workstation_manager_resolved.user.home ~ '/.local/share/chezmoi' }}
-    workstation_backup_chezmoi_interactive: >-
-      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool }}
 
 - name: Check whether the managed chezmoi config file exists
   become: "{{ workstation_manager_use_become }}"
