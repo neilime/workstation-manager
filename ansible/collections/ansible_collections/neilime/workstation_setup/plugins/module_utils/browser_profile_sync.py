@@ -34,6 +34,10 @@ _REMOTE_KINDS = {"missing", "renamed", "theme_color", "avatar", "unregistered", 
 _LOCAL_KINDS = {"renamed", "theme_color", "avatar"}
 
 
+class BrowserSyncBlocked(ValueError):
+    """Signal a closed-browser precondition before any local or vault mutation."""
+
+
 def browser_sync_directions(inspection: dict) -> dict[str, str]:
     """Offer directions for repairable profile settings; chain pairing stays manual."""
 
@@ -210,8 +214,15 @@ def sync_browser_profiles(
     if direction not in browser_sync_directions(inspection):
         return False
     root = Path(user_data_dir)
-    if _brave_running() or os.path.lexists(root / "SingletonLock"):
-        raise ValueError("Close Brave completely before synchronizing profile metadata")
+    if _brave_running():
+        raise BrowserSyncBlocked(
+            "Close Brave completely: a Brave process is still running. Use Brave's menu to exit, then retry."
+        )
+    if os.path.lexists(root / "SingletonLock"):
+        raise BrowserSyncBlocked(
+            "Close Brave completely: its profile lock is still present. "
+            "If Brave is already closed, reopen it and exit normally, then retry."
+        )
     if direction == "restore":
         changed = _restore_profiles(user_data_dir, profiles, inspection, check_mode)
         if not check_mode:

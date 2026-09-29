@@ -104,6 +104,11 @@ then choose the source for supported metadata changes:
   colors. An absent or disabled managed logo is removed from its note; a local
   default or extension theme removes the managed `theme_colors` field.
 
+If Brave is still running or its profile remains locked, backup pauses without
+changing browser settings or Bitwarden records. Exit Brave completely, choose
+`retry`, and select `save` or `restore` again after the profiles are rechecked.
+You can also `skip` browser recovery or `abort` backup at that prompt.
+
 Each direction verifies the changes it makes. The available choices depend on
 which side has usable data. Neither direction deletes profiles or vault records.
 A new local profile still needs a secure note containing its recovery words;

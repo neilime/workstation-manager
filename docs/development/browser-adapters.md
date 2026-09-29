@@ -32,7 +32,11 @@ Add the role under
   `restore` choice in `workstation_backup_recovery_choices['browser-recovery']`,
   guard previews, and verify the changed metadata. Publish supported direction
   descriptions in `workstation_backup_browser_sync_actions` during inspection.
-  Leave chain pairing and new recovery-note creation manual.
+  Leave chain pairing and new recovery-note creation manual. A closed-browser
+  precondition detected before any mutation can use the shared recovery decision
+  role for retry/skip/abort under `browser-recovery`. Retry returns to inspection
+  and a fresh direction choice; never reuse an earlier approval. Actual operation
+  and verification failures must still fail.
 - `tasks/inspect_profiles.yml`: report undeclared profile paths in
   `workstation_manager_cleanup_unmanaged_browser_profile_directories`, or `[]`.
   Never delete profiles.
@@ -85,7 +89,10 @@ names and other preferences. Explicit `restore` reconciliation also replaces
 profile names and enables Sync everything for managed profiles; `save` updates
 existing vault metadata and avatars without changing recovery words. Both
 directions require Brave to be closed. Restoring the selection flag never changes
-the seed, Sync request, setup completion, or policy flags.
+the seed, Sync request, setup completion, or policy flags. A running process and
+an existing profile lock produce distinct retry instructions before synchronization;
+late guards during an operation still fail. No process is stopped or lock removed
+by backup.
 
 Backup checks local inventory and Sync settings, including **Sync everything**.
 An absent `sync.keep_everything_synced` uses the enabled default registered in

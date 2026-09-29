@@ -19,6 +19,8 @@ Deferred SSH/GPG writes use the current unlocked Bitwarden session after both
 collections have been read, and check session status before saving.
 Browser prompts offer verified metadata synchronization in both directions.
 `restore` also enables Sync everything for managed profiles with Brave closed.
+A running browser or remaining profile lock offers retry/skip/abort before changes;
+retry reloads profiles and requires a fresh direction choice.
 Pairing and other unresolved Sync checks remain visible before the separate live
 Sync confirmation.
 
