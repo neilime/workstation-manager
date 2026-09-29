@@ -126,7 +126,7 @@ def test_registered_missing_preferences_are_incomplete_and_system_profiles_are_i
     assert len(result["profiles"]) == 1
     assert result["profiles"][0]["preferences_present"] is False
     assert result["drift"] == [{"kind": "missing_preferences", "directory": "Default", "id": "personal"}]
-    assert result["sync_issues"][0]["issues"] == ["missing_sync_seed", "sync_everything_not_enabled"]
+    assert result["sync_issues"][0]["issues"] == ["missing_sync_seed"]
 
 
 def test_collection_only_profiles_remain_in_vault_without_creating_local_files(tmp_path: Path) -> None:
@@ -414,3 +414,16 @@ def test_invalid_avatar_attachment_cannot_silently_disable_inspection(tmp_path: 
     with pytest.raises(ValueError, match="avatar_png") as error:
         inspect_browser_profiles(str(tmp_path), [{**_DECLARATION, "avatar_png": "secret-must-not-appear"}])
     assert "secret-must-not-appear" not in str(error.value)
+
+
+def test_omitted_sync_everything_uses_the_native_enabled_default(tmp_path: Path) -> None:
+    """Absence in Preferences is not evidence that the browser disabled Sync everything."""
+
+    preferences = _profile(tmp_path, "Default", "Personal", {"bookmarks": False})
+    _state(tmp_path, {"Default": {"name": "Personal"}})
+    before = preferences.read_bytes()
+    result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
+    assert result["sync_issues"] == []
+    assert result["profiles"][0]["sync"]["keep_everything_synced"] is True
+    assert result["profiles"][0]["sync"]["selected_types"]["bookmarks"] is False
+    assert preferences.read_bytes() == before

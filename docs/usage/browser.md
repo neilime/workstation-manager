@@ -96,9 +96,9 @@ configuration. Name checks use the names shown in Brave's profile picker.
 The prompt groups detected problems and names the affected profiles. Close Brave,
 then choose the source for supported metadata changes:
 
-- `restore` restores stored names, colors, and logos locally and recreates
-  missing profiles. Other preferences, browsing data, and existing Sync chains
-  are preserved.
+- `restore` restores stored names, colors, and logos locally, recreates missing
+  profiles, and enables **Sync everything** for managed profiles. Other
+  preferences, browsing data, and existing Sync chains are preserved.
 - `save` updates existing Bitwarden records from local names, colors, and
   logos. It preserves recovery words, unrelated fields, and secondary palette
   colors. An absent or disabled managed logo is removed from its note; a local
@@ -107,9 +107,15 @@ then choose the source for supported metadata changes:
 Each direction verifies the changes it makes. The available choices depend on
 which side has usable data. Neither direction deletes profiles or vault records.
 A new local profile still needs a secure note containing its recovery words;
-create that note in Bitwarden. Pairing a restored profile and enabling Sync still
-happen in Brave. Choose `retry` after those manual steps to reload both sides.
+create that note in Bitwarden. Pairing a restored profile, finishing Sync setup,
+and resolving a policy that blocks Sync still happen in Brave. Choose `retry`
+after those manual steps to reload both sides.
 Cleanup preserves all browser profiles.
+
+When **Sync everything** is the only issue, choose `restore` with Brave closed
+to enable it for the listed managed profiles. Backup verifies the saved setting.
+`save` is not offered for this issue because full Sync is required for recovery.
+Reopen Brave afterward and wait for synchronization before the live confirmation.
 
 After these checks, backup asks you to confirm that every profile has completed
 live Sync and its first 24 recovery words match its Bitwarden note. Verify this

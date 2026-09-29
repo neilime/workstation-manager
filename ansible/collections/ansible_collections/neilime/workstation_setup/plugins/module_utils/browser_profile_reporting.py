@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import textwrap
 
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_inspection import (
+    sync_everything_drift,
+)
+
 _ACTIONS = {
     "missing_sync_seed": (
         "Connect profiles to their Sync chains.",
@@ -151,17 +155,27 @@ def browser_recovery_report(inspection: dict) -> str:
     if not groups:
         if not profiles:
             return "No browser profiles to check."
-        noun = "profile" if len(profiles) == 1 else "profiles"
-        return f"Saved browser settings match for {len(profiles)} {noun}. Live Sync is not verified."
+        return (
+            f"Saved browser settings match for {len(profiles)} {'profile' if len(profiles) == 1 else 'profiles'}. "
+            "Live Sync is not verified."
+        )
     lines = [
         "Fix this browser recovery issue:" if len(groups) == 1 else f"Fix these {len(groups)} browser recovery issues:"
     ]
+    restorable_sync = sync_everything_drift(inspection)
     for number, key in enumerate((key for key in _ACTIONS if key in groups), start=1):
         title, action = _ACTIONS[key]
+        if key == "sync_everything_not_enabled" and all(
+            record["directory"] in restorable_sync for record in sync_issues if key in record["issues"]
+        ):
+            action = "Close Brave and choose restore to enable Sync everything."
         lines.extend(("", f"{number}. {title}"))
         affected = "; ".join(dict.fromkeys(groups[key]))
         lines.extend(textwrap.wrap("Profiles: " + affected, width=88, initial_indent="   ", subsequent_indent="   "))
         lines.extend(textwrap.wrap(action, width=88, initial_indent="   ", subsequent_indent="   "))
-    if sync_issues:
+    if any(
+        record["directory"] not in restorable_sync or record["issues"] != ["sync_everything_not_enabled"]
+        for record in sync_issues
+    ):
         lines.extend(("", "After changing Sync settings, close Brave to save them before retrying."))
     return "\n".join(lines)

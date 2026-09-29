@@ -82,10 +82,17 @@ uses `~/.config/BraveSoftware/Brave-Browser` under the resolved user's home. Its
 managed policy permits Sync; it cannot enroll profiles. Seeding creates missing
 profiles and applies declared colors and avatars while preserving existing
 names and other preferences. Explicit `restore` reconciliation also replaces
-profile names; `save` updates existing vault metadata and avatars without
-changing recovery words. Both directions require Brave to be closed.
+profile names and enables Sync everything for managed profiles; `save` updates
+existing vault metadata and avatars without changing recovery words. Both
+directions require Brave to be closed. Restoring the selection flag never changes
+the seed, Sync request, setup completion, or policy flags.
 
 Backup checks local inventory and Sync settings, including **Sync everything**.
+An absent `sync.keep_everything_synced` uses the enabled default registered in
+[Chromium](https://github.com/chromium/chromium/blob/main/components/sync/service/sync_prefs.cc);
+[Brave's preference overrides](https://github.com/brave/brave-core/blob/master/browser/brave_profile_prefs.cc)
+retain it. Explicitly disabled settings offer the shared `restore` action, with
+post-write inspection. Setup preserves existing Sync choices.
 Saved preferences are insufficient evidence of a completed server upload. Custom
 logos use internal local profile-picture fields and are restored from Bitwarden.
 Keep these limitations explicit in [user instructions](../usage/browser.md).
