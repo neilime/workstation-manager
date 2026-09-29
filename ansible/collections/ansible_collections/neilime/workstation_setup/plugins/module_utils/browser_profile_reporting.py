@@ -31,35 +31,35 @@ _ACTIONS = {
     ),
     "missing": (
         "Restore missing local profiles.",
-        "Close Brave and choose from-remote, then join their stored Sync chains. Keep their Bitwarden records.",
+        "Close Brave and choose restore, then join their stored Sync chains. Keep their Bitwarden records.",
     ),
     "renamed": (
         "Match profile names with Bitwarden.",
-        "Choose from-remote for the stored name, or from-local to keep the local name in Bitwarden.",
+        "Choose restore for the stored name, or save to keep the local name in Bitwarden.",
     ),
     "theme_color": (
         "Reconcile profile colors.",
-        "Choose from-remote for stored colors, or from-local to save the local color choice.",
+        "Choose restore for stored colors, or save to save the local color choice.",
     ),
     "missing_avatar_file": (
         "Restore missing profile logos.",
-        "Close Brave and choose from-remote to restore the logos from Bitwarden.",
+        "Close Brave and choose restore to restore the logos from Bitwarden.",
     ),
     "avatar_content_changed": (
         "Reconcile changed profile logos.",
-        "Choose from-remote for stored logos, or from-local to save the local logo choice.",
+        "Choose restore for stored logos, or save to save the local logo choice.",
     ),
     "avatar_disabled": (
         "Select the stored profile logos.",
-        "Choose from-remote to select stored logos, or from-local to stop storing the disabled logos.",
+        "Choose restore to select stored logos, or save to stop storing the disabled logos.",
     ),
     "unregistered": (
         "Register profiles in Brave's profile picker.",
-        "Close Brave and choose from-remote to register these existing profiles once their records exist.",
+        "Close Brave and choose restore to register these existing profiles once their records exist.",
     ),
     "missing_preferences": (
         "Restore missing profile settings.",
-        "Close Brave and choose from-remote, then open and close these profiles to save their settings.",
+        "Close Brave and choose restore, then open and close these profiles to save their settings.",
     ),
 }
 _SYNC_ISSUES = frozenset(

@@ -36,12 +36,12 @@ def browser_sync_directions(inspection: dict) -> dict[str, str]:
     kinds = {issue["kind"] for issue in inspection["drift"] if issue.get("id")}
     actions = {}
     if kinds & _LOCAL_KINDS:
-        actions["from-local"] = (
+        actions["save"] = (
             "Close Brave, then replace saved names, colors and logos with local values. "
             "Absent or disabled customizations are removed from Bitwarden; recovery words stay unchanged."
         )
     if kinds & _REMOTE_KINDS:
-        actions["from-remote"] = (
+        actions["restore"] = (
             "Close Brave, then restore saved profile names, colors and logos locally. "
             "Missing profiles are recreated; Sync pairing remains manual."
         )
@@ -170,7 +170,7 @@ def sync_browser_profiles(
 ) -> bool:
     """Apply the approved direction, then verify the fields this operation owns."""
 
-    if direction not in {"from-local", "from-remote"}:
+    if direction not in {"save", "restore"}:
         raise ValueError("Unsupported browser synchronization direction")
     inspection = inspect_browser_profiles(user_data_dir, profiles)
     if direction not in browser_sync_directions(inspection):
@@ -178,7 +178,7 @@ def sync_browser_profiles(
     root = Path(user_data_dir)
     if _brave_running() or os.path.lexists(root / "SingletonLock"):
         raise ValueError("Close Brave completely before synchronizing profile metadata")
-    if direction == "from-remote":
+    if direction == "restore":
         changed = seed_browser_profiles(user_data_dir, profiles, check_mode, replace_names=True)
         if not check_mode:
             verified = inspect_browser_profiles(user_data_dir, profiles)

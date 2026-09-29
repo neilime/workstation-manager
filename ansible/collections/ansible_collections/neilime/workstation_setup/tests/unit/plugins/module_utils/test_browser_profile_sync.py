@@ -106,16 +106,16 @@ def test_remote_sync_restores_metadata_and_preserves_browser_data(fixture: tuple
 
     root, vault, profiles = fixture
     before = (root / "Default/Preferences").read_bytes()
-    assert sync.sync_browser_profiles(str(root), profiles, "from-remote", vault, check_mode=True)
+    assert sync.sync_browser_profiles(str(root), profiles, "restore", vault, check_mode=True)
     assert (root / "Default/Preferences").read_bytes() == before
-    assert sync.sync_browser_profiles(str(root), profiles, "from-remote", vault)
+    assert sync.sync_browser_profiles(str(root), profiles, "restore", vault)
     preferences = json.loads((root / "Default/Preferences").read_text())
     assert preferences["profile"]["name"] == "Remote"
     assert preferences["brave_sync_v2"]["seed"] == "synthetic-seed"
     assert preferences["pinned_tabs"] == [{"url": "https://example.invalid"}]
     assert sync.inspect_browser_profiles(str(root), profiles)["drift"] == []
     assert not vault.calls
-    assert not sync.sync_browser_profiles(str(root), profiles, "from-remote", vault)
+    assert not sync.sync_browser_profiles(str(root), profiles, "restore", vault)
 
 
 def test_local_sync_preserves_recovery_words_fields_and_secondary_colors(fixture: tuple) -> None:
@@ -123,9 +123,9 @@ def test_local_sync_preserves_recovery_words_fields_and_secondary_colors(fixture
 
     root, vault, profiles = fixture
     before = (root / "Default/Preferences").read_bytes()
-    assert sync.sync_browser_profiles(str(root), profiles, "from-local", vault, check_mode=True)
+    assert sync.sync_browser_profiles(str(root), profiles, "save", vault, check_mode=True)
     assert not vault.calls
-    assert sync.sync_browser_profiles(str(root), profiles, "from-local", vault)
+    assert sync.sync_browser_profiles(str(root), profiles, "save", vault)
     assert vault.record["name"] == "Local"
     assert vault.record["notes"] == "synthetic-recovery-note"
     fields = {field["name"]: field["value"] for field in vault.record["fields"]}
@@ -143,10 +143,10 @@ def test_failed_save_verification_stops_synchronization(fixture: tuple) -> None:
     root, vault, profiles = fixture
     vault.corrupt = True
     with pytest.raises(ValueError, match="metadata verification failed"):
-        sync.sync_browser_profiles(str(root), profiles, "from-local", vault)
+        sync.sync_browser_profiles(str(root), profiles, "save", vault)
 
 
-@pytest.mark.parametrize("direction", ["from-local", "from-remote"])
+@pytest.mark.parametrize("direction", ["save", "restore"])
 def test_running_browser_blocks_both_directions(fixture: tuple, direction: str) -> None:
     """Unflushed preferences cannot be treated as authoritative local metadata."""
 
@@ -161,7 +161,7 @@ def test_sync_pairing_and_unrecorded_profiles_are_not_guessed() -> None:
     """Directions cannot manufacture recovery words or claim chain enrollment."""
 
     assert sync.browser_sync_directions({"drift": [{"kind": "undeclared"}], "sync_issues": [{}]}) == {}
-    assert list(sync.browser_sync_directions({"drift": [{"kind": "missing", "id": "missing"}]})) == ["from-remote"]
+    assert list(sync.browser_sync_directions({"drift": [{"kind": "missing", "id": "missing"}]})) == ["restore"]
 
 
 def test_missing_local_profile_does_not_delete_remote_record(fixture: tuple) -> None:
@@ -169,10 +169,10 @@ def test_missing_local_profile_does_not_delete_remote_record(fixture: tuple) -> 
 
     root, vault, profiles = fixture
     extra = {**profiles[0], "id": "other", "directory": "Profile 2", "item_id": "22222222-2222-4222-8222-222222222222"}
-    assert sync.sync_browser_profiles(str(root), [*profiles, extra], "from-local", vault)
+    assert sync.sync_browser_profiles(str(root), [*profiles, extra], "save", vault)
     assert vault.record["id"] == ITEM_ID
     assert not (root / "Profile 2").exists()
-    assert sync.sync_browser_profiles(str(root), [*profiles, extra], "from-remote", vault)
+    assert sync.sync_browser_profiles(str(root), [*profiles, extra], "restore", vault)
     assert (root / "Profile 2/Preferences").exists()
 
 
@@ -204,7 +204,7 @@ def test_local_sync_restores_a_palette_removed_from_the_remote_record_during_the
     root, vault, profiles = fixture
     vault.record["fields"] = [field for field in vault.record["fields"] if field["name"] != "theme_colors"]
     vault.record["attachments"] = None
-    assert sync.sync_browser_profiles(str(root), profiles, "from-local", vault)
+    assert sync.sync_browser_profiles(str(root), profiles, "save", vault)
     fields = {field["name"]: field["value"] for field in vault.record["fields"]}
     assert fields["theme_colors"] == "#654321"
     assert vault.record["notes"] == "synthetic-recovery-note"
@@ -216,5 +216,5 @@ def test_moved_remote_record_is_not_updated_outside_its_approved_collection(fixt
     root, vault, profiles = fixture
     vault.record["collectionIds"] = ["other-collection"]
     with pytest.raises(ValueError, match="left its recovery collection"):
-        sync.sync_browser_profiles(str(root), profiles, "from-local", vault)
+        sync.sync_browser_profiles(str(root), profiles, "save", vault)
     assert not any(call[0] in {"edit", "create", "delete"} for call in vault.calls)

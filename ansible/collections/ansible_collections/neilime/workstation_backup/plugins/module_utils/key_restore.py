@@ -148,7 +148,7 @@ def _restore_gpg(
                 if local.material(fingerprint) != expected:
                     raise ValueError(
                         "GPG still differs after import. Local-only key packets were preserved; "
-                        "reconcile manually or choose from-local. Backup stopped."
+                        "reconcile manually or choose save. Backup stopped."
                     )
             return changed
         finally:

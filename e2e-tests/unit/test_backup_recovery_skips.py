@@ -167,7 +167,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertIn("incomplete recovery coverage", output)
         self.assertEqual(output.count("Restore missing profile logos."), 1)
         self.assertIn("Fixture (Default)", output)
-        self.assertIn("from-remote", output)
+        self.assertIn("restore", output)
         self.assertIn("stop backup without creating an archive", output)
         self.assertNotIn("profile_drift", output)
         self.assertNotIn("avatar_disabled", output)
@@ -331,7 +331,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         root = self.fixture / ".config/BraveSoftware/Brave-Browser"
         (root / "Default").mkdir(parents=True)
         preferences = root / "Default/Preferences"
-        for direction in ("from-local", "from-remote"):
+        for direction in ("save", "restore"):
             with self.subTest(direction=direction):
                 store.write_text(json.dumps(record))
                 (root / "Local State").write_text(
@@ -352,14 +352,14 @@ class BackupRecoverySkipTests(unittest.TestCase):
                 code, output = self.run_backup(
                     tasks,
                     (
-                        ("[from-local/from-remote/retry/skip/abort]", direction),
+                        ("[save/restore/retry/skip/abort]", direction),
                         ("[synced/skip/abort]", "synced"),
                     ),
                 )
                 self.assertEqual(code, 0, output)
                 current = json.loads(preferences.read_text())
                 saved = json.loads(store.read_text())
-                expected = "Local" if direction == "from-local" else "Remote"
+                expected = "Local" if direction == "save" else "Remote"
                 self.assertEqual(current["profile"]["name"], expected)
                 self.assertEqual(saved["name"], expected)
                 self.assertEqual(saved["notes"], record["notes"])
@@ -387,12 +387,12 @@ class BackupRecoverySkipTests(unittest.TestCase):
         }
         (self.fixture / "saved-item.json").write_text(json.dumps(remote))
         for action, prompt in (
-            ("restore", "[from-remote/skip/abort]"),
-            ("update", "[from-local/from-remote/skip/abort]"),
+            ("restore", "[restore/skip/abort]"),
+            ("update", "[save/restore/skip/abort]"),
         ):
             with self.subTest(action=action):
                 tasks[0]["loop"][0]["action"] = action
-                code, output = self.run_backup(tasks, ((prompt, "from-remote"),))
+                code, output = self.run_backup(tasks, ((prompt, "restore"),))
                 self.assertEqual(code, 0, output)
                 self.assertEqual((self.fixture / ".ssh/fixture-key").read_text(), "remote-private\n")
                 self.assertEqual((self.fixture / ".ssh/fixture-key.pub").read_text(), "remote-public\n")
@@ -409,8 +409,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
         code, output = self.run_backup(
             self.prepare_keys(),
             (
-                ("[from-local/skip/abort]", "skip"),
-                ("[from-local/from-remote/skip/abort]", "skip"),
+                ("[save/skip/abort]", "skip"),
+                ("[save/restore/skip/abort]", "skip"),
             ),
         )
         self.assertEqual(code, 0, output)
@@ -426,8 +426,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
         code, output = self.run_backup(
             self.prepare_keys(),
             (
-                ("[from-local/skip/abort]", "skip"),
-                ("[from-local/from-remote/skip/abort]", "from-local"),
+                ("[save/skip/abort]", "skip"),
+                ("[save/restore/skip/abort]", "save"),
             ),
         )
         self.assertEqual(code, 0, output)
@@ -444,8 +444,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
         code, output = self.run_backup(
             self.prepare_keys(),
             (
-                ("[from-local/skip/abort]", "skip"),
-                ("[from-local/from-remote/skip/abort]", "from-local"),
+                ("[save/skip/abort]", "skip"),
+                ("[save/restore/skip/abort]", "save"),
             ),
         )
         self.assertNotEqual(code, 0, output)
@@ -457,7 +457,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
 
         code, output = self.run_backup(
             self.prepare_keys(),
-            (("[from-local/skip/abort]", "from-local"), ("[from-local/from-remote/skip/abort]", "from-local")),
+            (("[save/skip/abort]", "save"), ("[save/restore/skip/abort]", "save")),
         )
         self.assertEqual(code, 0, output)
         self.assertEqual(
@@ -473,7 +473,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
 
         tasks = self.prepare_keys()
         self.variables["bitwarden_collection_session"] = "synthetic-expired-session"
-        code, output = self.run_backup(tasks, (("[from-local/skip/abort]", "from-local"),))
+        code, output = self.run_backup(tasks, (("[save/skip/abort]", "save"),))
         self.assertNotEqual(code, 0, output)
         self.assertIn("Bitwarden session is locked or expired", output)
         self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status"])
@@ -485,7 +485,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         """A valid session cannot hide a rejected save or expose sensitive CLI errors."""
 
         (self.fixture / "save-fails").touch()
-        code, output = self.run_backup(self.prepare_keys(), (("[from-local/skip/abort]", "from-local"),))
+        code, output = self.run_backup(self.prepare_keys(), (("[save/skip/abort]", "save"),))
         self.assertNotEqual(code, 0, output)
         self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status", "encode", "create"])
         self.assertIn("changed=0", output)

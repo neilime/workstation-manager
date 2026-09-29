@@ -40,7 +40,7 @@ def test_repeated_sync_and_missing_logos_become_two_action_groups() -> None:
     assert report.count("Restore missing profile logos.") == 1
     assert "Select the stored profile logos." not in report
     assert "brave://settings/braveSync" in report
-    assert "from-remote" in report
+    assert "restore" in report
     sync, avatars = report.split("2. Restore missing profile logos.")
     for number in range(6):
         assert f"Workspace {number}" in sync
@@ -83,9 +83,9 @@ def test_repeated_sync_and_missing_logos_become_two_action_groups() -> None:
         (
             {"kind": "avatar", "issues": ["avatar_content_changed", "avatar_disabled"]},
             "Reconcile changed profile logos.",
-            "from-local",
+            "save",
         ),
-        ({"kind": "avatar", "issues": ["avatar_disabled"]}, "Select the stored profile logos.", "from-remote"),
+        ({"kind": "avatar", "issues": ["avatar_disabled"]}, "Select the stored profile logos.", "restore"),
         ({"kind": "unregistered"}, "Register profiles in Brave's profile picker.", "register these existing profiles"),
         ({"kind": "missing_preferences"}, "Restore missing profile settings.", "save their settings"),
     ],

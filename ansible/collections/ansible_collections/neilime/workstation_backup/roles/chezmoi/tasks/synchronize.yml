@@ -33,8 +33,8 @@
         Current drift:
         {{ workstation_backup_chezmoi_status.stdout }}
       actions:
-        from-local: Capture current workstation files in the source.
-        from-remote: Overwrite managed workstation files with the source, including newly merged upstream changes.
+        save: Capture current workstation files in the source.
+        restore: Overwrite managed workstation files with the source, including newly merged upstream changes.
       skip: Leave these files unchanged and skip the remaining Chezmoi checks.
       abort_message: Backup stopped because managed chezmoi files are not synchronized.
 
@@ -53,7 +53,7 @@
   when:
     - not workstation_backup_dry_run
     - workstation_backup_chezmoi_status.stdout | trim | length > 0
-    - workstation_backup_recovery_choices['chezmoi-files'] == 'from-local'
+    - workstation_backup_recovery_choices['chezmoi-files'] == 'save'
 
 - name: Apply chezmoi source state to the managed target files
   become: "{{ workstation_manager_use_become }}"
@@ -71,7 +71,7 @@
   when:
     - not workstation_backup_dry_run
     - workstation_backup_chezmoi_status.stdout | trim | length > 0
-    - workstation_backup_recovery_choices['chezmoi-files'] == 'from-remote'
+    - workstation_backup_recovery_choices['chezmoi-files'] == 'restore'
 
 - name: Re-check chezmoi status after synchronization action
   become: "{{ workstation_manager_use_become }}"
