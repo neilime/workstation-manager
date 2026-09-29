@@ -2,12 +2,14 @@
 
 set -eu
 
-REPOSITORY_URL="${REPOSITORY_URL:-https://github.com/neilime/workstation-manager.git}"
-REPOSITORY_BRANCH="${REPOSITORY_BRANCH:-main}"
+REPOSITORY_URL="${REPOSITORY_URL:-}"
+REPOSITORY_BRANCH="${REPOSITORY_BRANCH:-}"
 ANSIBLE_CHECKOUT_DIR="/tmp/workstation-manager-v1"
 TARGET_USER=""
 TARGET_USER_HOME=""
 COLLECTIONS_INSTALL_DIR=""
+DEFAULT_REPOSITORY_URL="https://github.com/neilime/workstation-manager.git"
+DEFAULT_REPOSITORY_BRANCH="main"
 PRIVATE_OVERRIDE_LOCAL_FILE="${WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE:-}"
 PRIVATE_OVERRIDE_TEMP_DIR=""
 GITHUB_TOKEN_VALUE="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}"
@@ -18,6 +20,8 @@ PROMPTED_BITWARDEN_EMAIL=""
 BITWARDEN_CLIENT_ID_VALUE="${BITWARDEN_CLIENT_ID:-}"
 BITWARDEN_CLIENT_SECRET_VALUE="${BITWARDEN_CLIENT_SECRET:-}"
 BITWARDEN_PASSWORD_VALUE="${BITWARDEN_PASSWORD:-}"
+BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER="WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED"
+BITWARDEN_PASSWORD_REJECTED_MARKER="WORKSTATION_MANAGER_BITWARDEN_PASSWORD_REJECTED"
 
 PRIVATE_OVERRIDE_REPOSITORY_URL="https://github.com/neilime/workstation-config.git"
 PRIVATE_OVERRIDE_REPOSITORY_BRANCH="main"
@@ -103,6 +107,10 @@ interactive_terminal_flag() {
 	fi
 
 	printf '0\n'
+}
+
+shell_quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\''/g")"
 }
 
 usage() {
@@ -273,6 +281,59 @@ resolve_authenticated_repository_url() {
 	printf '%s\n' "$repository_url"
 }
 
+resolve_local_repository_path() {
+	repository_url="$1"
+
+	case "$repository_url" in
+	file://*) repository_path="${repository_url#file://}" ;;
+	/*) repository_path="$repository_url" ;;
+	*) return 1 ;;
+	esac
+
+	[ -d "$repository_path" ] || return 1
+	printf '%s\n' "$repository_path"
+}
+
+resolve_entrypoint_repository_root() {
+	command -v git >/dev/null 2>&1 || return 1
+	entrypoint_source="$(resolve_entrypoint_source)" || return 1
+	entrypoint_dir="$(dirname "$entrypoint_source")"
+	repository_root="$(git -C "$entrypoint_dir" rev-parse --show-toplevel 2>/dev/null)" || return 1
+	[ -f "$repository_root/workstation.sh" ] || return 1
+	[ -f "$repository_root/ansible/collections/requirements.yml" ] || return 1
+	printf '%s\n' "$repository_root"
+}
+
+resolve_local_repository_ref() {
+	repository_root="$1"
+	branch_name="$(git -C "$repository_root" branch --show-current 2>/dev/null || true)"
+	if [ -n "$branch_name" ]; then
+		printf '%s\n' "$branch_name"
+		return 0
+	fi
+
+	commit_sha="$(git -C "$repository_root" rev-parse HEAD 2>/dev/null || true)"
+	[ -n "$commit_sha" ] || return 1
+	printf '%s\n' "$commit_sha"
+}
+
+initialize_repository_source() {
+	if [ -z "$REPOSITORY_URL" ] && repository_root="$(resolve_entrypoint_repository_root)"; then
+		REPOSITORY_URL="$repository_root"
+		if [ -z "$REPOSITORY_BRANCH" ]; then
+			REPOSITORY_BRANCH="$(resolve_local_repository_ref "$repository_root" || true)"
+		fi
+	fi
+
+	if [ -z "$REPOSITORY_URL" ]; then
+		REPOSITORY_URL="$DEFAULT_REPOSITORY_URL"
+	fi
+
+	if [ -z "$REPOSITORY_BRANCH" ]; then
+		REPOSITORY_BRANCH="$DEFAULT_REPOSITORY_BRANCH"
+	fi
+}
+
 is_full_git_commit_sha() {
 	[ "${#1}" -eq 40 ] || return 1
 
@@ -307,15 +368,23 @@ download_github_file() {
 		-o "$destination"
 }
 
-install_remote_collection_requirements() {
-	repo_path="$(resolve_github_repository_path "$REPOSITORY_URL")" ||
-		fail "REPOSITORY_URL must point to a GitHub repository"
-	requirements_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-requirements-XXXXXX.yml")"
+install_collection_requirements() {
+	requirements_file=""
 
 	info "Installing Ansible collection dependencies"
-	download_github_file "$repo_path" "$REPOSITORY_BRANCH" "ansible/collections/requirements.yml" "$requirements_file"
+	if repo_path="$(resolve_github_repository_path "$REPOSITORY_URL")"; then
+		requirements_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-requirements-XXXXXX.yml")"
+		download_github_file "$repo_path" "$REPOSITORY_BRANCH" "ansible/collections/requirements.yml" "$requirements_file"
+		ansible-galaxy collection install -r "$requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null
+		rm -f "$requirements_file"
+		return
+	fi
+
+	repository_root="$(resolve_local_repository_path "$REPOSITORY_URL")" ||
+		fail "REPOSITORY_URL must point to a GitHub repository or local checkout"
+	requirements_file="$repository_root/ansible/collections/requirements.yml"
+	[ -f "$requirements_file" ] || fail "Collection requirements were not found in $repository_root"
 	ansible-galaxy collection install -r "$requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null
-	rm -f "$requirements_file"
 }
 
 prepare_private_override_file() {
@@ -374,6 +443,30 @@ prompt_for_bitwarden_credentials_if_needed() {
 	return
 }
 
+reprompt_for_bitwarden_credentials() {
+	failure_marker="$1"
+
+	has_interactive_terminal || return 1
+
+	case "$failure_marker" in
+	"$BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER")
+		info "Bitwarden rejected the supplied email or password; prompting again"
+		PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value "BITWARDEN_EMAIL" "Bitwarden email: " 0)"
+		BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
+		BITWARDEN_CLIENT_ID_VALUE=""
+		BITWARDEN_CLIENT_SECRET_VALUE=""
+		return
+		;;
+	"$BITWARDEN_PASSWORD_REJECTED_MARKER")
+		info "Bitwarden rejected the supplied vault password; prompting again"
+		BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
+		return
+		;;
+	esac
+
+	return 1
+}
+
 prompt_for_backup_output_dir_if_needed() {
 	if [ -n "$BACKUP_OUTPUT_DIR" ]; then
 		return
@@ -393,15 +486,18 @@ prepare_action_dependencies() {
 	require_sudo
 	install_ansible_packages
 	install_git
+	initialize_repository_source
 	prepare_private_override_file "$command_name"
-	install_remote_collection_requirements
+	install_collection_requirements
 }
 
 run_ansible_pull() {
 	playbook_path="$1"
 	dry_run="$2"
 	shift 2
+	initialize_repository_source
 	initialize_target_context
+	local_repository_root="$(resolve_local_repository_path "$REPOSITORY_URL" 2>/dev/null || true)"
 	authenticated_repository_url="$(resolve_authenticated_repository_url "$REPOSITORY_URL")"
 
 	# Share credentials through the environment, including across sudo.
@@ -428,11 +524,44 @@ run_ansible_pull() {
 		"WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
 
 	# ansible-pull relays playbook output; flush prompts before waiting for input.
-	set -- \
-		sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
-		PYTHONUNBUFFERED=1 \
-		ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
-		"$@"
+	if [ "${WORKSTATION_MANAGER_SKIP_SUDO:-0}" = "1" ]; then
+		set -- \
+			env \
+			PYTHONUNBUFFERED=1 \
+			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
+			"$@"
+	else
+		set -- \
+			sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
+			PYTHONUNBUFFERED=1 \
+			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
+			"$@"
+	fi
+
+	if [ -n "$local_repository_root" ]; then
+		set -- "$@" \
+			ansible-playbook \
+			-i "localhost," \
+			-c local \
+			"$local_repository_root/$playbook_path"
+
+		if [ "$dry_run" = "1" ]; then
+			set -- "$@" --check --diff
+		fi
+
+		if has_interactive_terminal; then
+			(
+				cd "$local_repository_root"
+				"$@" </dev/tty
+			)
+		else
+			(
+				cd "$local_repository_root"
+				"$@"
+			)
+		fi
+		return
+	fi
 
 	if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
 		# ansible-pull cannot supply the refspec needed for commits outside branches/tags,
@@ -468,6 +597,181 @@ run_ansible_pull() {
 	fi
 }
 
+resolve_entrypoint_source() {
+	if [ -n "${WORKSTATION_MANAGER_ENTRYPOINT_SOURCE:-}" ] && [ -f "$WORKSTATION_MANAGER_ENTRYPOINT_SOURCE" ]; then
+		printf '%s\n' "$WORKSTATION_MANAGER_ENTRYPOINT_SOURCE"
+		return 0
+	fi
+
+	if [ -f "$0" ]; then
+		printf '%s\n' "$0"
+		return 0
+	fi
+
+	resolved_path="$(command -v "$0" 2>/dev/null || true)"
+	if [ -n "$resolved_path" ] && [ -f "$resolved_path" ]; then
+		printf '%s\n' "$resolved_path"
+		return 0
+	fi
+
+	return 1
+}
+
+copy_entrypoint_definitions() {
+	entrypoint_source="$1"
+	definitions_file="$2"
+	last_line="$(tail -n 1 "$entrypoint_source" 2>/dev/null || true)"
+
+	if [ "$last_line" = 'main "$@"' ]; then
+		sed '$d' "$entrypoint_source" >"$definitions_file"
+		return
+	fi
+
+	cp "$entrypoint_source" "$definitions_file"
+}
+
+run_ansible_pull_captured_with_fifo() {
+	playbook_path="$1"
+	dry_run="$2"
+	output_file="$3"
+	shift 3
+
+	output_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-ansible-XXXXXX")"
+	output_pipe="$output_dir/output.pipe"
+	mkfifo "$output_pipe" || fail "Failed to create a relay for Ansible output"
+	tee "$output_file" <"$output_pipe" &
+	tee_pid="$!"
+
+	if run_ansible_pull "$playbook_path" "$dry_run" "$@" >"$output_pipe" 2>&1; then
+		exit_code=0
+	else
+		exit_code="$?"
+	fi
+	wait "$tee_pid"
+	rm -rf "$output_dir"
+	return "$exit_code"
+}
+
+run_ansible_pull_captured_with_script() {
+	playbook_path="$1"
+	dry_run="$2"
+	output_file="$3"
+	shift 3
+
+	entrypoint_source="$(resolve_entrypoint_source)" || return 1
+	runner_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-script-XXXXXX")"
+	definitions_file="$runner_dir/entrypoint-definitions.sh"
+	runner_script="$runner_dir/run-ansible-pull.sh"
+	runner_command=""
+	tmp_output_dir=""
+	tmp_output_file=""
+
+	copy_entrypoint_definitions "$entrypoint_source" "$definitions_file" || {
+		rm -rf "$runner_dir"
+		return 1
+	}
+
+	{
+		printf '. %s\n' "$(shell_quote "$definitions_file")"
+		printf 'WORKSTATION_MANAGER_SKIP_SUDO=1\n'
+		printf 'PROMPTED_BITWARDEN_EMAIL=%s\n' "$(shell_quote "$PROMPTED_BITWARDEN_EMAIL")"
+		printf 'BITWARDEN_CLIENT_ID_VALUE=%s\n' "$(shell_quote "$BITWARDEN_CLIENT_ID_VALUE")"
+		printf 'BITWARDEN_CLIENT_SECRET_VALUE=%s\n' "$(shell_quote "$BITWARDEN_CLIENT_SECRET_VALUE")"
+		printf 'BITWARDEN_PASSWORD_VALUE=%s\n' "$(shell_quote "$BITWARDEN_PASSWORD_VALUE")"
+		printf 'TARGET_USER=%s\n' "$(shell_quote "$TARGET_USER")"
+		printf 'TARGET_USER_HOME=%s\n' "$(shell_quote "$TARGET_USER_HOME")"
+		printf 'COLLECTIONS_INSTALL_DIR=%s\n' "$(shell_quote "$COLLECTIONS_INSTALL_DIR")"
+		printf 'PRIVATE_OVERRIDE_LOCAL_FILE=%s\n' "$(shell_quote "$PRIVATE_OVERRIDE_LOCAL_FILE")"
+		printf 'GITHUB_TOKEN_VALUE=%s\n' "$(shell_quote "$GITHUB_TOKEN_VALUE")"
+		printf 'REPOSITORY_URL=%s\n' "$(shell_quote "$REPOSITORY_URL")"
+		printf 'REPOSITORY_BRANCH=%s\n' "$(shell_quote "$REPOSITORY_BRANCH")"
+		printf 'ANSIBLE_CHECKOUT_DIR=%s\n' "$(shell_quote "$ANSIBLE_CHECKOUT_DIR")"
+		printf 'set --'
+		for extra_arg in "$@"; do
+			printf ' %s' "$(shell_quote "$extra_arg")"
+		done
+		printf '\n'
+		printf 'run_ansible_pull %s %s "$@"\n' \
+			"$(shell_quote "$playbook_path")" \
+			"$(shell_quote "$dry_run")"
+	} >"$runner_script"
+	chmod 700 "$runner_script"
+	runner_command="/bin/sh $(shell_quote "$runner_script")"
+	tmp_output_dir="$(sudo mktemp -d "${TMPDIR:-/tmp}/workstation-manager-script-output-XXXXXX")" || {
+		rm -rf "$runner_dir"
+		return 1
+	}
+	tmp_output_file="$tmp_output_dir/typescript"
+
+	if sudo \
+		--preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD \
+		env \
+		DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
+		XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
+		DISPLAY="${DISPLAY:-}" \
+		WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+		GPG_TTY="${GPG_TTY:-}" \
+		SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-}" \
+		script --quiet --return --command "$runner_command" "$tmp_output_file"; then
+		exit_code=0
+	else
+		exit_code="$?"
+	fi
+	sudo cat "$tmp_output_file" >"$output_file" 2>/dev/null || :
+	sudo rm -rf "$tmp_output_dir" 2>/dev/null || :
+
+	rm -rf "$runner_dir"
+	return "$exit_code"
+}
+
+run_ansible_pull_with_bitwarden_retry() {
+	playbook_path="$1"
+	dry_run="$2"
+	shift 2
+
+	if ! has_interactive_terminal; then
+		run_ansible_pull "$playbook_path" "$dry_run" "$@"
+		return
+	fi
+
+	while :; do
+		output_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-ansible-output-XXXXXX")"
+
+		if [ "${WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE:-0}" != "1" ] && command -v script >/dev/null 2>&1; then
+			if run_ansible_pull_captured_with_script "$playbook_path" "$dry_run" "$output_file" "$@"; then
+				exit_code=0
+			else
+				exit_code="$?"
+			fi
+		else
+			if run_ansible_pull_captured_with_fifo "$playbook_path" "$dry_run" "$output_file" "$@"; then
+				exit_code=0
+			else
+				exit_code="$?"
+			fi
+		fi
+
+		if [ "$exit_code" -eq 0 ]; then
+			rm -f "$output_file"
+			return 0
+		fi
+
+		failure_marker=""
+		if grep -Fq "$BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER" "$output_file"; then
+			failure_marker="$BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER"
+		elif grep -Fq "$BITWARDEN_PASSWORD_REJECTED_MARKER" "$output_file"; then
+			failure_marker="$BITWARDEN_PASSWORD_REJECTED_MARKER"
+		fi
+		rm -f "$output_file"
+
+		if [ -n "$failure_marker" ] && reprompt_for_bitwarden_credentials "$failure_marker"; then
+			continue
+		fi
+
+		return "$exit_code"
+	done
+}
+
 run_setup() {
 	dry_run="$1"
 	prepare_action_dependencies setup
@@ -481,7 +785,7 @@ run_setup() {
 			WORKSTATION_MANAGER_RESTORE_ARCHIVE="$RESTORE_ARCHIVE_PATH"
 	fi
 
-	run_ansible_pull ansible/setup.yml "$dry_run" "$@"
+	run_ansible_pull_with_bitwarden_retry ansible/setup.yml "$dry_run" "$@"
 }
 
 run_backup() {
@@ -491,7 +795,7 @@ run_backup() {
 	prompt_for_bitwarden_credentials_if_needed "backup" "Backup-time key and browser recovery synchronization"
 
 	info "Running workstation backup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
-	run_ansible_pull \
+	run_ansible_pull_with_bitwarden_retry \
 		ansible/backup.yml \
 		"$dry_run" \
 		WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR="$BACKUP_OUTPUT_DIR" \
@@ -508,7 +812,7 @@ run_cleanup() {
 	prompt_for_bitwarden_credentials_if_needed "cleanup" "Browser profile drift inspection"
 
 	info "Running workstation cleanup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
-	run_ansible_pull ansible/cleanup.yml "$dry_run"
+	run_ansible_pull_with_bitwarden_retry ansible/cleanup.yml "$dry_run"
 }
 
 main() {

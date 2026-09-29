@@ -1,0 +1,30 @@
+---
+- name: Choose automatic browser synchronization
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_decision
+  vars:
+    workstation_backup_recovery_id: browser-sync
+    workstation_backup_recovery_needed: true
+    workstation_backup_recovery_request: "{{ workstation_backup_browser_live_request }}"
+
+- name: Execute the approved browser recovery action
+  ansible.builtin.include_role:
+    name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"
+    tasks_from: sync
+  when:
+    - workstation_backup_recovery_choices['browser-sync'] in ['sync', 'save', 'restore', 'retry']
+    - not workstation_backup_dry_run
+    - not ansible_check_mode
+
+- name: Report verified browser recovery
+  ansible.builtin.debug:
+    msg: All browser profiles finished Sync and their recovery codes match Bitwarden.
+  when: workstation_backup_browser_live_verified
+
+- name: Resolve remaining browser recovery issues
+  ansible.builtin.include_tasks: sync.yml
+  when:
+    - workstation_backup_recovery_choices['browser-sync'] in ['sync', 'save', 'restore', 'retry']
+    - not workstation_backup_browser_live_verified
+    - not workstation_backup_dry_run
+    - not ansible_check_mode

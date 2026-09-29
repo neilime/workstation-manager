@@ -2,17 +2,19 @@
 - name: Verify browser recovery and resolve drift before archiving
   ansible.builtin.include_tasks: verify.yml
 
-- name: Confirm live browser Sync and recovery words for all profiles
-  ansible.builtin.include_role:
-    name: neilime.workstation_backup.recovery_decision
-  vars:
-    workstation_backup_recovery_id: browser-sync
-    workstation_backup_recovery_needed: >-
-      {{ not workstation_backup_browser_has_drift and workstation_backup_browser_inspection.profiles | length > 0 }}
-    workstation_backup_recovery_request:
+- name: Prepare automatic browser recovery verification
+  ansible.builtin.set_fact:
+    workstation_backup_browser_live_verified: false
+    workstation_backup_browser_live_request:
       scope: browser-sync
       summary: "{{ workstation_backup_browser_sync_instructions }}"
       actions:
-        synced: Confirm all profiles finished syncing and their recovery notes match.
-      skip: Continue without confirming live browser Sync or recovery words.
-      abort_message: Browser Sync completion was not confirmed; no archive was created.
+        sync: Run Sync and check every recovery code against Bitwarden automatically.
+      skip: Continue backup with browser recovery unverified.
+      abort_message: Browser recovery was not verified; no archive was created.
+
+- name: Synchronize and verify browser recovery
+  ansible.builtin.include_tasks: sync.yml
+  when:
+    - not workstation_backup_browser_has_drift
+    - workstation_backup_browser_inspection.profiles | length > 0

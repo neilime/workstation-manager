@@ -2,7 +2,8 @@
 
 Setup installs Brave Stable, makes it the default browser, and recreates profiles
 from Bitwarden. Each profile uses its own Brave Sync chain for browsing data.
-Joining that chain is a manual step on each computer.
+Browser recovery during backup can connect profiles to their stored chains and
+verify synchronization automatically.
 
 ## Configure recovery
 
@@ -35,7 +36,8 @@ Create one Bitwarden secure note per profile in that collection:
 Identifiers use lowercase letters, numbers, and dashes. Keep both identifiers
 and directories unique. For an existing profile, open `brave://version` and use
 the last directory in **Profile Path**. Do not store recovery words or individual
-profile definitions in Git.
+profile definitions in Git. Brave also shows a 25th pairing word when joining a
+device; that word rotates and is not stored in Bitwarden.
 
 To add a profile, create it in Brave, start its own Sync chain, enable **Sync
 everything**, then create its secure note. Keep the note's name equal to the
@@ -48,14 +50,18 @@ and Bitwarden when renaming a profile.
    [setup](../../README.md#set-up-or-update-the-workstation). Setup creates the
    profiles and applies any stored colors and logos.
 2. Open each profile and go to `brave://settings/braveSync`.
-3. Join that profile's existing chain using its Bitwarden recovery words. Append
-   the current rotating 25th word as described in
+3. Join that profile's existing chain using its 24 stored Bitwarden recovery
+  words. Append Brave's current rotating 25th word as described in
    [Brave's Sync setup guide](https://support.brave.app/hc/en-us/articles/360021218111-How-do-I-set-up-Sync).
    Another connected computer can also display a fresh pairing code.
 4. Enable **Sync everything** and wait for synchronization. Check bookmarks,
    extensions, and important tabs before relying on the restored profile.
 5. Open `brave://sync-internals` and verify successful synchronization without
    pending changes or errors.
+
+You can also run backup after setup and choose the browser `sync` action, then
+`restore` when it reports profiles that need their stored chain. The script joins
+those chains, enables Sync everything, and verifies recovery automatically.
 
 Brave Sync uses a chain code independently of Google site accounts. Server
 data expires after 12 months without access; recovery words cannot recover data
@@ -93,39 +99,40 @@ optional value stops managing it and leaves the existing local appearance intact
 [Backup](backup-and-restore.md) compares local profiles with the collection,
 including names, directories, declared main colors, logos, and saved Sync
 configuration. Name checks use the names shown in Brave's profile picker.
-The prompt groups detected problems and names the affected profiles. Close Brave,
-then choose the source for supported metadata changes:
+The prompt names affected profiles and offers machine actions:
 
-- `restore` restores stored names, colors, and logos locally, recreates missing
-  profiles, and enables **Sync everything** for managed profiles. Other
-  preferences, browsing data, and existing Sync chains are preserved.
-- `save` updates existing Bitwarden records from local names, colors, and
-  logos. It preserves recovery words, unrelated fields, and secondary palette
-  colors. An absent or disabled managed logo is removed from its note; a local
-  default or extension theme removes the managed `theme_colors` field.
+- `restore` applies saved names, colors, and logos locally, recreates missing
+  profiles, and enables **Sync everything**.
+- `save` updates existing Bitwarden records from local names, colors, and logos.
+  It preserves recovery words, unrelated fields, and secondary palette colors.
+  Disabled logos and managed colors that no longer exist locally are removed
+  from the corresponding note.
 
-If Brave is still running or its profile remains locked, backup pauses without
-changing browser settings or Bitwarden records. Exit Brave completely, choose
-`retry`, and select `save` or `restore` again after the profiles are rechecked.
-You can also `skip` browser recovery or `abort` backup at that prompt.
+Brave closes gracefully during approved operations and reopens its previous
+saved session if it was running; private windows cannot be restored. Backup never
+forces a process to exit or removes a profile lock. If Brave cannot close, `retry` tries again; `skip` records incomplete
+browser recovery, and `abort` stops without an archive.
 
-Each direction verifies the changes it makes. The available choices depend on
-which side has usable data. Neither direction deletes profiles or vault records.
-A new local profile still needs a secure note containing its recovery words;
-create that note in Bitwarden. Pairing a restored profile, finishing Sync setup,
-and resolving a policy that blocks Sync still happen in Brave. Choose `retry`
-after those manual steps to reload both sides.
-Cleanup preserves all browser profiles.
+After profile settings match, choose `sync`. The script opens each managed
+profile, starts a fresh Sync cycle, waits for successful synchronization without
+pending changes, and compares its stable recovery code with Bitwarden. You do
+not need to inspect diagnostic pages or compare words. Codes stay private.
 
-When **Sync everything** is the only issue, choose `restore` with Brave closed
-to enable it for the listed managed profiles. Backup verifies the saved setting.
-`save` is not offered for this issue because full Sync is required for recovery.
-Reopen Brave afterward and wait for synchronization before the live confirmation.
+If recovery codes differ, choose `save` to store the current Brave code in its
+existing note, or `restore` to connect the affected profile to its stored chain.
+Restoring a chain enables **Sync everything** and can merge local browsing data
+with that chain. Both actions verify synchronization and matching codes afterward.
+Neither direction deletes profiles or vault records.
 
-After these checks, backup asks you to confirm that every profile has completed
-live Sync and its first 24 recovery words match its Bitwarden note. Verify this
-in Brave before answering `synced`; the tool cannot prove a server upload or
-compare the words automatically. Noninteractive backups with browser profiles
-stop at this requirement. In an interactive backup, `skip` leaves browser recovery
-unverified and records incomplete coverage; see [backup skips](backup-and-restore.md#create-a-backup).
-A dry run reports checks without certifying recovery.
+If Sync remains pending or the server is unavailable, choose `sync` to try again,
+`skip` to continue with browser recovery unverified, or `abort`. A failed operation
+or failed verification after saving or restoring stops backup. Unsupported native
+browser interfaces also stop verification rather than accepting a manual assertion.
+See [backup skips](backup-and-restore.md#create-a-backup) for incomplete coverage.
+
+Automatic verification requires Brave and access to the managed user's desktop
+session and unlocked system keyring. A new local profile still needs a secure note
+in the configured collection before its recovery can be managed. Policies that
+block Sync must be resolved by the administrator. Noninteractive runs require
+explicit recovery decisions and do not start browser automation. Dry runs inspect
+saved settings without launching Brave or certifying live recovery.

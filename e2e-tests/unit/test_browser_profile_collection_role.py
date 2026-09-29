@@ -59,6 +59,8 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "elif command == ['status']:\n"
             "    print(json.dumps({'status': 'locked', 'serverUrl': 'https://vault.example.invalid'}))\n"
             "elif command[0] == 'unlock':\n"
+            "    if (root / 'unlock-rejected').exists():\n"
+            "        sys.exit(1)\n"
             "    print('fixture-session')\n"
             "elif command == ['sync']:\n"
             "    pass\n"
@@ -196,6 +198,15 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
         (self.fixture / "attachment-unavailable").touch()
         result = self.run_loader(cleanup=False)
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.fixture / "result.json").exists())
+
+    def test_unlock_rejection_surfaces_a_retryable_marker(self) -> None:
+        """A rejected vault password must fail without exposing secrets and leave a retry marker."""
+
+        (self.fixture / "unlock-rejected").touch()
+        result = self.run_loader(cleanup=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("WORKSTATION_MANAGER_BITWARDEN_PASSWORD_REJECTED", result.stdout)
         self.assertFalse((self.fixture / "result.json").exists())
 
 

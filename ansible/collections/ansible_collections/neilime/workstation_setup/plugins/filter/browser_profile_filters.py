@@ -21,5 +21,7 @@ class FilterModule:
         return {
             "browser_profile_directory": _planner.build_profile_directory,
             "browser_recovery_report": browser_profile_reporting.browser_recovery_report,
+            "browser_recovery_inspection": browser_profile_reporting.browser_recovery_inspection,
+            "browser_sync_report": browser_profile_reporting.browser_sync_report,
             "browser_sync_directions": browser_profile_sync.browser_sync_directions,
         }

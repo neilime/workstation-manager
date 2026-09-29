@@ -7,22 +7,20 @@
     profiles: "{{ workstation_manager_browser_profiles }}"
   register: browser_brave_backup_inspection
 
-- name: Publish Brave recovery inspection and live Sync instructions
+- name: Publish Brave recovery inspection
   ansible.builtin.set_fact:
     workstation_backup_browser_inspection: >-
       {{ {'profiles': browser_brave_backup_inspection.profiles,
           'drift': browser_brave_backup_inspection.drift,
-          'sync_issues': browser_brave_backup_inspection.sync_issues} }}
-    workstation_backup_browser_sync_instructions: |-
-      For each profile:
-      1. Open brave://sync-internals. Check for recent successful Sync with no pending changes or errors.
-      2. Compare the first 24 recovery words with its Bitwarden note. Exclude the rotating 25th word.
-      Keep recovery words out of this terminal.
+          'sync_issues': browser_brave_backup_inspection.sync_issues}
+         | neilime.workstation_setup.browser_recovery_inspection }}
 
 - name: Summarize Brave recovery issues and next steps
   ansible.builtin.set_fact:
     workstation_backup_browser_recovery_report: >-
       {{ workstation_backup_browser_inspection | neilime.workstation_setup.browser_recovery_report }}
+    workstation_backup_browser_sync_instructions: >-
+      {{ workstation_backup_browser_inspection | neilime.workstation_setup.browser_sync_report }}
 
 - name: Publish available Brave synchronization directions
   ansible.builtin.set_fact:

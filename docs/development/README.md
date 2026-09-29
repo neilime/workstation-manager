@@ -84,6 +84,12 @@ Use `make tool-shell` for an interactive tooling container. `make lint-fix`
 rewrites files; `make ci` runs it before syntax and test checks. Review its diff.
 Documentation-only changes need applicable lint and local link checks.
 
+Running `./workstation.sh` from a local checkout defaults to that checkout and
+its current branch or detached commit. Direct local runs execute Ansible from
+the local working tree, including uncommitted changes. The piped `curl ... | sh`
+bootstrap still uses the published GitHub repository unless you override
+`REPOSITORY_URL`.
+
 ## Dependency updates
 
 The [Renovate workflow](../../.github/workflows/renovate.yml) runs every Friday
