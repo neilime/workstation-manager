@@ -30,9 +30,9 @@ Backup checks recovery sources before creating the archive:
 
 | Check                 | Required action when out of sync                                                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Chezmoi managed files | Choose `from-local` to capture workstation files, or `from-remote` to apply source state locally.                                                      |
+| Chezmoi managed files | Choose `save` to capture workstation files, or `restore` to apply source state locally.                                                                |
 | Chezmoi Git checkout  | Choose how to reconcile local and remote source changes, then approve `publish` separately if keeping local changes.                                   |
-| Local SSH/GPG keys    | Choose `from-local` to save a key in Bitwarden, or `from-remote` to restore it locally. Each result is verified.                                       |
+| Local SSH/GPG keys    | Choose `save` to update Bitwarden, or `restore` to use its saved key on this computer. Each result is verified.                                        |
 | Browser profiles      | Choose a direction for names, colors and logos; use `retry` after manual pairing or record creation. See [browser recovery](browser.md).               |
 | Browser Sync          | Check every profile has finished syncing and its recovery words match its Bitwarden note; then choose `synced`. Never paste the words into the prompt. |
 
@@ -53,8 +53,8 @@ profile in another terminal while backup is waiting for your decisions.
 
 Recovery prompts use the same direction names, chosen separately at each step:
 
-- `from-local` uses this computer as the source and updates its recovery record.
-- `from-remote` uses the recovery source and replaces the corresponding local values.
+- `save` keeps this computer's version in recovery storage.
+- `restore` replaces this computer's version with the stored version.
 
 Only directions with usable source data are offered. A key present on just one
 side offers copying from that side; neither direction deletes unrelated keys or
@@ -95,7 +95,7 @@ You can explicitly skip its reconciliation; the archive then records incomplete 
 When its branch has incoming changes, local edits, or unpushed commits, backup
 shows the ahead/behind counts and source file status before asking what to do:
 
-- `from-local` preserves local source changes. When the branch is behind or
+- `save` preserves local source changes. When the branch is behind or
   diverged, it commits all
   uncommitted source changes, then fast-forwards or merges the
   upstream branch while preserving local commits. It does not push. A conflict
@@ -104,7 +104,7 @@ shows the ahead/behind counts and source file status before asking what to do:
   made to save local edits remains available after aborting the merge.
   When there are no incoming commits, it keeps local changes for the separate
   publication approval.
-- `from-remote` offers to replace the source checkout with its fetched tracking
+- `restore` offers to replace the source checkout with its fetched tracking
   branch. Type `discard` at the confirmation prompt to discard staged and unstaged
   source edits, delete non-ignored untracked source files, and remove local-only
   commits from the current branch. No commit or stash is created to save the
@@ -118,14 +118,14 @@ shows the ahead/behind counts and source file status before asking what to do:
 - `abort` stops backup without changing source files or publishing anything.
 
 After Git reconciliation, backup checks managed workstation files against the
-updated source and offers `from-local`, `from-remote`, `skip`, or `abort` if they differ. Remaining
+updated source and offers `save`, `restore`, `skip`, or `abort` if they differ. Remaining
 local Git changes require a separate `publish` approval or an explicit `skip`
 before backup can continue. A remote update during these checks stops backup so you can review it
 on the next run.
 
-To discard local changes in both places, choose **`from-remote`, confirm `discard`,
-then choose `from-remote`** when prompted about managed workstation files. Choosing
-`from-local` would capture the workstation's current contents back into the source.
+To discard local changes in both places, choose **`restore`, confirm `discard`,
+then choose `restore`** when prompted about managed workstation files. Choosing
+`save` would capture the workstation's current contents back into the source.
 Files no longer managed by the remote source are not automatically deleted from
 your home.
 

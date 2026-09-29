@@ -28,8 +28,8 @@ Add the role under
   text report grouping detected issues by action, with affected profile names and
   directories. Keep vendor-specific instructions in the adapter. Publish
   `workstation_backup_browser_sync_instructions` for the later live verification.
-- `tasks/reconcile.yml`: apply the explicitly selected `from-local` or
-  `from-remote` choice in `workstation_backup_recovery_choices['browser-recovery']`,
+- `tasks/reconcile.yml`: apply the explicitly selected `save` or
+  `restore` choice in `workstation_backup_recovery_choices['browser-recovery']`,
   guard previews, and verify the changed metadata. Publish supported direction
   descriptions in `workstation_backup_browser_sync_actions` during inspection.
   Leave chain pairing and new recovery-note creation manual.
@@ -81,8 +81,8 @@ The [Brave role](../../ansible/collections/ansible_collections/neilime/workstati
 uses `~/.config/BraveSoftware/Brave-Browser` under the resolved user's home. Its
 managed policy permits Sync; it cannot enroll profiles. Seeding creates missing
 profiles and applies declared colors and avatars while preserving existing
-names and other preferences. Explicit `from-remote` reconciliation also replaces
-profile names; `from-local` updates existing vault metadata and avatars without
+names and other preferences. Explicit `restore` reconciliation also replaces
+profile names; `save` updates existing vault metadata and avatars without
 changing recovery words. Both directions require Brave to be closed.
 
 Backup checks local inventory and Sync settings, including **Sync everything**.

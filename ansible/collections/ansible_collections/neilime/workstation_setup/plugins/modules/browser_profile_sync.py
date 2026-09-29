@@ -21,10 +21,10 @@ author:
   - workstation-manager contributors (@neilime)
 options:
   direction:
-    description: Source of the approved metadata values.
+    description: Save local metadata to Bitwarden or restore stored metadata locally.
     type: str
     required: true
-    choices: [from-local, from-remote]
+    choices: [save, restore]
   collection_id:
     description: Configured recovery collection which must still contain the approved records.
     type: str
@@ -44,7 +44,7 @@ EXAMPLES = r"""
   neilime.workstation_setup.browser_profile_sync:
     user_data_dir: /home/user/.config/BraveSoftware/Brave-Browser
     profiles: "{{ workstation_manager_browser_profiles }}"
-    direction: from-remote
+    direction: restore
     session: "{{ bitwarden_collection_session }}"
     collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
   no_log: true
@@ -68,7 +68,7 @@ def main() -> None:
     arguments = browser_profile_arguments.browser_profile_argument_spec()
     arguments.update(
         {
-            "direction": {"type": "str", "required": True, "choices": ["from-local", "from-remote"]},
+            "direction": {"type": "str", "required": True, "choices": ["save", "restore"]},
             "collection_id": {"type": "str", "required": True},
             "session": {"type": "str", "required": True, "no_log": True},
         }

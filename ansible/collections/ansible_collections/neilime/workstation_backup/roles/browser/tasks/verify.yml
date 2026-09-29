@@ -38,8 +38,8 @@
   ansible.builtin.include_role:
     name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"
     tasks_from: reconcile
-  when: workstation_backup_recovery_choices['browser-recovery'] in ['from-local', 'from-remote']
+  when: workstation_backup_recovery_choices['browser-recovery'] in ['save', 'restore']
 
 - name: Recheck browser recovery after the user resolves drift
   ansible.builtin.include_tasks: verify.yml
-  when: workstation_backup_recovery_choices['browser-recovery'] in ['from-local', 'from-remote', 'retry']
+  when: workstation_backup_recovery_choices['browser-recovery'] in ['save', 'restore', 'retry']

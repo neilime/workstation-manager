@@ -96,10 +96,10 @@ configuration. Name checks use the names shown in Brave's profile picker.
 The prompt groups detected problems and names the affected profiles. Close Brave,
 then choose the source for supported metadata changes:
 
-- `from-remote` restores stored names, colors, and logos locally and recreates
+- `restore` restores stored names, colors, and logos locally and recreates
   missing profiles. Other preferences, browsing data, and existing Sync chains
   are preserved.
-- `from-local` updates existing Bitwarden records from local names, colors, and
+- `save` updates existing Bitwarden records from local names, colors, and
   logos. It preserves recovery words, unrelated fields, and secondary palette
   colors. An absent or disabled managed logo is removed from its note; a local
   default or extension theme removes the managed `theme_colors` field.
