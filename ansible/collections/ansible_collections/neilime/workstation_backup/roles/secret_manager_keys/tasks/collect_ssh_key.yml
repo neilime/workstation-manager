@@ -9,8 +9,15 @@
     that:
       - workstation_backup_secret_manager_public_key_stat.stat.isreg | default(false)
     fail_msg: >-
+      {% if item.path.endswith('.pub') %}
+      {{ item.path }} contains SSH private-key material despite its .pub filename.
+      Check the local key filenames and the Bitwarden private_key/public_key fields.
+      Preserve existing key files before correcting the pair: the private key belongs
+      in the key file and its matching public key in the same filename with .pub appended.
+      {% else %}
       Cannot synchronize SSH private key {{ item.path }} without its public key
       {{ item.path }}.pub. Restore or generate the matching public key before backup.
+      {% endif %}
   no_log: false
 
 - name: Read the SSH private key content
