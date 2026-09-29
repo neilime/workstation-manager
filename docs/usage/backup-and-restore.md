@@ -28,13 +28,11 @@ Non-interactive runs must allow sudo to launch Ansible without prompting.
 
 Backup checks recovery sources before creating the archive:
 
-| Check                 | Required action when out of sync                                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Chezmoi managed files | Choose `save` to capture workstation files, or `restore` to apply source state locally.                                                                |
-| Chezmoi Git checkout  | Choose how to reconcile local and remote source changes, then approve `publish` separately if keeping local changes.                                   |
-| Local SSH/GPG keys    | Choose `save` to update Bitwarden, or `restore` to use its saved key on this computer. Each result is verified.                                        |
-| Browser profiles      | Choose a direction for names, colors and logos; use `retry` after manual pairing or record creation. See [browser recovery](browser.md).               |
-| Browser Sync          | Check every profile has finished syncing and its recovery words match its Bitwarden note; then choose `synced`. Never paste the words into the prompt. |
+- Chezmoi managed files: Choose `save` to capture workstation files, or `restore` to apply source state locally.
+- Chezmoi Git checkout: Choose how to reconcile local and remote source changes, then approve `publish` separately if keeping local changes.
+- Local SSH/GPG keys: Choose `save` to update Bitwarden, or `restore` to use its saved key on this computer. Each result is verified.
+- Browser profiles: Choose a direction for names, colors and logos; use `retry` after manual pairing or record creation. See [browser recovery](browser.md).
+- Browser Sync: Check every profile has finished syncing and its stable 24 recovery words match its Bitwarden note. Brave supplies the current rotating 25th pairing word when joining. Never paste the words into the prompt.
 
 SSH keys are identified by their contents. If backup reports private-key material
 in a `.pub` file, check the local filenames and the Bitwarden `private_key` and
@@ -64,15 +62,16 @@ material, and stops if local-only packets prevent a match. An omitted ownertrust
 entry restores undefined trust. Unlock protected GPG keys before restoration.
 
 Backup verifies each applied change. When Sync everything is disabled, `restore`
-turns it on with Brave closed; pairing and live browser Sync remain manual checks.
+turns it on automatically. Browser `sync` runs synchronization and verifies recovery
+codes against Bitwarden; code mismatches offer `save` or `restore`.
 Each prompt also offers `skip` and `abort`; an earlier approval never selects a later action.
 `skip` leaves that recovery source unchanged at this step and continues the other
 backup work:
 
 - In a Chezmoi prompt, `skip` skips all remaining Chezmoi checks for this run.
 - In an SSH/GPG prompt, `skip` skips only the current key; other keys still prompt.
-- In browser drift, `skip` skips browser recovery and the live Sync confirmation.
-  At the live Sync prompt, it skips that confirmation alone.
+- In browser drift, `skip` skips browser recovery and automatic live Sync verification.
+  At the live Sync prompt, it skips live verification alone.
 
 Skipping does not undo actions you already approved. It does not add dotfiles,
 keys, or browser data to the archive automatically. Unsynchronized local changes

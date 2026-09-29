@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 
 import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_reporting import (
+    browser_recovery_inspection,
     browser_recovery_report,
+    browser_sync_report,
 )
 
 
@@ -39,7 +42,7 @@ def test_repeated_sync_and_missing_logos_become_two_action_groups() -> None:
     assert report.count("Enable Sync everything.") == 1
     assert report.count("Restore missing profile logos.") == 1
     assert "Select the stored profile logos." not in report
-    assert "choose restore" in report
+    assert "restore" in report
     assert "brave://settings/braveSync" not in report
     assert "After changing Sync settings" not in report
     sync, avatars = report.split("2. Restore missing profile logos.")
@@ -88,7 +91,7 @@ def test_repeated_sync_and_missing_logos_become_two_action_groups() -> None:
         ),
         ({"kind": "avatar", "issues": ["avatar_disabled"]}, "Select the stored profile logos.", "restore"),
         ({"kind": "unregistered"}, "Register profiles in Brave's profile picker.", "register these existing profiles"),
-        ({"kind": "missing_preferences"}, "Restore missing profile settings.", "save their settings"),
+        ({"kind": "missing_preferences"}, "Restore missing profile settings.", "recreate saved profile settings"),
     ],
 )
 def test_profile_drift_has_specific_next_steps(record: dict, advice: str, detail: str) -> None:
@@ -106,10 +109,7 @@ def test_profile_drift_has_specific_next_steps(record: dict, advice: str, detail
 @pytest.mark.parametrize(
     "issue,advice",
     [
-        ("missing_sync_seed", "Connect profiles to their Sync chains."),
-        ("sync_not_requested", "Turn Sync on."),
         ("sync_everything_not_enabled", "Enable Sync everything."),
-        ("sync_setup_incomplete", "Finish Sync setup."),
         ("sync_disabled_by_policy", "Resolve the policy blocking Sync."),
     ],
 )
@@ -122,7 +122,7 @@ def test_sync_diagnostics_have_specific_next_steps(issue: str, advice: str) -> N
     assert advice in report
     assert "Personal (Default)" in report
     if issue == "sync_everything_not_enabled":
-        assert "Close Brave and choose restore" in report
+        assert "Choose restore" in report
         assert "close Brave to save them" not in report
     else:
         assert "close Brave to save them" in report
@@ -144,7 +144,8 @@ def test_clean_inspection_does_not_claim_live_sync_is_verified(with_profile: boo
     )
 
 
-def test_report_ignores_sensitive_fields_and_preserves_its_input() -> None:
+@pytest.mark.parametrize("reporter", [browser_recovery_report, browser_sync_report])
+def test_report_ignores_sensitive_fields_and_preserves_its_input(reporter: Callable[[dict], str]) -> None:
     """Only allowlisted metadata reaches the report, with terminal controls removed."""
 
     inspection = _inspection()
@@ -155,7 +156,7 @@ def test_report_ignores_sensitive_fields_and_preserves_its_input() -> None:
         {"kind": "avatar", "directory": "Default", "issues": ["avatar_disabled"], "notes": "private-drift"}
     ]
     original = copy.deepcopy(inspection)
-    report = browser_recovery_report(inspection)
+    report = reporter(inspection)
     assert "Personal  [0m (Default)" in report
     assert "\x1b" not in report
     assert "private-" not in report
@@ -193,3 +194,46 @@ def test_undeclared_profiles_keep_manual_sync_instructions() -> None:
     report = browser_recovery_report(inspection)
     assert "brave://settings/braveSync" in report
     assert "choose restore" not in report
+
+
+def test_automatic_sync_lists_each_profile_with_readable_wrapping() -> None:
+    """The machine action names every inspected profile even when labels are long or duplicated."""
+
+    inspection = _inspection()
+    inspection["profiles"] = [
+        {"directory": "Default", "label": "Personal", "id": "personal"},
+        {"directory": "Profile 2", "label": "Personal", "id": "work"},
+        {"directory": "Profile 6", "label": "Long label " * 12, "id": "long"},
+    ]
+    report = browser_sync_report(inspection)
+    assert "  - Personal (Default)" in report
+    assert "  - Personal (Profile 2)" in report
+    assert "(Profile 6)" in report
+    assert len([line for line in report.splitlines() if line.startswith("  - ")]) == 3
+    assert all(len(line) <= 88 for line in report.splitlines())
+    assert browser_sync_report({"profiles": []}) == "No browser profiles to check."
+
+
+def test_live_sync_prompt_offers_machine_work_without_manual_checks() -> None:
+    """Users select an operation; they do not act as the Sync verification mechanism."""
+
+    report = browser_sync_report(_inspection())
+    assert "automatically" in report
+    assert "close safely" in report
+    assert "reopen" in report
+    assert "brave://" not in report
+    assert "manual" not in report
+    assert "first 24" not in report
+
+
+def test_chain_enrollment_is_deferred_to_native_actions_without_manual_instructions() -> None:
+    """Missing pairing never sends users back to a manual page-by-page recovery flow."""
+
+    inspection = _inspection()
+    inspection["sync_issues"] = [
+        {"directory": "Default", "issues": ["missing_sync_seed", "sync_not_requested", "sync_setup_incomplete"]}
+    ]
+    assert browser_recovery_inspection(inspection)["sync_issues"] == []
+    assert "Live Sync is not verified" in browser_recovery_report(inspection)
+    inspection["sync_issues"][0]["issues"].append("sync_disabled_by_policy")
+    assert browser_recovery_inspection(inspection)["sync_issues"][0]["issues"] == ["sync_disabled_by_policy"]

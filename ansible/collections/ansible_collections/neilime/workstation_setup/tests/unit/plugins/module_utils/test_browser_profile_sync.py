@@ -272,7 +272,9 @@ def test_sync_only_restore_is_explicit_verified_and_idempotent(sync_only: tuple)
     before = path.read_bytes()
     inspection = sync.inspect_browser_profiles(str(root), profiles)
     assert inspection["drift"] == []
-    assert sync.browser_sync_directions(inspection) == {"restore": "Close Brave, then enable Sync everything."}
+    assert sync.browser_sync_directions(inspection) == {
+        "restore": "Enable Sync everything. Brave closes and reopens automatically."
+    }
     assert sync.sync_browser_profiles(str(root), profiles, "restore", vault, check_mode=True)
     assert path.read_bytes() == before
     assert not sync.sync_browser_profiles(str(root), profiles, "save", vault)

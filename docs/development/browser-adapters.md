@@ -24,19 +24,27 @@ Add the role under
   Publish `workstation_manager_browser_desktop_file`.
 - `tasks/backup.yml`: inspect profiles without mutation. Publish
   `workstation_backup_browser_inspection` with `profiles`, `drift`, and
-  `sync_issues`. Publish `workstation_backup_browser_recovery_report` as a short
+  `sync_issues` for metadata and policy checks. The live entrypoint owns chain
+  enrollment diagnostics. Publish `workstation_backup_browser_recovery_report` as a short
   text report grouping detected issues by action, with affected profile names and
   directories. Keep vendor-specific instructions in the adapter. Publish
-  `workstation_backup_browser_sync_instructions` for the later live verification.
+  `workstation_backup_browser_sync_instructions` for the later live verification,
+  naming the inspected profiles and explaining the automatic operation.
 - `tasks/reconcile.yml`: apply the explicitly selected `save` or
   `restore` choice in `workstation_backup_recovery_choices['browser-recovery']`,
   guard previews, and verify the changed metadata. Publish supported direction
   descriptions in `workstation_backup_browser_sync_actions` during inspection.
-  Leave chain pairing and new recovery-note creation manual. A closed-browser
+  New recovery-note creation requires a declared profile record. A closed-browser
   precondition detected before any mutation can use the shared recovery decision
   role for retry/skip/abort under `browser-recovery`. Retry returns to inspection
   and a fresh direction choice; never reuse an earlier approval. Actual operation
   and verification failures must still fail.
+- `tasks/sync.yml`: execute the explicit `sync`, `save`, or `restore` action in
+  `workstation_backup_recovery_choices['browser-sync']`. Publish
+  `workstation_backup_browser_live_verified` only after fresh native Sync and
+  matching recovery codes are verified. Publish a sanitized shared decision
+  request in `workstation_backup_browser_live_request` for remaining problems.
+  Never use a user's assertion as verification or launch the browser in previews.
 - `tasks/inspect_profiles.yml`: report undeclared profile paths in
   `workstation_manager_cleanup_unmanaged_browser_profile_directories`, or `[]`.
   Never delete profiles.
@@ -44,7 +52,7 @@ Add the role under
 Setup invokes `main.yml` after archive restoration and before GNOME preferences
 and editor sign-in. The special `browser` favorite resolves to the published
 desktop entry. Backup uses the shared recovery decision role for
-direction choices, retry/skip/abort, and live Sync confirmation. It reloads and
+direction choices, retry/skip/abort, and automatic live Sync verification. It reloads and
 inspects profiles after an approved action or retry. Cleanup invokes only the inspection entrypoint.
 
 Use `workstation_manager_resolved.user` for the target account and
@@ -75,7 +83,10 @@ See the [user record schema](../usage/browser.md#configure-recovery).
 | `avatar_png`           | Optional base64 PNG, loaded into memory             |
 
 Recovery words are validated as present but are not exposed in this inventory.
-Their correspondence with the active Sync chain requires user verification.
+The canonical vault record stores only the stable first 24 words. If a copied
+25-word pairing code is present, the native adapter ignores the rotating 25th
+word and compares only the stable recovery code privately against the active
+Sync chain.
 Mark image module arguments and tasks handling full records `no_log`. Reports
 must contain only selected metadata and drift details, never notes or image data.
 
@@ -87,22 +98,33 @@ managed policy permits Sync; it cannot enroll profiles. Seeding creates missing
 profiles and applies declared colors and avatars while preserving existing
 names and other preferences. Explicit `restore` reconciliation also replaces
 profile names and enables Sync everything for managed profiles; `save` updates
-existing vault metadata and avatars without changing recovery words. Both
-directions require Brave to be closed. Restoring the selection flag never changes
-the seed, Sync request, setup completion, or policy flags. A running process and
-an existing profile lock produce distinct retry instructions before synchronization;
-late guards during an operation still fail. No process is stopped or lock removed
-by backup.
+existing vault metadata and avatars without changing recovery words. Approved
+operations close the managed user's matching Brave instance with a graceful
+exit request, preserve session tabs, and reopen it afterward if it was running.
+Locks are never removed and processes are never force-killed. Setup preserves
+existing Sync choices.
 
-Backup checks local inventory and Sync settings, including **Sync everything**.
-An absent `sync.keep_everything_synced` uses the enabled default registered in
-[Chromium](https://github.com/chromium/chromium/blob/main/components/sync/service/sync_prefs.cc);
-[Brave's preference overrides](https://github.com/brave/brave-core/blob/master/browser/brave_profile_prefs.cc)
-retain it. Explicitly disabled settings offer the shared `restore` action, with
-post-write inspection. Setup preserves existing Sync choices.
-Saved preferences are insufficient evidence of a completed server upload. Custom
-logos use internal local profile-picture fields and are restored from Bitwarden.
-Keep these limitations explicit in [user instructions](../usage/browser.md).
+Live verification uses Brave's native WebUI APIs through inherited anonymous
+DevTools pipes. It opens no debugging port and does not copy profiles, bypass
+browser policies, disable the sandbox, or change password-storage backends.
+Only the selected profile's native code reaches the vault helper, in memory.
+Diagnostic node contents are reduced inside Brave to boolean status; browsing
+data never reaches an Ansible result. Child environments exclude vault credentials.
+
+Verification requires a new successful GetUpdates response after requesting a
+refresh, healthy Sync diagnostics, and two observations without unacknowledged
+entity sequences or pending tombstones. Required browser data types must be
+running. Stale success, errors, incomplete diagnostics, and timeouts cannot
+certify recovery. `save` updates only an existing note's code and verifies the
+readback. `restore` uses Brave's native leave/join handlers and current pairing
+suffix, enables Sync everything, and verifies the resulting chain.
+
+The native interfaces follow
+[Brave's Sync handler](https://github.com/brave/brave-core/blob/master/browser/ui/webui/settings/brave_sync_handler.cc)
+and [Chromium's Sync diagnostics](https://github.com/chromium/chromium/blob/main/components/sync/service/sync_internals_util.cc).
+API changes fail closed. Saved preferences alone never prove server upload.
+Two call-site Ansible Pylint exceptions allow the retained CDP process and detached
+desktop restart; both need lifetimes beyond a synchronous command invocation.
 
 ## Validation
 
@@ -111,3 +133,15 @@ idempotent profile creation, preservation of existing data, check mode, invalid
 input, sensitive-data redaction, and read-only drift inspection. For native
 profile writes, test running-browser and symlink protections. Exercise actual
 installation and restore behavior in the test VM, not on the developer's host.
+
+Run the isolated native smoke test in the Lima VM after installing Brave:
+
+```sh
+limactl shell --workdir /workspace workstation-manager-v1 -- \
+  python3 /workspace/e2e-tests/browser_sync_smoke.py
+```
+
+It uses a disposable profile and a disabled Sync endpoint. It exercises real
+native code access, private IPC, profile identity, tab preservation, and production
+diagnostic JavaScript with synthetic success, error, stale, upload, and deletion
+states. It does not certify connectivity to the public Sync service.

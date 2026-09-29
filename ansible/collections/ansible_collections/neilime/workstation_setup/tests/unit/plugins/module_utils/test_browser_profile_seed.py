@@ -179,6 +179,8 @@ def test_brave_process_detection_recognizes_native_binary(tmp_path: Path) -> Non
     process.mkdir()
     (process / "cmdline").write_bytes(b"/opt/brave.com/brave/brave\0--profile-directory=Default\0")
     assert browser_profile_seed._brave_running(tmp_path)  # pylint: disable=protected-access
+    (process / "cmdline").write_bytes(b"/opt/brave.com/brave/brave --profile-directory=Profile 2\0")
+    assert browser_profile_seed._brave_running(tmp_path)  # pylint: disable=protected-access
     (process / "cmdline").write_bytes(b"/usr/bin/python3\0script.py\0")
     assert not browser_profile_seed._brave_running(tmp_path)  # pylint: disable=protected-access
 

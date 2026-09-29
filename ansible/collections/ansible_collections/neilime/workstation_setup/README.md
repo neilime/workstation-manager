@@ -8,8 +8,9 @@ installation uses the GitHub credentials described in the
 SSH restoration rejects private-key material in a Bitwarden `public_key` field
 before writing the key pair. Browser inspection uses registered profile names
 before falling back to saved per-profile names. Browser backup can explicitly
-restore the required Sync everything setting without changing pairing or declaring
-live synchronization complete.
+restore the required Sync everything setting. The live adapter then runs Sync,
+compares recovery codes privately with Bitwarden, and verifies approved save or
+restore actions automatically.
 
 See the [development guide](../../../../../docs/development/README.md) for
 structure and checks, and the

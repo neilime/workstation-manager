@@ -9,21 +9,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 
 _ACTIONS = {
-    "missing_sync_seed": (
-        "Connect profiles to their Sync chains.",
-        "Open brave://settings/braveSync and join each profile's chain using its Bitwarden recovery note.",
-    ),
-    "sync_not_requested": (
-        "Turn Sync on.",
-        "Open brave://settings/braveSync in these profiles and enable Sync.",
-    ),
     "sync_everything_not_enabled": (
         "Enable Sync everything.",
         "Open brave://settings/braveSync in each listed profile and select Sync everything.",
-    ),
-    "sync_setup_incomplete": (
-        "Finish Sync setup.",
-        "Open brave://settings/braveSync and finish connecting these profiles to their stored Sync chains.",
     ),
     "sync_disabled_by_policy": (
         "Resolve the policy blocking Sync.",
@@ -35,7 +23,7 @@ _ACTIONS = {
     ),
     "missing": (
         "Restore missing local profiles.",
-        "Close Brave and choose restore, then join their stored Sync chains. Keep their Bitwarden records.",
+        "Choose restore to recreate these profiles. The next Sync check can connect their stored chains.",
     ),
     "renamed": (
         "Match profile names with Bitwarden.",
@@ -47,7 +35,7 @@ _ACTIONS = {
     ),
     "missing_avatar_file": (
         "Restore missing profile logos.",
-        "Close Brave and choose restore to restore the logos from Bitwarden.",
+        "Choose restore to restore the logos from Bitwarden.",
     ),
     "avatar_content_changed": (
         "Reconcile changed profile logos.",
@@ -59,11 +47,11 @@ _ACTIONS = {
     ),
     "unregistered": (
         "Register profiles in Brave's profile picker.",
-        "Close Brave and choose restore to register these existing profiles once their records exist.",
+        "Choose restore to register these existing profiles once their records exist.",
     ),
     "missing_preferences": (
         "Restore missing profile settings.",
-        "Close Brave and choose restore, then open and close these profiles to save their settings.",
+        "Choose restore to recreate saved profile settings automatically.",
     ),
 }
 _SYNC_ISSUES = frozenset(
@@ -138,6 +126,17 @@ def _profile_drift(record: dict, profiles: dict) -> tuple[str, str]:
     return kind, description
 
 
+def browser_recovery_inspection(inspection: dict) -> dict:
+    """Leave chain enrollment to live automation; retain metadata and policy blockers."""
+
+    records = []
+    for record in _records(inspection, "sync_issues"):
+        issues = [issue for issue in _issues(record, _SYNC_ISSUES) if issue in _ACTIONS]
+        if issues:
+            records.append({**record, "issues": issues})
+    return {**inspection, "sync_issues": records}
+
+
 def browser_recovery_report(inspection: dict) -> str:
     """Group known diagnostics by action, never displaying notes, images, or seeds."""
 
@@ -145,7 +144,7 @@ def browser_recovery_report(inspection: dict) -> str:
         raise ValueError("Browser recovery inspection must be an object")
     profiles = {_text(profile.get("directory")): profile for profile in _records(inspection, "profiles")}
     groups: dict[str, list[str]] = {}
-    sync_issues = _records(inspection, "sync_issues")
+    sync_issues = browser_recovery_inspection(inspection)["sync_issues"]
     for record in sync_issues:
         for issue in _issues(record, _SYNC_ISSUES):
             groups.setdefault(issue, []).append(_profile(record, profiles))
@@ -168,7 +167,7 @@ def browser_recovery_report(inspection: dict) -> str:
         if key == "sync_everything_not_enabled" and all(
             record["directory"] in restorable_sync for record in sync_issues if key in record["issues"]
         ):
-            action = "Close Brave and choose restore to enable Sync everything."
+            action = "Choose restore to enable Sync everything automatically."
         lines.extend(("", f"{number}. {title}"))
         affected = "; ".join(dict.fromkeys(groups[key]))
         lines.extend(textwrap.wrap("Profiles: " + affected, width=88, initial_indent="   ", subsequent_indent="   "))
@@ -178,4 +177,27 @@ def browser_recovery_report(inspection: dict) -> str:
         for record in sync_issues
     ):
         lines.extend(("", "After changing Sync settings, close Brave to save them before retrying."))
+    return "\n".join(lines)
+
+
+def browser_sync_report(inspection: dict) -> str:
+    """Describe automatic verification without asking users to inspect secrets."""
+
+    if not isinstance(inspection, dict):
+        raise ValueError("Browser recovery inspection must be an object")
+    profiles = {_text(profile.get("directory")): profile for profile in _records(inspection, "profiles")}
+    if not profiles:
+        return "No browser profiles to check."
+    lines = ["Synchronize and verify browser recovery.", "Profiles:"]
+    for profile in profiles.values():
+        lines.extend(
+            textwrap.wrap(_profile(profile, profiles), width=88, initial_indent="  - ", subsequent_indent="    ")
+        )
+    lines.extend(
+        (
+            "",
+            "The script will run Sync and compare recovery codes with Bitwarden automatically.",
+            "Brave will close safely during this operation and reopen if it was running.",
+        )
+    )
     return "\n".join(lines)

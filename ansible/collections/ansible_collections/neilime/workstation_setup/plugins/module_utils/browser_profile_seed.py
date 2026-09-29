@@ -92,6 +92,18 @@ def _apply_theme(preferences: dict, colors: object) -> None:
         extension_theme["system_theme"] = 0
 
 
+def _browser_process_arguments(process: Path) -> list[str]:
+    """Read native argv or Brave's flattened process title without shell evaluation."""
+
+    arguments = os.fsdecode((process / "cmdline").read_bytes()).rstrip("\0").split("\0")
+    if len(arguments) == 1 and " " in arguments[0]:
+        executable, flags = arguments[0].split(" ", 1)
+        # Brave preserves spaces in values when rewriting its process title.
+        # Split at switch boundaries so profile roots containing spaces stay intact.
+        return [executable, *re.split(r"\s+(?=--[A-Za-z])", flags)]
+    return arguments
+
+
 def _brave_running(proc_root: Path = Path("/proc")) -> bool:
     """Detect this user's Brave processes even when a lock is missing."""
 
@@ -101,8 +113,8 @@ def _brave_running(proc_root: Path = Path("/proc")) -> bool:
         try:
             if process.stat().st_uid != os.geteuid():
                 continue
-            command = (process / "cmdline").read_bytes().split(b"\0")
-            executable = Path(os.fsdecode(command[0])).name
+            command = _browser_process_arguments(process)
+            executable = Path(command[0]).name
             if executable in {"brave", "brave-browser", "brave-browser-stable"}:
                 return True
         except (OSError, ValueError):

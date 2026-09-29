@@ -39,13 +39,13 @@ class BrowserSyncBlocked(ValueError):
 
 
 def browser_sync_directions(inspection: dict) -> dict[str, str]:
-    """Offer directions for repairable profile settings; chain pairing stays manual."""
+    """Offer directions for repairable profile settings; the live adapter handles pairing."""
 
     kinds = {issue["kind"] for issue in inspection["drift"] if issue.get("id")}
     actions = {}
     if kinds & _LOCAL_KINDS:
         actions["save"] = (
-            "Close Brave, then replace saved names, colors and logos with local values. "
+            "Replace saved names, colors and logos with local values; Brave closes and reopens automatically. "
             "Absent or disabled customizations are removed from Bitwarden; recovery words stay unchanged."
         )
     repairs = []
@@ -54,9 +54,10 @@ def browser_sync_directions(inspection: dict) -> dict[str, str]:
     if sync_everything_drift(inspection):
         repairs.append("enable Sync everything")
     if repairs:
-        actions["restore"] = "Close Brave, then " + " and ".join(repairs) + "."
+        description = " and ".join(repairs)
+        actions["restore"] = f"{description[0].upper()}{description[1:]}. Brave closes and reopens automatically."
         if kinds & {"missing", "missing_preferences"}:
-            actions["restore"] += " Missing profiles are recreated; Sync pairing remains manual."
+            actions["restore"] += " Missing profiles are recreated; the next check can restore their Sync chains."
     return actions
 
 
@@ -92,6 +93,17 @@ class BrowserVault:
         if not isinstance(value, dict):
             raise ValueError("Bitwarden returned an invalid browser record")
         return value
+
+    def selected_item(self, declaration: dict) -> dict:
+        """Revalidate the approved identity and collection before reading or writing secrets."""
+
+        item = self.item(declaration["item_id"])
+        metadata = bitwarden_browser_profiles([item])[0]
+        if self.collection_id not in item.get("collectionIds", []):
+            raise ValueError("The selected browser record left its recovery collection; retry backup")
+        if any(metadata.get(key) != declaration[key] for key in ("id", "directory", "item_id")):
+            raise ValueError("The remote profile identity changed; inspect the collection and retry")
+        return item
 
 
 def _local_avatar(root: Path, observed: dict) -> bytes | None:
@@ -145,12 +157,7 @@ def _local_patch(item: dict, observed: dict, kinds: set[str]) -> dict:
 
 
 def _save_local_profile(vault: BrowserVault, root: Path, declaration: dict, observed: dict, kinds: set[str]) -> None:
-    item = vault.item(declaration["item_id"])
-    metadata = bitwarden_browser_profiles([item])[0]
-    if vault.collection_id not in item.get("collectionIds", []):
-        raise ValueError("The selected browser record left its recovery collection; retry backup")
-    if any(metadata.get(key) != declaration[key] for key in ("id", "directory", "item_id")):
-        raise ValueError("The remote profile identity changed; inspect the collection and retry")
+    item = vault.selected_item(declaration)
     payload = _local_patch(item, observed, kinds)
     if payload != item:
         encoded = vault.run("encode", data=json.dumps(payload).encode())

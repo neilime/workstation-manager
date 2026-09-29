@@ -1,0 +1,30 @@
+---
+- name: Synchronize browser recovery with safe failure diagnostics
+  block:
+    - name: Run Brave Sync and verify recovery codes automatically
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      neilime.workstation_setup.browser_recovery_sync:
+        user_data_dir: "{{ browser_brave_user_data_dir }}"
+        profiles: "{{ workstation_manager_browser_profiles }}"
+        action: "{{ workstation_backup_recovery_choices['browser-sync'] }}"
+        collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
+        session: "{{ bitwarden_collection_session }}"
+      register: browser_brave_live_sync
+      no_log: true
+  rescue:
+    - name: Stop backup after automatic browser recovery fails
+      ansible.builtin.fail:
+        msg: >-
+          {{ browser_brave_live_sync.recovery_error
+             | default('Automatic browser recovery failed; check Brave, desktop and vault access before retrying.') }}
+
+- name: Publish the safe browser verification result
+  ansible.builtin.set_fact:
+    workstation_backup_browser_live_verified: "{{ browser_brave_live_sync.verified }}"
+    workstation_backup_browser_live_request:
+      scope: browser-sync
+      summary: "{{ browser_brave_live_sync.summary }}"
+      actions: "{{ browser_brave_live_sync.actions }}"
+      skip: Continue backup with browser recovery unverified.
+      abort_message: Browser recovery was not verified; no archive was created.

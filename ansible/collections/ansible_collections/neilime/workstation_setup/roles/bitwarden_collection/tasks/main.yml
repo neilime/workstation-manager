@@ -149,13 +149,27 @@
     BW_CLIENTID: "{{ bitwarden_collection_client_id }}"
     BW_CLIENTSECRET: "{{ bitwarden_collection_client_secret }}"
     BW_SESSION: ""
+  register: bitwarden_collection_api_key_login
   changed_when: false
+  failed_when: false
   no_log: true
   when:
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length == 0
     - bitwarden_collection_client_id | length > 0
     - bitwarden_collection_client_secret | length > 0
+
+- name: Fail when the configured Bitwarden API key is rejected
+  ansible.builtin.fail:
+    msg: >-
+      {{ bitwarden_collection_purpose }} could not authenticate Bitwarden with
+      the configured API key.
+  when:
+    - bitwarden_collection_status.status == 'unauthenticated'
+    - bitwarden_collection_email | length == 0
+    - bitwarden_collection_client_id | length > 0
+    - bitwarden_collection_client_secret | length > 0
+    - bitwarden_collection_api_key_login.rc != 0
 
 - name: Login to Bitwarden with the configured email and password
   check_mode: false
@@ -170,11 +184,24 @@
   environment:
     BITWARDEN_PASSWORD: "{{ bitwarden_collection_password }}"
     BW_SESSION: ""
+  register: bitwarden_collection_email_password_login
   changed_when: false
+  failed_when: false
   no_log: true
   when:
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
+
+- name: Fail when the supplied Bitwarden email or password is rejected
+  ansible.builtin.fail:
+    msg: >-
+      WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED:
+      {{ bitwarden_collection_purpose }} could not authenticate Bitwarden with
+      the supplied email or password.
+  when:
+    - bitwarden_collection_status.status == 'unauthenticated'
+    - bitwarden_collection_email | length > 0
+    - bitwarden_collection_email_password_login.rc != 0
 
 - name: Ensure a Bitwarden vault password is available for unlock
   ansible.builtin.assert:
@@ -198,7 +225,16 @@
     BW_SESSION: ""
   register: bitwarden_collection_unlock
   changed_when: false
+  failed_when: false
   no_log: true
+
+- name: Fail when the supplied Bitwarden vault password is rejected
+  ansible.builtin.fail:
+    msg: >-
+      WORKSTATION_MANAGER_BITWARDEN_PASSWORD_REJECTED:
+      {{ bitwarden_collection_purpose }} could not unlock Bitwarden with the
+      supplied vault password.
+  when: bitwarden_collection_unlock.rc != 0
 
 - name: Record the unlocked Bitwarden session
   ansible.builtin.set_fact:

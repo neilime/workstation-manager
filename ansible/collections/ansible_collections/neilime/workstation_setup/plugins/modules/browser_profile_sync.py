@@ -17,8 +17,8 @@ description:
   - Restores saved profile metadata locally or updates existing vault records from local metadata.
   - Restore also enables Sync everything for declared profiles without changing their pairing or setup state.
   - Preserves recovery words and unrelated browser settings; never deletes profile records.
-  - Requires the browser to be closed and verifies applied changes.
-  - Returns a blocker without making changes when Brave is running or its profile is locked before synchronization.
+  - Gracefully closes a running browser, verifies applied changes, and reopens its desktop session.
+  - Returns a blocker before synchronization if Brave cannot close safely or its profile remains locked.
 author:
   - workstation-manager contributors (@neilime)
 options:
@@ -64,8 +64,11 @@ blocker:
 """
 
 # pylint: disable=wrong-import-position
+from contextlib import nullcontext  # noqa: E402
+
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
+    browser_lifecycle,
     browser_profile_arguments,
     browser_profile_sync,
 )
@@ -86,16 +89,20 @@ def main() -> None:
     )
     module = AnsibleModule(argument_spec=arguments, supports_check_mode=True)
     try:
-        changed = browser_profile_sync.sync_browser_profiles(
-            module.params["user_data_dir"],
-            module.params["profiles"],
-            module.params["direction"],
-            browser_profile_sync.BrowserVault(
-                module.params["session"], module.params["collection_id"], module.run_command
-            ),
-            check_mode=module.check_mode,
+        lifecycle = (
+            nullcontext() if module.check_mode else browser_lifecycle.closed_browser(module.params["user_data_dir"])
         )
-    except browser_profile_sync.BrowserSyncBlocked as error:
+        with lifecycle:
+            changed = browser_profile_sync.sync_browser_profiles(
+                module.params["user_data_dir"],
+                module.params["profiles"],
+                module.params["direction"],
+                browser_profile_sync.BrowserVault(
+                    module.params["session"], module.params["collection_id"], module.run_command
+                ),
+                check_mode=module.check_mode,
+            )
+    except (browser_profile_sync.BrowserSyncBlocked, browser_lifecycle.BrowserLifecycleBlocked) as error:
         module.exit_json(changed=False, blocked=True, blocker=str(error))
     # Standard Ansible error/result handling must remain in each executable module.
     # pylint: disable=duplicate-code
