@@ -1,9 +1,10 @@
-"""Filter plugins for managed browser profile path helpers."""
+"""Filter plugins for browser profile paths and recovery reports."""
 
 from __future__ import annotations
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     browser_profile_paths,
+    browser_profile_reporting,
 )
 
 _planner = browser_profile_paths.BrowserProfilePathsPlanner()
@@ -18,4 +19,5 @@ class FilterModule:
 
         return {
             "browser_profile_directory": _planner.build_profile_directory,
+            "browser_recovery_report": browser_profile_reporting.browser_recovery_report,
         }

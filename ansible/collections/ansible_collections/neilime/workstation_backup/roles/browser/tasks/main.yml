@@ -12,11 +12,11 @@
     prompt: |-
       {% filter neilime.workstation_backup.terminal_prompt %}
       {{ workstation_backup_browser_sync_instructions }}
-      For every collection profile, verify a recent successful Sync with no pending changes/errors,
-      and compare its stable recovery words with its Bitwarden secure note without pasting them here.
-      Confirm only after all profiles have finished syncing and their recovery notes match.
-      Skip continues without confirming Sync or recovery words.
-      Local browser changes are not added to the archive; recovery stays unverified.
+      Confirm only after all profiles pass these checks.
+
+      synced = all profiles finished syncing and their recovery notes match
+      skip = continue; browser recovery stays unverified and browser changes are not archived
+      abort = stop without creating an archive
       Choose [synced/skip/abort]
       {% endfilter %}
   register: browser_sync_choice
