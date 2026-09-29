@@ -43,6 +43,10 @@ private key belongs in `~/.ssh/<name>` with mode `0600`, and its matching public
 key belongs in `~/.ssh/<name>.pub`. Setup rejects private-key material in a
 Bitwarden `public_key` field.
 
+GPG synchronization includes the key's ownertrust record when one exists. Keys
+without an ownertrust record can still be synchronized; a failed ownertrust
+export stops backup.
+
 Every drift or recovery confirmation prompt also offers `skip`. It leaves that
 recovery source unchanged at this step and continues the other backup work:
 

@@ -35,14 +35,14 @@
   check_mode: false
   no_log: true
 
-- name: Export the local GPG ownertrust entry
+- name: Export the local GPG ownertrust database
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.shell: |
-    set -euo pipefail
-    gpg --export-ownertrust "{{ item }}" | awk -F: '$1 == "{{ item }}" { print; exit }'
-  args:
-    executable: /bin/bash
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --export-ownertrust
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
     GNUPGHOME: "{{ workstation_manager_resolved.user.home }}/.gnupg"
@@ -62,9 +62,10 @@
               'private_key': workstation_backup_secret_manager_gpg_private_key.stdout,
               'public_key': workstation_backup_secret_manager_gpg_public_key.stdout,
               'ownertrust': (
-                workstation_backup_secret_manager_gpg_ownertrust.stdout | trim
-                if workstation_backup_secret_manager_gpg_ownertrust.stdout | trim | length > 0
-                else none
+                workstation_backup_secret_manager_gpg_ownertrust.stdout_lines
+                | select('match', '^' ~ item ~ ':')
+                | first
+                | default(none)
               )
             }
           ]
