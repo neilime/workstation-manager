@@ -24,8 +24,10 @@ Add the role under
   Publish `workstation_manager_browser_desktop_file`.
 - `tasks/backup.yml`: inspect profiles without mutation. Publish
   `workstation_backup_browser_inspection` with `profiles`, `drift`, and
-  `sync_issues`, plus `workstation_backup_browser_sync_instructions` for live
-  verification.
+  `sync_issues`. Publish `workstation_backup_browser_recovery_report` as a short
+  text report grouping detected issues by action, with affected profile names and
+  directories. Keep vendor-specific instructions in the adapter. Publish
+  `workstation_backup_browser_sync_instructions` for the later live verification.
 - `tasks/inspect_profiles.yml`: report undeclared profile paths in
   `workstation_manager_cleanup_unmanaged_browser_profile_directories`, or `[]`.
   Never delete profiles.

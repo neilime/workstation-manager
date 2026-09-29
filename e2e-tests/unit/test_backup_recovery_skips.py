@@ -92,6 +92,10 @@ class BackupRecoverySkipTests(unittest.TestCase):
         setup = self.fixture / "collections/ansible_collections/neilime/workstation_setup/roles"
         loader = setup / "browser_profile_collection/tasks"
         loader.mkdir(parents=True)
+        (setup.parent / "plugins").symlink_to(
+            WORKSPACE / "ansible/collections/ansible_collections/neilime/workstation_setup/plugins",
+            target_is_directory=True,
+        )
         (loader / "main.yml").write_text(
             json.dumps(
                 [
@@ -116,7 +120,15 @@ class BackupRecoverySkipTests(unittest.TestCase):
                             + "') | from_json }}",
                             "workstation_backup_browser_sync_instructions": "Check fixture browser Sync.",
                         }
-                    }
+                    },
+                    {
+                        "ansible.builtin.set_fact": {
+                            "workstation_backup_browser_recovery_report": (
+                                "{{ workstation_backup_browser_inspection | "
+                                "neilime.workstation_setup.browser_recovery_report }}"
+                            )
+                        }
+                    },
                 ]
             )
         )
@@ -129,8 +141,18 @@ class BackupRecoverySkipTests(unittest.TestCase):
         (self.fixture / "inspection.json").write_text(
             json.dumps(
                 {
-                    "profiles": [{"id": "fixture"}],
-                    "drift": ["fixture drift"] if drift else [],
+                    "profiles": [{"id": "fixture", "label": "Fixture", "directory": "Default"}],
+                    "drift": (
+                        [
+                            {
+                                "kind": "avatar",
+                                "directory": "Default",
+                                "issues": ["missing_avatar_file", "avatar_disabled"],
+                            }
+                        ]
+                        if drift
+                        else []
+                    ),
                     "sync_issues": [],
                 }
             )
@@ -143,6 +165,14 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertNotIn("Choose [synced/skip/abort]", output)
         self.assertIn("incomplete recovery coverage", output)
+        self.assertEqual(output.count("Restore missing profile logos."), 1)
+        self.assertIn("Fixture (Default)", output)
+        self.assertIn("workstation.sh setup", output)
+        self.assertIn("stop without creating an archive", output)
+        self.assertNotIn("profile_drift", output)
+        self.assertNotIn("avatar_disabled", output)
+        self.assertNotIn("theme_colors", output)
+        self.assertNotIn("Check fixture browser Sync.", output)
         self.assert_archive(["browser-recovery"])
 
     def test_browser_sync_can_be_skipped_after_clean_inspection(self) -> None:
@@ -188,9 +218,12 @@ class BackupRecoverySkipTests(unittest.TestCase):
         code, output = self.run_backup(tasks)
         self.assertNotEqual(code, 0, output)
         self.assertIn("requires an interactive run", output)
+        self.assertIn("Restore missing profile logos.", output)
         code, output = self.run_backup(tasks, check=True)
         self.assertEqual(code, 0, output)
         self.assertNotIn("Choose [", output)
+        self.assertIn("Restore missing profile logos.", output)
+        self.assertIn("Fixture (Default)", output)
         self.assertFalse((self.fixture / "backup.tar.gz").exists())
         self.assertFalse((self.fixture / "backup.manifest.txt").exists())
 

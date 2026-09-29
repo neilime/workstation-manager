@@ -13,9 +13,13 @@
       {{ {'profiles': browser_brave_backup_inspection.profiles,
           'drift': browser_brave_backup_inspection.drift,
           'sync_issues': browser_brave_backup_inspection.sync_issues} }}
-    workstation_backup_browser_sync_instructions: >-
-      Open brave://settings/braveSync in each profile, enable Sync everything,
-      and inspect brave://sync-internals for current successful synchronization.
-      Compare the stable first 24 recovery words with that profile's Bitwarden note;
-      the rotating 25th pairing word is not part of the stored recovery secret.
-      After changing settings, close Brave so profile preferences are saved before retrying.
+    workstation_backup_browser_sync_instructions: |-
+      For each profile:
+      1. Open brave://sync-internals. Check for recent successful Sync with no pending changes or errors.
+      2. Compare the first 24 recovery words with its Bitwarden note. Exclude the rotating 25th word.
+      Keep recovery words out of this terminal.
+
+- name: Summarize Brave recovery issues and next steps
+  ansible.builtin.set_fact:
+    workstation_backup_browser_recovery_report: >-
+      {{ workstation_backup_browser_inspection | neilime.workstation_setup.browser_recovery_report }}
