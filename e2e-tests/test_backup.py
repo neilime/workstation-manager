@@ -123,6 +123,14 @@ def test_backup_creates_no_browser_exports(host) -> None:
     assert not host.check_output("find %s -type f -name '*.gpg'", BACKUP_ROOT)
 
 
+def test_backup_verifies_recovery_without_skips(host) -> None:
+    """Prepared recovery sources must pass the normal noninteractive checks."""
+
+    manifest = host.file(resolve_backup_manifest_path(host)).content_string
+    assert "recovery_skipped\t" not in manifest
+    assert "recovery_status\tincomplete" not in manifest
+
+
 def test_backup_exports_git_inventory_for_dev_projects(host) -> None:
     """The backup flow should record Git remotes and branch state for dev-projects."""
 

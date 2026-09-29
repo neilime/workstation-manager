@@ -28,8 +28,7 @@ setup: ## Build the tooling image or pull the selected CI image
 	fi
 
 tool-shell: ## Open a shell in the tooling container
-	@docker run --rm -it \
-		--user "$(HOST_UID):$(HOST_GID)" \
+	@"$(CURDIR)/ci/run-tooling.sh" "$(HOST_UID)" "$(HOST_GID)" --rm -it \
 		--env ANSIBLE_HOME=/tmp/.ansible \
 		--env ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections:/workspace/ansible/collections \
 		--env HOME=/tmp \
@@ -130,8 +129,7 @@ define run_linter
 endef
 
 define tooling
-	@docker run --rm \
-		--user "$(HOST_UID):$(HOST_GID)" \
+	@"$(CURDIR)/ci/run-tooling.sh" "$(HOST_UID)" "$(HOST_GID)" --rm \
 		--env ANSIBLE_HOME=/tmp/.ansible \
 		--env ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections:/workspace/ansible/collections \
 		--env HOME=/tmp \

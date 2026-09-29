@@ -75,7 +75,7 @@ actions:
   type: dict
 """
 
-# pylint: disable=wrong-import-position
+# pylint: disable=wrong-import-position,bad-indentation
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
     browser_lifecycle,
@@ -99,14 +99,17 @@ def main() -> None:
         }
     )
     module = AnsibleModule(argument_spec=arguments, supports_check_mode=True)
+    vault = browser_profile_sync.BrowserVault(
+        module.params["session"],
+        module.params["collection_id"],
+        module.run_command,
+    )
     try:
-        result = browser_live_sync.sync_browser_recovery(
+        result = browser_live_sync.sync_browser_recovery(  # noqa: E111
             module.params["user_data_dir"],
             module.params["profiles"],
             module.params["action"],
-            browser_profile_sync.BrowserVault(
-                module.params["session"], module.params["collection_id"], module.run_command
-            ),
+            vault,
             check_mode=module.check_mode,
         )
     except browser_lifecycle.BrowserLifecycleBlocked as error:
@@ -115,7 +118,7 @@ def main() -> None:
             verified=False,
             issues=[],
             summary=str(error),
-        actions={"retry": "Retry the automatic close request and browser verification."},
+            actions={"retry": "Retry the automatic close request and browser verification."},
         )
     except ValueError as error:
         # Helpers expose fixed diagnostics, never raw CDP or vault responses.

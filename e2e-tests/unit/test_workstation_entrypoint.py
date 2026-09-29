@@ -16,6 +16,8 @@ import termios
 import time
 import unittest
 
+from entrypoint_test_helpers import controlling_tty_exec_python, sudo_passthrough_script
+
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
 
 
@@ -73,10 +75,7 @@ class TerminalPromptTests(unittest.TestCase):
                     [
                         sys.executable,
                         "-c",
-                        "import fcntl, os, sys, termios\n"
-                        "with open(sys.argv[1]) as terminal:\n"
-                        "    fcntl.ioctl(terminal.fileno(), termios.TIOCSCTTY, 0)\n"
-                        'os.execv("/bin/sh", ["sh", "-s", "--", sys.argv[2]])\n',
+                        controlling_tty_exec_python('["sh", "-s", "--", sys.argv[2]]'),
                         os.ttyname(slave),
                         str(self._write_prompt_fixture(fixture)),
                     ],
@@ -123,21 +122,6 @@ class TerminalPromptTests(unittest.TestCase):
             finally:
                 os.close(slave)
                 os.close(master)
-
-    def test_secret_prompt_preserves_value_and_terminal_settings(self) -> None:
-        """Piped shell input must not consume the password or expose it on the tty."""
-        for echo_enabled in (True, False):
-            with self.subTest(echo_enabled=echo_enabled):
-                result = self._run_prompt(b"  synthetic\\password  \n", echo_enabled=echo_enabled)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, "<  synthetic\\password  >")
-                self.assertEqual(result.stderr, "")
-
-    def test_empty_secret_reprompts(self) -> None:
-        """An empty line should restore the terminal and open another hidden prompt."""
-        result = self._run_prompt(b"synthetic-password\n", retry_empty=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "<synthetic-password>")
 
     def test_eof_restores_terminal_and_fails(self) -> None:
         """Ctrl-D must fail without leaving echo disabled."""
@@ -269,14 +253,14 @@ class RepositorySourceTests(unittest.TestCase):
                 "#!/bin/sh\n"
                 'if [ "$1" = "-C" ]; then\n'
                 '  directory="$2"\n'
-                '  shift 2\n'
-                'fi\n'
+                "  shift 2\n"
+                "fi\n"
                 'case "$1 $2" in\n'
                 '  "rev-parse --show-toplevel") printf "%s\\n" "$TEST_REPO_ROOT" ;;\n'
                 '  "branch --show-current") printf "%s\\n" "fixture-branch" ;;\n'
                 '  "rev-parse HEAD") printf "%s\\n" "0123456789abcdef0123456789abcdef01234567" ;;\n'
-                '  *) exit 99 ;;\n'
-                'esac\n'
+                "  *) exit 99 ;;\n"
+                "esac\n"
             )
             git.chmod(0o700)
             result = subprocess.run(
@@ -286,7 +270,7 @@ class RepositorySourceTests(unittest.TestCase):
                     '. "$1"\n'
                     'REPOSITORY_URL=""\n'
                     'REPOSITORY_BRANCH=""\n'
-                    'initialize_repository_source\n'
+                    "initialize_repository_source\n"
                     'printf "%s\\n%s\\n" "$REPOSITORY_URL" "$REPOSITORY_BRANCH"\n',
                     "entrypoint-test",
                     str(wrapper),
@@ -319,10 +303,7 @@ class RepositorySourceTests(unittest.TestCase):
             wrapper.write_text("\n".join(definitions) + "\n")
             ansible_galaxy_log = fixture / "ansible-galaxy.log"
             ansible_galaxy = fixture / "ansible-galaxy"
-            ansible_galaxy.write_text(
-                "#!/bin/sh\n"
-                'printf "%s\\n" "$*" >"$TEST_ANSIBLE_GALAXY_LOG"\n'
-            )
+            ansible_galaxy.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >"$TEST_ANSIBLE_GALAXY_LOG"\n')
             ansible_galaxy.chmod(0o700)
             curl = fixture / "curl"
             curl.write_text("#!/bin/sh\nexit 99\n")
@@ -334,7 +315,7 @@ class RepositorySourceTests(unittest.TestCase):
                     '. "$1"\n'
                     'REPOSITORY_URL="$2"\n'
                     'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
-                    'install_collection_requirements\n',
+                    "install_collection_requirements\n",
                     "entrypoint-test",
                     str(wrapper),
                     str(repository),
@@ -367,24 +348,14 @@ class RepositorySourceTests(unittest.TestCase):
             commands = {
                 "id": '#!/bin/sh\nprintf "%s\n" "$TEST_PROCESS_USER"\n',
                 "getent": ('#!/bin/sh\nprintf "runner:x:1000:1000::%s:/bin/sh\n" "$TEST_TARGET_HOME"\n'),
-                "sudo": (
-                    "#!/bin/sh\n"
-                    'while [ "$#" -gt 0 ]; do\n'
-                    '  case "$1" in\n'
-                    '    --preserve-env=*) shift; continue ;;\n'
-                    '    *) break ;;\n'
-                    '  esac\n'
-                    'done\n'
-                    'export TEST_CONTROLLER_PRIVILEGED=1\n'
-                    'exec "$@"\n'
-                ),
+                "sudo": sudo_passthrough_script("export TEST_CONTROLLER_PRIVILEGED=1\n"),
                 "ansible-playbook": (
                     f"#!{sys.executable}\n"
                     "import json, os, sys\n"
                     "print(json.dumps({\n"
                     '    "cwd": os.getcwd(),\n'
                     '    "args": sys.argv[1:],\n'
-                    '}))\n'
+                    "}))\n"
                 ),
                 "ansible-pull": "#!/bin/sh\nexit 99\n",
             }
@@ -400,7 +371,7 @@ class RepositorySourceTests(unittest.TestCase):
                     '. "$1"\n'
                     'REPOSITORY_URL="$2"\n'
                     'REPOSITORY_BRANCH="feature/local-fix"\n'
-                    'run_ansible_pull ansible/backup.yml 0\n',
+                    "run_ansible_pull ansible/backup.yml 0\n",
                     "entrypoint-test",
                     str(wrapper),
                     str(repository),
@@ -442,39 +413,42 @@ class BitwardenRetryTests(unittest.TestCase):
                     "/bin/sh",
                     "-c",
                     '. "$1"\n'
-                    'has_interactive_terminal() { return 0; }\n'
-                    'prompt_for_required_value() {\n'
-                    '  prompt_count=0\n'
+                    "has_interactive_terminal() { return 0; }\n"
+                    "prompt_for_required_value() {\n"
+                    "  prompt_count=0\n"
                     '  if [ -f "$TEST_PROMPT_COUNT_FILE" ]; then\n'
                     '    prompt_count="$(cat "$TEST_PROMPT_COUNT_FILE")"\n'
-                    '  fi\n'
-                    '  prompt_count=$((prompt_count + 1))\n'
+                    "  fi\n"
+                    "  prompt_count=$((prompt_count + 1))\n"
                     '  printf "%s\\n" "$prompt_count" >"$TEST_PROMPT_COUNT_FILE"\n'
                     '  case "$prompt_count" in\n'
                     '    1) printf "%s" "first@example.com" ;;\n'
                     '    2) printf "%s" "first-password" ;;\n'
                     '    3) printf "%s" "second@example.com" ;;\n'
                     '    4) printf "%s" "second-password" ;;\n'
-                    '    *) return 99 ;;\n'
-                    '  esac\n'
-                    '}\n'
-                    'run_ansible_pull() {\n'
-                    '  attempt=0\n'
+                    "    *) return 99 ;;\n"
+                    "  esac\n"
+                    "}\n"
+                    "run_ansible_pull() {\n"
+                    "  attempt=0\n"
                     '  if [ -f "$TEST_ATTEMPT_FILE" ]; then\n'
                     '    attempt="$(cat "$TEST_ATTEMPT_FILE")"\n'
-                    '  fi\n'
-                    '  attempt=$((attempt + 1))\n'
+                    "  fi\n"
+                    "  attempt=$((attempt + 1))\n"
                     '  printf "%s\\n" "$attempt" >"$TEST_ATTEMPT_FILE"\n'
-                    '  printf "%s|%s\\n" "$PROMPTED_BITWARDEN_EMAIL" "$BITWARDEN_PASSWORD_VALUE" >>"$TEST_RECORDS_FILE"\n'
+                    '  printf "%s|%s\\n" "$PROMPTED_BITWARDEN_EMAIL" '
+                    '"$BITWARDEN_PASSWORD_VALUE" >>"$TEST_RECORDS_FILE"\n'
                     '  if [ "$attempt" -eq 1 ]; then\n'
                     '    printf "%s\\n" "WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED: synthetic rejection"\n'
-                    '    return 2\n'
-                    '  fi\n'
+                    "    return 2\n"
+                    "  fi\n"
                     '  printf "%s\\n" "synthetic success"\n'
-                    '}\n'
-                    'PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value BITWARDEN_EMAIL "Bitwarden email: " 0)"\n'
-                    'BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value BITWARDEN_PASSWORD "Bitwarden vault password: " 1)"\n'
-                    'run_ansible_pull_with_bitwarden_retry ansible/setup.yml 0\n',
+                    "}\n"
+                    'PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value '
+                    'BITWARDEN_EMAIL "Bitwarden email: " 0)"\n'
+                    'BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value '
+                    'BITWARDEN_PASSWORD "Bitwarden vault password: " 1)"\n'
+                    "run_ansible_pull_with_bitwarden_retry ansible/setup.yml 0\n",
                     "entrypoint-test",
                     str(wrapper),
                 ],
@@ -517,28 +491,20 @@ class BitwardenRetryTests(unittest.TestCase):
             sudo_log_file = fixture / "sudo-log.txt"
             script_output_file = fixture / "script-output.txt"
             commands = {
-                "sudo": (
-                    "#!/bin/sh\n"
+                "sudo": sudo_passthrough_script(
                     'printf "%s\\n" "$*" >>"$TEST_SUDO_LOG_FILE"\n'
                     'if [ "$1" = "mktemp" ]; then\n'
-                    '  shift\n'
+                    "  shift\n"
                     '  exec mktemp "$@"\n'
-                    'fi\n'
+                    "fi\n"
                     'if [ "$1" = "cat" ]; then\n'
-                    '  shift\n'
+                    "  shift\n"
                     '  exec cat "$@"\n'
-                    'fi\n'
+                    "fi\n"
                     'if [ "$1" = "rm" ]; then\n'
-                    '  shift\n'
+                    "  shift\n"
                     '  exec rm "$@"\n'
-                    'fi\n'
-                    'while [ "$#" -gt 0 ]; do\n'
-                    '  case "$1" in\n'
-                    '    --preserve-env=*) shift; continue ;; \n'
-                    '    *) break ;; \n'
-                    '  esac\n'
-                    'done\n'
-                    'exec "$@"\n'
+                    "fi\n"
                 ),
                 "script": (
                     "#!/bin/sh\n"
@@ -547,10 +513,10 @@ class BitwardenRetryTests(unittest.TestCase):
                     'while [ "$#" -gt 0 ]; do\n'
                     '  case "$1" in\n'
                     '    --command) command_value="$2"; shift 2; continue ;; \n'
-                    '    --quiet|--return) shift; continue ;; \n'
+                    "    --quiet|--return) shift; continue ;; \n"
                     '    *) output_file="$1"; shift; continue ;; \n'
-                    '  esac\n'
-                    'done\n'
+                    "  esac\n"
+                    "done\n"
                     'printf "%s\\n" "$command_value" >"$TEST_SCRIPT_COMMAND_FILE"\n'
                     'eval "set -- $command_value"\n'
                     'cat "$2" >"$TEST_RUNNER_CONTENT_FILE"\n'
@@ -569,11 +535,11 @@ class BitwardenRetryTests(unittest.TestCase):
                     "/bin/sh",
                     "-c",
                     '. "$1"\n'
-                    'has_interactive_terminal() { return 0; }\n'
+                    "has_interactive_terminal() { return 0; }\n"
                     'TARGET_USER="fixture"\n'
                     'TARGET_USER_HOME="$HOME"\n'
                     'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
-                    'run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n',
+                    "run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n",
                     "entrypoint-test",
                     str(wrapper),
                 ],

@@ -144,7 +144,16 @@ def test_preview_does_not_launch_brave_or_access_the_vault(fixture: tuple) -> No
     vault.run.assert_not_called()
 
 
-@pytest.mark.parametrize("value", [None, "secret text", "word " * 26, "1 word " * 12, "prefix " + ("word " * 24) + "suffix"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "secret text",
+        "word " * 26,
+        "1 word " * 12,
+        "prefix " + ("word " * 24) + "suffix",
+    ],
+)
 def test_malformed_recovery_notes_fail_without_rendering_input(value: object) -> None:
     """An invalid secure note never escapes through a validation exception."""
 
@@ -220,7 +229,7 @@ def test_sync_everything_drift_is_repaired_before_reporting_failure(
 ) -> None:
     """A Sync cycle that clears Sync everything should be repaired inside the same closed-browser window."""
 
-    vault, _pipe, native, _lifecycle = fixture
+    vault, _pipe, _native, _lifecycle = fixture
     clean = live.inspect_browser_profiles("/fixture", [PROFILE])
     changed = {
         **clean,

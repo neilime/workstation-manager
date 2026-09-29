@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import errno
+import json
 import os
 import pathlib
 import pty
@@ -16,8 +16,15 @@ import time
 import unittest
 
 from ansible.parsing.dataloader import DataLoader
+from entrypoint_test_helpers import controlling_tty_exec_python, sudo_passthrough_script
 
 WORKSPACE = pathlib.Path(__file__).parents[2]
+CHEZMOI_RECONCILE_TASKS = (
+    WORKSPACE
+    / "ansible/collections/ansible_collections/neilime/workstation_backup/roles/chezmoi/tasks/reconcile_git.yml"
+)
+RETRY_PROMPT = b"Choose [save/restore/retry/skip/abort]:"
+RETRY_WRAPPER_COMMAND = "run_ansible_pull_with_bitwarden_retry check.yml 0\n"
 
 
 class E2EWorkflowRevisionTests(unittest.TestCase):
@@ -136,17 +143,7 @@ def bootstrap_fixture(fixture: pathlib.Path) -> str:
 
     (fixture / "bin").mkdir()
     sudo = fixture / "bin/sudo"
-    sudo.write_text(
-        '#!/bin/sh\n'
-        'unset PYTHONUNBUFFERED\n'
-        'while [ "$#" -gt 0 ]; do\n'
-        '  case "$1" in\n'
-        '    --preserve-env=*) shift; continue ;;\n'
-        '    *) break ;;\n'
-        '  esac\n'
-        'done\n'
-        'exec "$@"\n'
-    )
+    sudo.write_text(sudo_passthrough_script("unset PYTHONUNBUFFERED\n"))
     sudo.chmod(0o755)
     definitions = (WORKSPACE / "workstation.sh").read_text().splitlines()
     if definitions.pop() != 'main "$@"':
@@ -160,6 +157,68 @@ def bootstrap_fixture(fixture: pathlib.Path) -> str:
         'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
         'ANSIBLE_CHECKOUT_DIR="$HOME/checkout"\n'
     )
+
+
+def load_chezmoi_retry_task() -> dict[str, object]:
+    """Load the interactive drift-resolution task from the production role."""
+
+    tasks = DataLoader().load_from_file(str(CHEZMOI_RECONCILE_TASKS))
+    return next(task for task in tasks if task["name"] == "Resolve chezmoi tracking branch drift")
+
+
+def write_retry_playbook(repository: pathlib.Path, decision_task: dict[str, object]) -> None:
+    """Create a minimal playbook that exercises the real retry decision prompt."""
+
+    (repository / "check.yml").write_text(
+        json.dumps(
+            [
+                {
+                    "hosts": "localhost",
+                    "gather_facts": False,
+                    "vars": {
+                        "workstation_backup_chezmoi_source_dir": "/fixture/chezmoi",
+                        "workstation_backup_chezmoi_git_preflight": {
+                            "state": {
+                                "ahead": 0,
+                                "behind": 2,
+                                "upstream": "origin/main",
+                                "status": "M  README.md\n D home/dot_bashrc",
+                            }
+                        },
+                        "workstation_backup_chezmoi_git_needs_decision": True,
+                        "workstation_backup_dry_run": False,
+                    },
+                    "tasks": [
+                        decision_task,
+                        {
+                            "name": "Verify the answer",
+                            "ansible.builtin.assert": {
+                                "that": "workstation_backup_recovery_choices['chezmoi-git'] == 'retry'"
+                            },
+                        },
+                        {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
+                    ],
+                }
+            ]
+        )
+    )
+
+
+def initialize_git_repository(repository: pathlib.Path, environment: dict[str, str]) -> None:
+    """Create a throwaway repository for interactive entrypoint tests."""
+
+    for arguments in (
+        ["init", "--initial-branch=main"],
+        ["add", "."],
+        ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "Fixture"],
+    ):
+        subprocess.run(
+            ["git", *arguments],
+            cwd=repository,
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
 
 
 class PinnedCommitBootstrapTests(unittest.TestCase):
@@ -238,97 +297,110 @@ class PinnedCommitBootstrapTests(unittest.TestCase):
 class InteractiveBootstrapTests(unittest.TestCase):
     """Exercise prompt answers and keyboard cancellation with an isolated repository."""
 
+    def _prepare_retry_fixture(
+        self, fixture: pathlib.Path, *, disable_script_capture: bool = False
+    ) -> tuple[dict[str, str], str]:
+        """Build the repository and environment shared by the retry-wrapper tests."""
+
+        repository = fixture / "repository"
+        repository.mkdir()
+        write_retry_playbook(repository, load_chezmoi_retry_task())
+        environment = {
+            "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
+            "HOME": str(fixture),
+            "USER": "fixture",
+            "ANSIBLE_HOME": str(fixture / ".ansible"),
+            "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "REPOSITORY_URL": repository.as_uri(),
+            "WORKSTATION_MANAGER_INTERACTIVE": "1",
+        }
+        if disable_script_capture:
+            environment["WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE"] = "1"
+        (fixture / "ansible.cfg").write_text("[defaults]\n")
+        initialize_git_repository(repository, environment)
+        bootstrap = bootstrap_fixture(fixture)
+        environment["WORKSTATION_MANAGER_ENTRYPOINT_SOURCE"] = str(fixture / "entrypoint.sh")
+        bootstrap += "COLLECTIONS_INSTALL_DIR=" + shlex.quote(str(WORKSPACE / "ansible/collections")) + "\n"
+        return environment, bootstrap
+
+    @staticmethod
+    def _read_terminal_session(master: int, process: subprocess.Popen[bytes]) -> str:
+        """Drive the retry prompt over a controlling tty until the fixture exits."""
+
+        output = bytearray()
+        deadline = time.monotonic() + 30
+        answered = False
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                break
+            if not select.select([master], [], [], 0.2)[0]:
+                continue
+            try:
+                data = os.read(master, 65536)
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    break
+                raise
+            if not data:
+                break
+            output.extend(data)
+            if RETRY_PROMPT in output and not answered:
+                # Ansible's pause task can still flush pending tty input just after the prompt renders.
+                time.sleep(0.1)
+                os.write(master, b"retry\n")
+                answered = True
+            if b"FIXTURE_COMPLETED" in output:
+                break
+        transcript = output.decode(errors="replace")
+        if not answered:
+            raise AssertionError(transcript)
+        return transcript
+
+    def _run_direct_terminal_bootstrap(self, fixture: pathlib.Path, environment: dict[str, str], bootstrap: str) -> str:
+        """Run the bootstrap through a real controlling tty and return its transcript."""
+
+        master, slave = pty.openpty()
+        try:
+            with subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    controlling_tty_exec_python('["sh"]'),
+                    os.ttyname(slave),
+                ],
+                cwd=fixture,
+                env=environment,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                start_new_session=True,
+                text=False,
+            ) as process:
+                try:
+                    os.close(slave)
+                    slave = -1
+                    os.write(master, bootstrap.encode())
+                    return self._read_terminal_session(master, process)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait(timeout=5)
+        finally:
+            if slave != -1:
+                os.close(slave)
+            os.close(master)
+
     def test_pull_flushes_prompts_and_accepts_answers_and_interrupts(self) -> None:
         """Buffered relay output must not hide either the decision or the abort prompt."""
 
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            repository = fixture / "repository"
-            repository.mkdir()
-            tasks = DataLoader().load_from_file(
-                str(
-                    WORKSPACE
-                    / "ansible/collections/ansible_collections/neilime/workstation_backup"
-                    / "roles/chezmoi/tasks/reconcile_git.yml"
-                )
-            )
-            decision_task = next(task for task in tasks if task["name"] == "Resolve chezmoi tracking branch drift")
-            (repository / "check.yml").write_text(
-                json.dumps(
-                    [
-                        {
-                            "hosts": "localhost",
-                            "gather_facts": False,
-                            "vars": {
-                                "workstation_backup_chezmoi_source_dir": "/fixture/chezmoi",
-                                "workstation_backup_chezmoi_git_preflight": {
-                                    "state": {
-                                        "ahead": 0,
-                                        "behind": 2,
-                                        "upstream": "origin/main",
-                                        "status": "M  README.md\n D home/dot_bashrc",
-                                    }
-                                },
-                                "workstation_backup_chezmoi_git_needs_decision": True,
-                                "workstation_backup_dry_run": False,
-                            },
-                            "tasks": [
-                                decision_task,
-                                {
-                                    "name": "Verify the answer",
-                                    "ansible.builtin.assert": {
-                                        "that": "workstation_backup_recovery_choices['chezmoi-git'] == 'retry'"
-                                    },
-                                },
-                                {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
-                            ],
-                        }
-                    ]
-                )
-            )
             # Do not inherit the tooling image's PYTHONUNBUFFERED: the entrypoint must set it after sudo.
-            environment = {
-                "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
-                "HOME": str(fixture),
-                "USER": "fixture",
-                "ANSIBLE_HOME": str(fixture / ".ansible"),
-                "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-                "GIT_CONFIG_GLOBAL": os.devnull,
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "REPOSITORY_URL": repository.as_uri(),
-                "WORKSTATION_MANAGER_INTERACTIVE": "1",
-                "WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE": "1",
-            }
-            (fixture / "ansible.cfg").write_text("[defaults]\n")
-            for arguments in (
-                ["init", "--initial-branch=main"],
-                ["add", "."],
-                [
-                    "-c",
-                    "user.name=Fixture",
-                    "-c",
-                    "user.email=fixture@example.invalid",
-                    "commit",
-                    "-m",
-                    "Fixture",
-                ],
-            ):
-                subprocess.run(
-                    ["git", *arguments],
-                    cwd=repository,
-                    env=environment,
-                    check=True,
-                    capture_output=True,
-                )
+            environment, bootstrap = self._prepare_retry_fixture(fixture, disable_script_capture=True)
             # Read the script from a pipe while Ansible reads answers from /dev/tty.
-            bootstrap = bootstrap_fixture(fixture)
-            environment["WORKSTATION_MANAGER_ENTRYPOINT_SOURCE"] = str(fixture / "entrypoint.sh")
-            bootstrap += "COLLECTIONS_INSTALL_DIR=" + shlex.quote(str(WORKSPACE / "ansible/collections")) + "\n"
-            command = (
-                "printf '%s\\n' "
-                + shlex.quote(bootstrap + "run_ansible_pull_with_bitwarden_retry check.yml 0")
-                + " | sh"
-            )
+            command = "printf '%s\\n' " + shlex.quote(bootstrap + RETRY_WRAPPER_COMMAND.rstrip("\n")) + " | sh"
             for interrupt in (False, True):
                 with self.subTest(interrupt=interrupt):
                     with subprocess.Popen(
@@ -350,7 +422,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
                         output = bytearray()
 
                         try:
-                            self.wait_for_prompt(process, output, b"Choose [save/restore/retry/skip/abort]:")
+                            self.wait_for_prompt(process, output, RETRY_PROMPT)
                             self.assert_prompt_layout(output)
                             if interrupt:
                                 process.stdin.write(b"\x03")
@@ -378,137 +450,10 @@ class InteractiveBootstrapTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            repository = fixture / "repository"
-            repository.mkdir()
-            tasks = DataLoader().load_from_file(
-                str(
-                    WORKSPACE
-                    / "ansible/collections/ansible_collections/neilime/workstation_backup"
-                    / "roles/chezmoi/tasks/reconcile_git.yml"
-                )
-            )
-            decision_task = next(task for task in tasks if task["name"] == "Resolve chezmoi tracking branch drift")
-            (repository / "check.yml").write_text(
-                json.dumps(
-                    [
-                        {
-                            "hosts": "localhost",
-                            "gather_facts": False,
-                            "vars": {
-                                "workstation_backup_chezmoi_source_dir": "/fixture/chezmoi",
-                                "workstation_backup_chezmoi_git_preflight": {
-                                    "state": {
-                                        "ahead": 0,
-                                        "behind": 2,
-                                        "upstream": "origin/main",
-                                        "status": "M  README.md\n D home/dot_bashrc",
-                                    }
-                                },
-                                "workstation_backup_chezmoi_git_needs_decision": True,
-                                "workstation_backup_dry_run": False,
-                            },
-                            "tasks": [
-                                decision_task,
-                                {
-                                    "name": "Verify the answer",
-                                    "ansible.builtin.assert": {
-                                        "that": "workstation_backup_recovery_choices['chezmoi-git'] == 'retry'"
-                                    },
-                                },
-                                {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
-                            ],
-                        }
-                    ]
-                )
-            )
-            environment = {
-                "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
-                "HOME": str(fixture),
-                "USER": "fixture",
-                "ANSIBLE_HOME": str(fixture / ".ansible"),
-                "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-                "GIT_CONFIG_GLOBAL": os.devnull,
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "REPOSITORY_URL": repository.as_uri(),
-                "WORKSTATION_MANAGER_INTERACTIVE": "1",
-            }
-            (fixture / "ansible.cfg").write_text("[defaults]\n")
-            for arguments in (
-                ["init", "--initial-branch=main"],
-                ["add", "."],
-                ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "Fixture"],
-            ):
-                subprocess.run(
-                    ["git", *arguments],
-                    cwd=repository,
-                    env=environment,
-                    check=True,
-                    capture_output=True,
-                )
-            bootstrap = bootstrap_fixture(fixture)
-            environment["WORKSTATION_MANAGER_ENTRYPOINT_SOURCE"] = str(fixture / "entrypoint.sh")
-            bootstrap += "COLLECTIONS_INSTALL_DIR=" + shlex.quote(str(WORKSPACE / "ansible/collections")) + "\n"
-            bootstrap += "run_ansible_pull_with_bitwarden_retry check.yml 0\n"
-            master, slave = pty.openpty()
-            try:
-                with subprocess.Popen(
-                    [
-                        sys.executable,
-                        "-c",
-                        "import fcntl, os, sys, termios\n"
-                        "with open(sys.argv[1]) as terminal:\n"
-                        "    fcntl.ioctl(terminal.fileno(), termios.TIOCSCTTY, 0)\n"
-                        'os.execv("/bin/sh", ["sh"])\n',
-                        os.ttyname(slave),
-                    ],
-                    cwd=fixture,
-                    env=environment,
-                    stdin=slave,
-                    stdout=slave,
-                    stderr=slave,
-                    start_new_session=True,
-                    text=False,
-                ) as process:
-                    try:
-                        os.close(slave)
-                        slave = -1
-                        os.write(master, bootstrap.encode())
-                        output = bytearray()
-                        deadline = time.monotonic() + 30
-                        answered = False
-                        exit_requested = False
-                        while time.monotonic() < deadline:
-                            if process.poll() is not None:
-                                break
-                            if not select.select([master], [], [], 0.2)[0]:
-                                continue
-                            try:
-                                data = os.read(master, 65536)
-                            except OSError as error:
-                                if error.errno == errno.EIO:
-                                    break
-                                raise
-                            if not data:
-                                break
-                            output.extend(data)
-                            if b"Choose [save/restore/retry/skip/abort]:" in output and not answered:
-                                os.write(master, b"retry\n")
-                                answered = True
-                            if b"FIXTURE_COMPLETED" in output and not exit_requested:
-                                os.write(master, b"exit\n")
-                                exit_requested = True
-                        transcript = output.decode(errors="replace")
-                        self.assertTrue(answered, transcript)
-                        self.assertIn("Choose [save/restore/retry/skip/abort]:", transcript)
-                        self.assertIn("FIXTURE_COMPLETED", transcript)
-                    finally:
-                        if process.poll() is None:
-                            process.kill()
-                            process.wait(timeout=5)
-            finally:
-                if slave != -1:
-                    os.close(slave)
-                os.close(master)
+            environment, bootstrap = self._prepare_retry_fixture(fixture)
+            transcript = self._run_direct_terminal_bootstrap(fixture, environment, bootstrap + RETRY_WRAPPER_COMMAND)
+            self.assertIn(RETRY_PROMPT.decode(), transcript)
+            self.assertIn("FIXTURE_COMPLETED", transcript)
 
     def assert_prompt_layout(self, output: bytearray) -> None:
         """Check real terminal output for left-aligned lines and unescaped Git status."""

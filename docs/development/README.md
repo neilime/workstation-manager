@@ -80,6 +80,11 @@ runtime invalidate that cache; changes to image labels alone do not.
 
 Do not edit generated caches, reports, vendored collections, or test output.
 
+Tooling containers run with the host UID and GID. The launcher supplies temporary,
+read-only account files with `/tmp` as the tooling account's home, so account
+lookups and Ansible temporary files work independently of the image's built-in
+user and the host home directory.
+
 Use `make tool-shell` for an interactive tooling container. `make lint-fix`
 rewrites files; `make ci` runs it before syntax and test checks. Review its diff.
 Documentation-only changes need applicable lint and local link checks.
@@ -141,8 +146,9 @@ before reusing a VM. `VM_NAME` selects a different instance.
 The suite runs three phases, with assertions after each:
 
 1. **Backup:** create project fixtures and an isolated, published Chezmoi source,
-   then run backup. The temporary override keeps the configured SSH/GPG
-   collections and disables managed browser profiles.
+   restore SSH/GPG keys from the configured Bitwarden collections, then run
+   backup. The temporary override keeps those collections and disables managed
+   browser profiles. Recovery checks must pass without prompts or skipped sources.
 2. **Setup:** remove the temporary recovery fixture, run setup with the generated
    archive, and verify the installed workstation and restored files.
 3. **Cleanup:** run cleanup and check its report and preservation behavior.
