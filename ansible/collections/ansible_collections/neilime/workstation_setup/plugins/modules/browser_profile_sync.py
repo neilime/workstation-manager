@@ -15,13 +15,14 @@ short_description: Synchronize approved native profile metadata
 version_added: '1.0.0'
 description:
   - Restores saved profile metadata locally or updates existing vault records from local metadata.
+  - Restore also enables Sync everything for declared profiles without changing their pairing or setup state.
   - Preserves recovery words and unrelated browser settings; never deletes profile records.
   - Requires the browser to be closed and verifies applied changes.
 author:
   - workstation-manager contributors (@neilime)
 options:
   direction:
-    description: Save local metadata to Bitwarden or restore stored metadata locally.
+    description: Save local metadata to Bitwarden or restore stored metadata and enable Sync everything locally.
     type: str
     required: true
     choices: [save, restore]

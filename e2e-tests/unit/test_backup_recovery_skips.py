@@ -284,8 +284,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
             }
         ]
 
-    def test_browser_metadata_directions_reload_and_verify_with_real_adapter(self) -> None:
-        """The actual Brave adapter must reconcile either direction before live confirmation and archiving."""
+    def prepare_native_browser(self) -> tuple[list, dict, pathlib.Path, pathlib.Path]:
+        """Load the real Brave adapter against a disposable native profile and vault record."""
 
         self.prepare_keys()
         tasks = self.prepare_browser(drift=True)
@@ -331,34 +331,49 @@ class BackupRecoverySkipTests(unittest.TestCase):
         root = self.fixture / ".config/BraveSoftware/Brave-Browser"
         (root / "Default").mkdir(parents=True)
         preferences = root / "Default/Preferences"
-        for direction in ("save", "restore"):
-            with self.subTest(direction=direction):
+        return tasks, record, store, preferences
+
+    def test_browser_metadata_directions_reload_and_verify_with_real_adapter(self) -> None:
+        """Metadata and Sync-only repairs must finish before live confirmation and archiving."""
+
+        tasks, record, store, preferences = self.prepare_native_browser()
+        for direction, sync_only in (("save", False), ("restore", False), ("restore", True)):
+            with self.subTest(direction=direction, sync_only=sync_only):
                 store.write_text(json.dumps(record))
-                (root / "Local State").write_text(
-                    json.dumps({"profile": {"info_cache": {"Default": {"name": "Local"}}}})
+                local_name = "Remote" if sync_only else "Local"
+                (preferences.parent.parent / "Local State").write_text(
+                    json.dumps({"profile": {"info_cache": {"Default": {"name": local_name}}}})
                 )
                 preferences.write_text(
                     json.dumps(
                         {
-                            "profile": {"name": "Local"},
-                            "sync": {"keep_everything_synced": True},
+                            "profile": {"name": local_name},
+                            "sync": {"keep_everything_synced": not sync_only},
                             "brave_sync_v2": {"seed": "synthetic-browser-seed"},
-                            "browser": {"theme": {"user_color2": int("654321", 16) - 0x1000000}},
+                            "browser": {
+                                "theme": {"user_color2": int("123456" if sync_only else "654321", 16) - 0x1000000}
+                            },
                             "extensions": {"theme": {"id": "user_color_theme_id"}},
                             "pinned_tabs": [{"url": "https://example.invalid"}],
                         }
                     )
                 )
+                before = json.loads(preferences.read_text())
                 code, output = self.run_backup(
                     tasks,
                     (
-                        ("[save/restore/retry/skip/abort]", direction),
+                        ("[restore/retry/skip/abort]" if sync_only else "[save/restore/retry/skip/abort]", direction),
                         ("[synced/skip/abort]", "synced"),
                     ),
                 )
                 self.assertEqual(code, 0, output)
                 current = json.loads(preferences.read_text())
                 saved = json.loads(store.read_text())
+                if sync_only:
+                    before["sync"]["keep_everything_synced"] = True
+                    self.assertEqual(current, before)
+                    self.assertEqual(saved, record)
+                    self.assertIn("enable Sync everything", output)
                 expected = "Local" if direction == "save" else "Remote"
                 self.assertEqual(current["profile"]["name"], expected)
                 self.assertEqual(saved["name"], expected)

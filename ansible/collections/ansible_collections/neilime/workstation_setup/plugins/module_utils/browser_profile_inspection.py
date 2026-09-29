@@ -50,8 +50,8 @@ def _label(value: object, fallback: str) -> str:
     return "".join(character if character.isprintable() else " " for character in value)
 
 
-def _boolean(settings: dict, key: str) -> bool | None:
-    value = settings.get(key)
+def _boolean(settings: dict, key: str, default: bool | None = None) -> bool | None:
+    value = settings.get(key, default)
     if value is not None and not isinstance(value, bool):
         raise ValueError(f"Expected a browser Sync boolean for {key}")
     return value
@@ -65,7 +65,8 @@ def _inspect_sync(preferences: dict) -> tuple[dict, list[str]]:
     metadata = {
         "seed_present": isinstance(seed, str) and bool(seed),
         "requested": _boolean(sync, "requested"),
-        "keep_everything_synced": _boolean(sync, "keep_everything_synced"),
+        # Chromium registers this preference as true; Brave keeps that default.
+        "keep_everything_synced": _boolean(sync, "keep_everything_synced", default=True),
         "has_setup_completed": _boolean(sync, "has_setup_completed"),
         "managed": _boolean(sync, "managed"),
         "selected_types": {name: _boolean(sync, name) for name in _SYNC_TYPES},
@@ -260,4 +261,15 @@ def inspect_browser_profiles(user_data_dir: str, profiles: list[dict]) -> dict:
             for profile in inventory
             if profile["sync_issues"]
         ],
+    }
+
+
+def sync_everything_drift(inspection: dict) -> set[str]:
+    """Select declared profiles whose Sync-everything setting can be restored."""
+
+    managed = {profile["directory"] for profile in inspection.get("profiles", []) if profile.get("id")}
+    return {
+        record["directory"]
+        for record in inspection.get("sync_issues", [])
+        if record.get("directory") in managed and "sync_everything_not_enabled" in record.get("issues", [])
     }

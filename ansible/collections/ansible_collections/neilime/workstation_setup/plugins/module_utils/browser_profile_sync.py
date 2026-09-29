@@ -19,10 +19,14 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     decode_avatar_png,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_inspection import (
+    _read_settings,
     inspect_browser_profiles,
+    sync_everything_drift,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_seed import (
     _brave_running,
+    _object,
+    _write_file,
     seed_browser_profiles,
 )
 
@@ -31,7 +35,7 @@ _LOCAL_KINDS = {"renamed", "theme_color", "avatar"}
 
 
 def browser_sync_directions(inspection: dict) -> dict[str, str]:
-    """Offer only directions with metadata to reconcile; chain pairing stays manual."""
+    """Offer directions for repairable profile settings; chain pairing stays manual."""
 
     kinds = {issue["kind"] for issue in inspection["drift"] if issue.get("id")}
     actions = {}
@@ -40,11 +44,15 @@ def browser_sync_directions(inspection: dict) -> dict[str, str]:
             "Close Brave, then replace saved names, colors and logos with local values. "
             "Absent or disabled customizations are removed from Bitwarden; recovery words stay unchanged."
         )
+    repairs = []
     if kinds & _REMOTE_KINDS:
-        actions["restore"] = (
-            "Close Brave, then restore saved profile names, colors and logos locally. "
-            "Missing profiles are recreated; Sync pairing remains manual."
-        )
+        repairs.append("restore saved profile names, colors and logos locally")
+    if sync_everything_drift(inspection):
+        repairs.append("enable Sync everything")
+    if repairs:
+        actions["restore"] = "Close Brave, then " + " and ".join(repairs) + "."
+        if kinds & {"missing", "missing_preferences"}:
+            actions["restore"] += " Missing profiles are recreated; Sync pairing remains manual."
     return actions
 
 
@@ -165,6 +173,32 @@ def _save_local_profile(vault: BrowserVault, root: Path, declaration: dict, obse
             raise ValueError("Saved browser logo verification failed; backup stopped")
 
 
+def _restore_profiles(user_data_dir: str, profiles: list[dict], inspection: dict, check_mode: bool) -> bool:
+    """Repair only drifted metadata and the required selection flag, preserving other settings."""
+
+    identities = {issue["id"] for issue in inspection["drift"] if issue.get("id") and issue["kind"] in _REMOTE_KINDS}
+    changed = seed_browser_profiles(
+        user_data_dir,
+        [profile for profile in profiles if profile["id"].strip() in identities],
+        check_mode,
+        replace_names=True,
+    )
+    pending = []
+    for directory in sorted(sync_everything_drift(inspection)):
+        path = Path(user_data_dir) / directory / "Preferences"
+        if not path.is_file():
+            raise ValueError("Browser profile settings disappeared; retry backup")
+        preferences = _read_settings(path)
+        _object(preferences, "sync")["keep_everything_synced"] = True
+        pending.append((path, preferences))
+    if pending and not check_mode:
+        if _brave_running() or os.path.lexists(Path(user_data_dir) / "SingletonLock"):
+            raise ValueError("Close Brave completely before enabling Sync everything")
+        for path, preferences in pending:
+            _write_file(path, preferences)
+    return changed or bool(pending)
+
+
 def sync_browser_profiles(
     user_data_dir: str, profiles: list[dict], direction: str, vault: BrowserVault, check_mode: bool = False
 ) -> bool:
@@ -179,12 +213,14 @@ def sync_browser_profiles(
     if _brave_running() or os.path.lexists(root / "SingletonLock"):
         raise ValueError("Close Brave completely before synchronizing profile metadata")
     if direction == "restore":
-        changed = seed_browser_profiles(user_data_dir, profiles, check_mode, replace_names=True)
+        changed = _restore_profiles(user_data_dir, profiles, inspection, check_mode)
         if not check_mode:
             verified = inspect_browser_profiles(user_data_dir, profiles)
-            declared_ids = {profile["id"] for profile in profiles}
-            if any(issue["kind"] in _REMOTE_KINDS and issue.get("id") in declared_ids for issue in verified["drift"]):
-                raise ValueError("Restored browser metadata verification failed; backup stopped")
+            declared_ids = {profile["id"].strip() for profile in profiles}
+            if sync_everything_drift(verified) or any(
+                issue["kind"] in _REMOTE_KINDS and issue.get("id") in declared_ids for issue in verified["drift"]
+            ):
+                raise ValueError("Restored browser settings verification failed; backup stopped")
         return changed
     if check_mode:
         return True

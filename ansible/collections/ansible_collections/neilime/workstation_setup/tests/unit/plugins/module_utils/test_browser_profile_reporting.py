@@ -39,8 +39,9 @@ def test_repeated_sync_and_missing_logos_become_two_action_groups() -> None:
     assert report.count("Enable Sync everything.") == 1
     assert report.count("Restore missing profile logos.") == 1
     assert "Select the stored profile logos." not in report
-    assert "brave://settings/braveSync" in report
-    assert "restore" in report
+    assert "choose restore" in report
+    assert "brave://settings/braveSync" not in report
+    assert "After changing Sync settings" not in report
     sync, avatars = report.split("2. Restore missing profile logos.")
     for number in range(6):
         assert f"Workspace {number}" in sync
@@ -120,7 +121,11 @@ def test_sync_diagnostics_have_specific_next_steps(issue: str, advice: str) -> N
     report = browser_recovery_report(inspection)
     assert advice in report
     assert "Personal (Default)" in report
-    assert "close Brave to save them" in report
+    if issue == "sync_everything_not_enabled":
+        assert "Close Brave and choose restore" in report
+        assert "close Brave to save them" not in report
+    else:
+        assert "close Brave to save them" in report
     assert "profile logos" not in report
     assert "profile colors" not in report
 
@@ -177,3 +182,14 @@ def test_unknown_or_malformed_diagnostics_never_look_successful(field: str, valu
     with pytest.raises(ValueError) as error:
         browser_recovery_report(inspection)
     assert "private-" not in str(error.value)
+
+
+def test_undeclared_profiles_keep_manual_sync_instructions() -> None:
+    """An automatic restore must not be advertised for profiles outside recovery management."""
+
+    inspection = _inspection()
+    inspection["profiles"][0]["id"] = None
+    inspection["sync_issues"] = [{"directory": "Default", "issues": ["sync_everything_not_enabled"]}]
+    report = browser_recovery_report(inspection)
+    assert "brave://settings/braveSync" in report
+    assert "choose restore" not in report

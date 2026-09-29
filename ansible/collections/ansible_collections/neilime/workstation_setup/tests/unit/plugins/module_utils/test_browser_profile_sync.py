@@ -118,6 +118,18 @@ def test_remote_sync_restores_metadata_and_preserves_browser_data(fixture: tuple
     assert not sync.sync_browser_profiles(str(root), profiles, "restore", vault)
 
 
+def test_restore_supports_default_profile_directory(fixture: tuple) -> None:
+    """Selecting metadata repairs retains normalized IDs and optional directory defaults."""
+
+    root, vault, _profiles = fixture
+    profiles = [{"id": " fixture ", "label": "Remote", "item_id": ITEM_ID}]
+    assert sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    preferences = json.loads((root / "managed-fixture/Preferences").read_text())
+    assert preferences["profile"]["name"] == "Remote"
+    assert not sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    assert not vault.calls
+
+
 def test_local_sync_preserves_recovery_words_fields_and_secondary_colors(fixture: tuple) -> None:
     """Local direction changes only approved managed metadata and verifies complete note retention."""
 
@@ -218,3 +230,123 @@ def test_moved_remote_record_is_not_updated_outside_its_approved_collection(fixt
     with pytest.raises(ValueError, match="left its recovery collection"):
         sync.sync_browser_profiles(str(root), profiles, "save", vault)
     assert not any(call[0] in {"edit", "create", "delete"} for call in vault.calls)
+
+
+@pytest.fixture(name="sync_only")
+def sync_only_fixture(fixture: tuple) -> tuple:
+    """Keep profile metadata synchronized while explicitly disabling Sync everything."""
+
+    root, vault, profiles = fixture
+    seed_browser_profiles(str(root), profiles, replace_names=True)
+    path = root / "Default/Preferences"
+    preferences = json.loads(path.read_text())
+    preferences["sync"] = {"keep_everything_synced": False, "bookmarks": False, "has_setup_completed": True}
+    path.write_text(json.dumps(preferences))
+    return root, vault, profiles
+
+
+def test_sync_only_restore_is_explicit_verified_and_idempotent(sync_only: tuple) -> None:
+    """A disabled setting offers restore and changes only that setting without a vault write."""
+
+    root, vault, profiles = sync_only
+    path = root / "Default/Preferences"
+    before = path.read_bytes()
+    inspection = sync.inspect_browser_profiles(str(root), profiles)
+    assert inspection["drift"] == []
+    assert sync.browser_sync_directions(inspection) == {"restore": "Close Brave, then enable Sync everything."}
+    assert sync.sync_browser_profiles(str(root), profiles, "restore", vault, check_mode=True)
+    assert path.read_bytes() == before
+    assert not sync.sync_browser_profiles(str(root), profiles, "save", vault)
+    assert path.read_bytes() == before
+    assert sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    expected = json.loads(before)
+    expected["sync"]["keep_everything_synced"] = True
+    assert json.loads(path.read_text()) == expected
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert sync.inspect_browser_profiles(str(root), profiles)["sync_issues"] == []
+    assert not sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    assert not vault.calls
+
+
+def test_setup_still_preserves_disabled_sync_everything(sync_only: tuple) -> None:
+    """Normal setup must not inherit approval from backup's explicit restore action."""
+
+    root, _vault, profiles = sync_only
+    path = root / "Default/Preferences"
+    before = path.read_bytes()
+    assert not seed_browser_profiles(str(root), profiles)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "field,value,issue",
+    [
+        ("requested", False, "sync_not_requested"),
+        ("has_setup_completed", False, "sync_setup_incomplete"),
+        ("managed", True, "sync_disabled_by_policy"),
+        ("seed", "", "missing_sync_seed"),
+    ],
+)
+def test_sync_restore_does_not_invent_pairing_or_bypass_manual_checks(
+    sync_only: tuple, field: str, value: object, issue: str
+) -> None:
+    """Restoring the selection flag must leave missing pairing, setup, and policy failures visible."""
+
+    root, vault, profiles = sync_only
+    path = root / "Default/Preferences"
+    before = json.loads(path.read_text())
+    before["brave_sync_v2" if field == "seed" else "sync"][field] = value
+    path.write_text(json.dumps(before))
+    assert sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    before["sync"]["keep_everything_synced"] = True
+    assert json.loads(path.read_text()) == before
+    inspection = sync.inspect_browser_profiles(str(root), profiles)
+    assert inspection["sync_issues"] == [{"directory": "Default", "issues": [issue]}]
+    assert sync.browser_sync_directions(inspection) == {}
+
+
+@pytest.mark.parametrize("guard", ["lock", "process", "symlink"])
+def test_sync_only_restore_respects_browser_and_path_guards(
+    sync_only: tuple, monkeypatch: pytest.MonkeyPatch, guard: str
+) -> None:
+    """The new repair cannot bypass protections used for other profile writes."""
+
+    root, vault, profiles = sync_only
+    path = root / "Default/Preferences"
+    before = path.read_bytes()
+    if guard == "lock":
+        (root / "SingletonLock").symlink_to("fixture-lock")
+    elif guard == "process":
+        monkeypatch.setattr(sync, "_brave_running", lambda: True)
+    else:
+        outside = root / "outside"
+        path.rename(outside)
+        path.symlink_to(outside)
+    with pytest.raises(ValueError, match="Close Brave|symlink"):
+        sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    assert path.read_bytes() == before
+    assert not vault.calls
+
+
+def test_sync_restore_verification_failure_stops_backup(sync_only: tuple, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A claimed write cannot conceal a disabled setting that survives the restore."""
+
+    root, vault, profiles = sync_only
+    monkeypatch.setattr(sync, "_write_file", lambda *_args, **_kwargs: None)
+    with pytest.raises(ValueError, match="settings verification failed"):
+        sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+
+
+def test_sync_restore_does_not_change_undeclared_profiles(sync_only: tuple) -> None:
+    """Profiles outside the configured recovery collection retain their own Sync choices."""
+
+    root, vault, profiles = sync_only
+    other = root / "Profile 9/Preferences"
+    other.parent.mkdir()
+    other.write_text('{"sync":{"keep_everything_synced":false}}')
+    before = other.read_bytes()
+    assert sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    assert other.read_bytes() == before
+    inspection = sync.inspect_browser_profiles(str(root), profiles)
+    assert sync.browser_sync_directions(inspection) == {}
+    assert any(record["directory"] == "Profile 9" for record in inspection["sync_issues"])

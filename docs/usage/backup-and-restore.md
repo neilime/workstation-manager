@@ -63,7 +63,8 @@ restoration imports the selected key and ownertrust, verifies the resulting key
 material, and stops if local-only packets prevent a match. An omitted ownertrust
 entry restores undefined trust. Unlock protected GPG keys before restoration.
 
-Backup verifies each applied change. Live browser Sync remains a manual check.
+Backup verifies each applied change. When Sync everything is disabled, `restore`
+turns it on with Brave closed; pairing and live browser Sync remain manual checks.
 Each prompt also offers `skip` and `abort`; an earlier approval never selects a later action.
 `skip` leaves that recovery source unchanged at this step and continues the other
 backup work:
