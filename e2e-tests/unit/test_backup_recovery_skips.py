@@ -86,7 +86,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             self.assertFalse(any("local-key" in name for name in archive.getnames()))
         self.assertEqual((self.fixture / "local-key").read_text(), "synthetic-private-key\n")
 
-    def prepare_browser(self, *, drift: bool) -> list[dict]:
+    def _prepare_browser(self, *, drift: bool) -> list[dict]:
         """Stub inspection and vault loading while keeping the real browser decision tasks."""
 
         setup = self.fixture / "collections/ansible_collections/neilime/workstation_setup/roles"
@@ -132,10 +132,10 @@ class BackupRecoverySkipTests(unittest.TestCase):
                 ]
             )
         )
-        self.set_browser_drift(drift)
+        self._set_browser_drift(drift)
         return [{"ansible.builtin.include_role": {"name": "neilime.workstation_backup.browser"}}]
 
-    def set_browser_drift(self, drift: bool) -> None:
+    def _set_browser_drift(self, drift: bool) -> None:
         """Represent a user's manual reconciliation without operating on real profiles."""
 
         (self.fixture / "inspection.json").write_text(
@@ -161,7 +161,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
     def test_browser_drift_skip_does_not_request_live_sync(self) -> None:
         """A skipped browser recovery check must not fall into another confirmation prompt."""
 
-        code, output = self.run_backup(self.prepare_browser(drift=True), (("[retry/skip/abort]", "skip"),))
+        code, output = self.run_backup(self._prepare_browser(drift=True), (("[retry/skip/abort]", "skip"),))
         self.assertEqual(code, 0, output)
         self.assertNotIn("Choose [synced/skip/abort]", output)
         self.assertIn("incomplete recovery coverage", output)
@@ -178,7 +178,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
     def test_browser_sync_can_be_skipped_after_clean_inspection(self) -> None:
         """Choosing skip must not claim that live synchronization was confirmed."""
 
-        code, output = self.run_backup(self.prepare_browser(drift=False), (("[synced/skip/abort]", "skip"),))
+        code, output = self.run_backup(self._prepare_browser(drift=False), (("[synced/skip/abort]", "skip"),))
         self.assertEqual(code, 0, output)
         self.assert_archive(["browser-sync"])
 
@@ -186,11 +186,11 @@ class BackupRecoverySkipTests(unittest.TestCase):
         """Retry remains a recheck, not an implicit skip."""
 
         def reconcile() -> str:
-            self.set_browser_drift(False)
+            self._set_browser_drift(False)
             return "retry"
 
         code, output = self.run_backup(
-            self.prepare_browser(drift=True),
+            self._prepare_browser(drift=True),
             (
                 ("[retry/skip/abort]", reconcile),
                 ("[synced/skip/abort]", "synced"),
@@ -202,10 +202,10 @@ class BackupRecoverySkipTests(unittest.TestCase):
     def test_browser_abort_still_prevents_archiving(self) -> None:
         """Both browser decisions retain an explicit abort that stops the backup."""
 
-        tasks = self.prepare_browser(drift=True)
+        tasks = self._prepare_browser(drift=True)
         for drift, prompt in ((True, "[retry/skip/abort]"), (False, "[synced/skip/abort]")):
             with self.subTest(drift=drift):
-                self.set_browser_drift(drift)
+                self._set_browser_drift(drift)
                 code, output = self.run_backup(tasks, ((prompt, "abort"),))
                 self.assertNotEqual(code, 0, output)
                 self.assertFalse((self.fixture / "backup.tar.gz").exists())
@@ -213,7 +213,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
     def test_browser_noninteractive_and_dry_run_do_not_invent_skips(self) -> None:
         """Skipping requires a real choice; previews must not record recovery completion."""
 
-        tasks = self.prepare_browser(drift=True)
+        tasks = self._prepare_browser(drift=True)
         self.environment["WORKSTATION_MANAGER_INTERACTIVE"] = "0"
         code, output = self.run_backup(tasks)
         self.assertNotEqual(code, 0, output)
@@ -284,11 +284,11 @@ class BackupRecoverySkipTests(unittest.TestCase):
             }
         ]
 
-    def prepare_native_browser(self) -> tuple[list, dict, pathlib.Path, pathlib.Path]:
+    def _prepare_native_browser(self) -> tuple[list, dict, pathlib.Path, pathlib.Path]:
         """Load the real Brave adapter against a disposable native profile and vault record."""
 
         self.prepare_keys()
-        tasks = self.prepare_browser(drift=True)
+        tasks = self._prepare_browser(drift=True)
         setup = self.fixture / "collections/ansible_collections/neilime/workstation_setup/roles"
         (setup / "browser_brave").symlink_to(
             WORKSPACE / "ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_brave",
@@ -336,7 +336,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
     def test_browser_metadata_directions_reload_and_verify_with_real_adapter(self) -> None:
         """Metadata and Sync-only repairs must finish before live confirmation and archiving."""
 
-        tasks, record, store, preferences = self.prepare_native_browser()
+        tasks, record, store, preferences = self._prepare_native_browser()
         for direction, sync_only in (("save", False), ("restore", False), ("restore", True)):
             with self.subTest(direction=direction, sync_only=sync_only):
                 store.write_text(json.dumps(record))
@@ -383,6 +383,105 @@ class BackupRecoverySkipTests(unittest.TestCase):
                 for secret in ("synthetic-recovery-words", "synthetic-browser-seed", "synthetic-current-session"):
                     self.assertNotIn(secret, output)
                 self.assert_archive([])
+
+    def _prepare_locked_browser(self) -> tuple[list, pathlib.Path, pathlib.Path]:
+        """Use the real adapter with a disposable, drifted profile and a persistent lock."""
+
+        tasks, record, store, preferences = self._prepare_native_browser()
+        record["fields"] = record["fields"][:2]
+        store.write_text(json.dumps(record))
+        preferences.write_text(
+            json.dumps(
+                {
+                    "profile": {"name": "Local"},
+                    "sync": {"keep_everything_synced": False},
+                    "brave_sync_v2": {"seed": "synthetic-browser-seed"},
+                }
+            )
+        )
+        (preferences.parent.parent / "Local State").write_text(
+            json.dumps({"profile": {"info_cache": {"Default": {"name": "Local"}}}})
+        )
+        lock = preferences.parent.parent / "SingletonLock"
+        lock.symlink_to("fixture-browser-lock")
+        return tasks, preferences, lock
+
+    def test_locked_browser_retry_requires_fresh_sync_approval(self) -> None:
+        """A busy profile offers a safe retry, reloads, and never reuses the previous approval."""
+
+        tasks, preferences, lock = self._prepare_locked_browser()
+        before = preferences.read_bytes()
+        store = self.fixture / "saved-item.json"
+        saved = store.read_bytes()
+
+        def close_browser() -> str:
+            self.assertEqual(preferences.read_bytes(), before)
+            self.assertEqual(store.read_bytes(), saved)
+            self.assertFalse((self.fixture / "backup.tar.gz").exists())
+            lock.unlink()
+            return "retry"
+
+        code, output = self.run_backup(
+            tasks,
+            (
+                ("[save/restore/retry/skip/abort]", "restore"),
+                ("[retry/skip/abort]", "retry"),
+                ("[save/restore/retry/skip/abort]", "restore"),
+                ("[retry/skip/abort]", close_browser),
+                ("[save/restore/retry/skip/abort]", "restore"),
+                ("[synced/skip/abort]", "synced"),
+            ),
+        )
+        self.assertEqual(code, 0, output)
+        self.assertEqual(output.count("Choose [save/restore/retry/skip/abort]"), 3)
+        self.assertIn("profile lock is still present", output)
+        self.assertIn("No browser settings or Bitwarden records were changed by this attempt.", output)
+        self.assertNotIn("synthetic-browser-seed", output)
+        self.assertNotIn("synthetic-recovery-words", output)
+        current = json.loads(preferences.read_text())
+        self.assertEqual(current["profile"]["name"], "Remote")
+        self.assertTrue(current["sync"]["keep_everything_synced"])
+        self.assertEqual(store.read_bytes(), saved)
+        self.assert_archive([])
+
+    def test_locked_browser_can_abort_or_explicitly_skip_without_changes(self) -> None:
+        """Blocked actions cannot produce an archive unless recovery is explicitly skipped."""
+
+        tasks, preferences, lock = self._prepare_locked_browser()
+        before = preferences.read_bytes()
+        for decision in ("abort", "skip"):
+            with self.subTest(decision=decision):
+                code, output = self.run_backup(
+                    tasks,
+                    (("[save/restore/retry/skip/abort]", "save"), ("[retry/skip/abort]", decision)),
+                )
+                self.assertEqual(preferences.read_bytes(), before)
+                self.assertTrue(lock.is_symlink())
+                self.assertFalse((self.fixture / "bw-calls").exists())
+                self.assertNotIn("Choose [synced/skip/abort]", output)
+                if decision == "abort":
+                    self.assertNotEqual(code, 0, output)
+                    self.assertFalse((self.fixture / "backup.tar.gz").exists())
+                else:
+                    self.assertEqual(code, 0, output)
+                    self.assert_archive(["browser-recovery"])
+
+    def test_browser_write_error_still_stops_backup(self) -> None:
+        """The retryable browser guard must not conceal a real filesystem failure."""
+
+        tasks, preferences, lock = self._prepare_locked_browser()
+        lock.unlink()
+
+        def break_destination() -> str:
+            original = preferences.with_name("fixture-original")
+            preferences.rename(original)
+            preferences.symlink_to(original)
+            return "restore"
+
+        code, output = self.run_backup(tasks, (("[save/restore/retry/skip/abort]", break_destination),))
+        self.assertNotEqual(code, 0, output)
+        self.assertNotIn("Choose [retry/skip/abort]", output)
+        self.assertFalse((self.fixture / "backup.tar.gz").exists())
 
     def test_remote_key_directions_restore_without_writing_the_vault(self) -> None:
         """Both differing and remote-only SSH keys restore only after the matching explicit choice."""

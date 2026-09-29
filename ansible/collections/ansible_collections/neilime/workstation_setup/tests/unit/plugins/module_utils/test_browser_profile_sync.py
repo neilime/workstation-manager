@@ -159,14 +159,33 @@ def test_failed_save_verification_stops_synchronization(fixture: tuple) -> None:
 
 
 @pytest.mark.parametrize("direction", ["save", "restore"])
-def test_running_browser_blocks_both_directions(fixture: tuple, direction: str) -> None:
-    """Unflushed preferences cannot be treated as authoritative local metadata."""
+@pytest.mark.parametrize("guard", ["process", "lock"])
+def test_busy_browser_is_retryable_only_before_changes(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch, direction: str, guard: str
+) -> None:
+    """Process and lock blockers identify the reason without touching files or the vault."""
 
     root, vault, profiles = fixture
-    (root / "SingletonLock").symlink_to("fixture-lock")
-    with pytest.raises(ValueError, match="Close Brave"):
+    before = (root / "Default/Preferences").read_bytes()
+    if guard == "process":
+        monkeypatch.setattr(sync, "_brave_running", lambda: True)
+    else:
+        (root / "SingletonLock").symlink_to("fixture-lock")
+    with pytest.raises(sync.BrowserSyncBlocked, match="process.*running" if guard == "process" else "lock.*present"):
         sync.sync_browser_profiles(str(root), profiles, direction, vault)
+    assert (root / "Default/Preferences").read_bytes() == before
     assert not vault.calls
+
+
+def test_browser_starting_during_restore_is_a_fatal_failure(sync_only: tuple, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Once an action begins, a late guard must not be treated as a no-change precondition."""
+
+    root, vault, profiles = sync_only
+    running = iter((False, True))
+    monkeypatch.setattr(sync, "_brave_running", lambda: next(running))
+    with pytest.raises(ValueError, match="Close Brave") as error:
+        sync.sync_browser_profiles(str(root), profiles, "restore", vault)
+    assert not isinstance(error.value, sync.BrowserSyncBlocked)
 
 
 def test_sync_pairing_and_unrecorded_profiles_are_not_guessed() -> None:

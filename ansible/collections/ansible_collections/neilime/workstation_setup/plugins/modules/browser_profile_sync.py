@@ -18,6 +18,7 @@ description:
   - Restore also enables Sync everything for declared profiles without changing their pairing or setup state.
   - Preserves recovery words and unrelated browser settings; never deletes profile records.
   - Requires the browser to be closed and verifies applied changes.
+  - Returns a blocker without making changes when Brave is running or its profile is locked before synchronization.
 author:
   - workstation-manager contributors (@neilime)
 options:
@@ -51,7 +52,16 @@ EXAMPLES = r"""
   no_log: true
 """
 
-RETURN = r""""""
+RETURN = r"""
+blocked:
+  description: Whether the closed-browser precondition prevented synchronization before any changes.
+  returned: always
+  type: bool
+blocker:
+  description: Safe instructions for resolving a running browser or remaining profile lock.
+  returned: when blocked
+  type: str
+"""
 
 # pylint: disable=wrong-import-position
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
@@ -85,11 +95,13 @@ def main() -> None:
             ),
             check_mode=module.check_mode,
         )
+    except browser_profile_sync.BrowserSyncBlocked as error:
+        module.exit_json(changed=False, blocked=True, blocker=str(error))
     # Standard Ansible error/result handling must remain in each executable module.
     # pylint: disable=duplicate-code
     except (OSError, ValueError) as error:
         module.fail_json(msg=str(error))
-    module.exit_json(changed=changed)
+    module.exit_json(changed=changed, blocked=False)
 
 
 if __name__ == "__main__":

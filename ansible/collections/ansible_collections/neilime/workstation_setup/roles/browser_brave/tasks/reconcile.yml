@@ -8,7 +8,25 @@
     direction: "{{ workstation_backup_recovery_choices['browser-recovery'] }}"
     collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
     session: "{{ bitwarden_collection_session }}"
+  register: browser_brave_sync_result
   when:
     - not workstation_backup_dry_run
     - not ansible_check_mode
   no_log: true
+
+- name: Resolve the closed-browser requirement before retrying synchronization
+  ansible.builtin.include_role:
+    name: neilime.workstation_backup.recovery_decision
+  vars:
+    workstation_backup_recovery_id: browser-recovery
+    workstation_backup_recovery_needed: true
+    workstation_backup_recovery_request:
+      scope: browser-recovery
+      summary: |-
+        {{ browser_brave_sync_result.blocker }}
+        No browser settings or Bitwarden records were changed by this attempt.
+      actions:
+        retry: Recheck profiles after closing Brave, then choose save or restore again.
+      skip: Skip the remaining browser recovery checks.
+      abort_message: Browser recovery was not synchronized; no archive was created.
+  when: browser_brave_sync_result.blocked | default(false)
