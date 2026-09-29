@@ -160,9 +160,11 @@ def _inspect_avatar(path: Path, expected: bytes, preferences: dict, entry: dict)
 def _inspect_profile(root: Path, directory: str, declaration: dict, cache: dict) -> tuple[dict, list]:
     preferences_path = root / directory / "Preferences"
     preferences = _read_settings(preferences_path)
+    # Local State owns the profile picker name; Preferences can retain a stale
+    # placeholder such as "Your Chromium" after the registered name changes.
     label = _label(
-        _object(preferences, "profile").get("name"),
-        _label(_object(cache, directory).get("name"), directory),
+        _object(cache, directory).get("name"),
+        _label(_object(preferences, "profile").get("name"), directory),
     )
     identity = {"directory": directory, "id": declaration.get("id")}
     sync, issues = _inspect_sync(preferences)
