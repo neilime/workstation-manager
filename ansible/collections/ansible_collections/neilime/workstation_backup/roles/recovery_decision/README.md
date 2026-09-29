@@ -14,6 +14,10 @@ Call this role at each decision point with:
   `actions` (action names mapped to descriptions), `skip` (what this step skips),
   and `abort_message`. Pass display metadata only, never complete secret records.
 
+Use `from-local` for copying workstation values into recovery storage and
+`from-remote` for restoring recovery values locally. Offer only directions with
+usable source data; preserve separate destructive and publication approvals.
+
 The role supplies `skip` and `abort`; callers declare only their own actions.
 Results appear in `workstation_backup_recovery_choices[id]`. Every invocation
 resets that entry to an empty string, including previews and unnecessary checks,

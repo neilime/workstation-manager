@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import re
+from typing import TypedDict
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     bitwarden_item_fields,
 )
 
 BitwardenItemFieldReader = bitwarden_item_fields.BitwardenItemFieldReader
+
+
+class GpgKeyRestorePlan(TypedDict):
+    """Validated key identity, armor, and optional ownertrust."""
+
+    item_id: str
+    name: str
+    fingerprint: str
+    private_key: str
+    public_key: str
+    ownertrust: str | None
 
 
 # pylint: disable=too-few-public-methods
@@ -23,7 +35,7 @@ class BitwardenGpgKeyRestorePlanner:
     def __init__(self) -> None:
         self._reader = BitwardenItemFieldReader()
 
-    def build_plan(self, item_payload: dict[str, object]) -> dict[str, object]:
+    def build_plan(self, item_payload: dict[str, object]) -> GpgKeyRestorePlan:
         """Return the import plan for a Bitwarden GPG-key item."""
 
         ownertrust = self._reader.optional_field_value(item_payload, "ownertrust")

@@ -1,0 +1,14 @@
+---
+- name: Synchronize approved Brave profile metadata and verify it
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.browser_profile_sync:
+    user_data_dir: "{{ browser_brave_user_data_dir }}"
+    profiles: "{{ workstation_manager_browser_profiles }}"
+    direction: "{{ workstation_backup_recovery_choices['browser-recovery'] }}"
+    collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
+    session: "{{ bitwarden_collection_session }}"
+  when:
+    - not workstation_backup_dry_run
+    - not ansible_check_mode
+  no_log: true

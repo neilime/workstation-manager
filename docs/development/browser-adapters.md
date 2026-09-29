@@ -28,6 +28,11 @@ Add the role under
   text report grouping detected issues by action, with affected profile names and
   directories. Keep vendor-specific instructions in the adapter. Publish
   `workstation_backup_browser_sync_instructions` for the later live verification.
+- `tasks/reconcile.yml`: apply the explicitly selected `from-local` or
+  `from-remote` choice in `workstation_backup_recovery_choices['browser-recovery']`,
+  guard previews, and verify the changed metadata. Publish supported direction
+  descriptions in `workstation_backup_browser_sync_actions` during inspection.
+  Leave chain pairing and new recovery-note creation manual.
 - `tasks/inspect_profiles.yml`: report undeclared profile paths in
   `workstation_manager_cleanup_unmanaged_browser_profile_directories`, or `[]`.
   Never delete profiles.
@@ -35,8 +40,8 @@ Add the role under
 Setup invokes `main.yml` after archive restoration and before GNOME preferences
 and editor sign-in. The special `browser` favorite resolves to the published
 desktop entry. Backup uses the shared recovery decision role for
-retry/skip/abort and live Sync confirmation, then reloads and inspects profiles on
-retry. Cleanup invokes only the inspection entrypoint.
+direction choices, retry/skip/abort, and live Sync confirmation. It reloads and
+inspects profiles after an approved action or retry. Cleanup invokes only the inspection entrypoint.
 
 Use `workstation_manager_resolved.user` for the target account and
 `workstation_manager_use_become` for privilege escalation. Namespace internal
@@ -76,7 +81,9 @@ The [Brave role](../../ansible/collections/ansible_collections/neilime/workstati
 uses `~/.config/BraveSoftware/Brave-Browser` under the resolved user's home. Its
 managed policy permits Sync; it cannot enroll profiles. Seeding creates missing
 profiles and applies declared colors and avatars while preserving existing
-names and other preferences. It refuses changes while Brave is running.
+names and other preferences. Explicit `from-remote` reconciliation also replaces
+profile names; `from-local` updates existing vault metadata and avatars without
+changing recovery words. Both directions require Brave to be closed.
 
 Backup checks local inventory and Sync settings, including **Sync everything**.
 Saved preferences are insufficient evidence of a completed server upload. Custom

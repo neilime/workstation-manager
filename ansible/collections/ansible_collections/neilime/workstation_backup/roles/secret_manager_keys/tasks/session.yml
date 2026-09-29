@@ -1,0 +1,22 @@
+---
+- name: Check the current Bitwarden session before synchronizing the key
+  ansible.builtin.command:
+    argv:
+      - bw
+      - status
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_session }}"
+    BW_NOINTERACTION: "true"
+  register: workstation_backup_secret_manager_session_status
+  changed_when: false
+  no_log: true
+
+- name: Require an unlocked Bitwarden session for key synchronization
+  ansible.builtin.assert:
+    that:
+      - (workstation_backup_secret_manager_session_status.stdout | from_json).status == 'unlocked'
+    fail_msg: >-
+      Bitwarden session is locked or expired. Re-run backup to unlock the vault
+      before synchronizing keys. Another CLI unlock or lock can invalidate the
+      session while backup is waiting for a decision.
+  no_log: false

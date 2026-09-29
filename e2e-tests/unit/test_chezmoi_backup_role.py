@@ -130,8 +130,8 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.source / "dot_settings").write_text("local edit\n")
         self.git(self.source, "add", ".")
         for answers in (
-            (("[merge/use-remote/retry/skip/abort]", "skip"),),
-            (("[merge/use-remote/retry/skip/abort]", "use-remote"), ("[discard/skip/abort]", "skip")),
+            (("[from-local/from-remote/retry/skip/abort]", "skip"),),
+            (("[from-local/from-remote/retry/skip/abort]", "from-remote"), ("[discard/skip/abort]", "skip")),
         ):
             with self.subTest(answers=answers):
                 code, output = self.run_backup(answers)
@@ -142,7 +142,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
                 self.assertEqual((self.source / "dot_settings").read_text(), "local edit\n")
                 self.assertEqual((self.home / ".settings").read_text(), "original\n")
                 self.assertEqual(json.loads((self.fixture / "recovery-skips.json").read_text()), ["chezmoi"])
-                self.assertNotIn("Choose [re-add/apply/skip/abort]", output)
+                self.assertNotIn("Choose [from-local/from-remote/skip/abort]", output)
                 self.assertNotIn("Choose [publish/skip/abort]", output)
 
     def test_skip_file_drift_or_publication_keeps_prior_approved_changes(self) -> None:
@@ -151,8 +151,8 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         for stage in ("files", "publication"):
             with self.subTest(stage=stage):
                 self.git(self.source, "reset", "--hard", self.original)
-                answers = [("[merge/use-remote/retry/skip/abort]", "merge")]
-                answers.append(("[re-add/apply/skip/abort]", "skip" if stage == "files" else "re-add"))
+                answers = [("[from-local/from-remote/retry/skip/abort]", "from-local")]
+                answers.append(("[from-local/from-remote/skip/abort]", "skip" if stage == "files" else "from-local"))
                 if stage == "publication":
                     answers.append(("[publish/skip/abort]", "skip"))
                 code, output = self.run_backup(answers)
@@ -168,7 +168,10 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         """Updating Git must prompt for the resulting change to managed files."""
 
         code, output = self.run_backup(
-            (("[merge/use-remote/retry/skip/abort]", "merge"), ("[re-add/apply/skip/abort]", "apply"))
+            (
+                ("[from-local/from-remote/retry/skip/abort]", "from-local"),
+                ("[from-local/from-remote/skip/abort]", "from-remote"),
+            )
         )
         self.assertEqual(code, 0, output)
         self.assertEqual((self.home / ".settings").read_text(), "upstream\n")
@@ -180,8 +183,8 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
 
         code, output = self.run_backup(
             (
-                ("[merge/use-remote/retry/skip/abort]", "merge"),
-                ("[re-add/apply/skip/abort]", "re-add"),
+                ("[from-local/from-remote/retry/skip/abort]", "from-local"),
+                ("[from-local/from-remote/skip/abort]", "from-local"),
                 ("[publish/skip/abort]", "publish"),
             )
         )
@@ -193,7 +196,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
     def test_abort_preserves_source_worktree_and_remote(self) -> None:
         """Declining reconciliation must stop backup before touching managed files."""
 
-        code, output = self.run_backup((("[merge/use-remote/retry/skip/abort]", "abort"),))
+        code, output = self.run_backup((("[from-local/from-remote/retry/skip/abort]", "abort"),))
         self.assertNotEqual(code, 0, output)
         self.assertIn("has not been reconciled", output)
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
@@ -203,7 +206,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
     def test_retry_does_not_bypass_unresolved_drift(self) -> None:
         """Retry rechecks the upstream instead of assuming manual work is complete."""
 
-        code, output = self.run_backup((("[merge/use-remote/retry/skip/abort]", "retry"),))
+        code, output = self.run_backup((("[from-local/from-remote/retry/skip/abort]", "retry"),))
         self.assertNotEqual(code, 0, output)
         self.assertIn("still behind", output)
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
@@ -216,7 +219,10 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
             return "retry"
 
         code, output = self.run_backup(
-            (("[merge/use-remote/retry/skip/abort]", reconcile_manually), ("[re-add/apply/skip/abort]", "apply"))
+            (
+                ("[from-local/from-remote/retry/skip/abort]", reconcile_manually),
+                ("[from-local/from-remote/skip/abort]", "from-remote"),
+            )
         )
         self.assertEqual(code, 0, output)
         self.assertEqual((self.home / ".settings").read_text(), "upstream\n")
@@ -227,8 +233,8 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
 
         code, output = self.run_backup(
             (
-                ("[merge/use-remote/retry/skip/abort]", "merge"),
-                ("[re-add/apply/skip/abort]", "re-add"),
+                ("[from-local/from-remote/retry/skip/abort]", "from-local"),
+                ("[from-local/from-remote/skip/abort]", "from-local"),
                 ("[publish/skip/abort]", "abort"),
             )
         )
@@ -248,9 +254,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.home / ".settings").write_text("unwanted workstation edit\n")
         code, output = self.run_backup(
             (
-                ("[merge/use-remote/retry/skip/abort]", "use-remote"),
+                ("[from-local/from-remote/retry/skip/abort]", "from-remote"),
                 ("[discard/skip/abort]", "discard"),
-                ("[re-add/apply/skip/abort]", "apply"),
+                ("[from-local/from-remote/skip/abort]", "from-remote"),
             )
         )
         self.assertEqual(code, 0, output)
@@ -261,14 +267,14 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         self.assertNotIn("Choose [publish/skip/abort]", output)
 
     def test_declining_discard_preserves_local_edits_and_commits(self) -> None:
-        """Selecting use-remote alone is not sufficient approval to discard edits."""
+        """Selecting from-remote alone is not sufficient approval to discard edits."""
 
         (self.source / "dot_settings").write_text("local commit\n")
         self.git(self.source, "commit", "-am", "Local")
         local_head = self.git(self.source, "rev-parse", "HEAD")
         (self.source / "dot_settings").write_text("local edit\n")
         code, output = self.run_backup(
-            (("[merge/use-remote/retry/skip/abort]", "use-remote"), ("[discard/skip/abort]", "abort"))
+            (("[from-local/from-remote/retry/skip/abort]", "from-remote"), ("[discard/skip/abort]", "abort"))
         )
         self.assertNotEqual(code, 0, output)
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), local_head)
@@ -283,9 +289,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.source / "dot_settings").write_text("unwanted local edit\n")
         code, output = self.run_backup(
             (
-                ("[keep/use-remote/retry/skip/abort]", "use-remote"),
+                ("[from-local/from-remote/retry/skip/abort]", "from-remote"),
                 ("[discard/skip/abort]", "discard"),
-                ("[re-add/apply/skip/abort]", "apply"),
+                ("[from-local/from-remote/skip/abort]", "from-remote"),
             )
         )
         self.assertEqual(code, 0, output)
@@ -300,8 +306,8 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.source / "dot_settings").write_text("wanted local edit\n")
         code, output = self.run_backup(
             (
-                ("[keep/use-remote/retry/skip/abort]", "keep"),
-                ("[re-add/apply/skip/abort]", "apply"),
+                ("[from-local/from-remote/retry/skip/abort]", "from-local"),
+                ("[from-local/from-remote/skip/abort]", "from-remote"),
                 ("[publish/skip/abort]", "publish"),
             )
         )

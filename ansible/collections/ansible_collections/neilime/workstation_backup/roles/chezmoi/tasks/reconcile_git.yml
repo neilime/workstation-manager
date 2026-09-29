@@ -42,12 +42,12 @@
         Managed workstation files will be checked after reconciliation.
       actions: >-
         {{ (
-             {'merge': 'Commit source edits as "Update managed dotfiles", then fast-forward or merge upstream without rewriting local history. '
+             {'from-local': 'Commit source edits as "Update managed dotfiles", then fast-forward or merge upstream without rewriting local history. '
                        ~ 'Conflicts stop backup for manual resolution.'}
              if workstation_backup_chezmoi_git_preflight.state.behind > 0
-             else {'keep': 'Retain local source edits and commits for later publication.'}
+             else {'from-local': 'Retain local source edits and commits for later publication.'}
            ) | combine({
-             'use-remote': 'Replace the source with the fetched remote version. Discards source edits, non-ignored untracked files, '
+             'from-remote': 'Replace the source with the fetched remote version. Discards source edits, non-ignored untracked files, '
                            ~ 'and local-only commits after a separate confirmation.',
              'retry': 'Recheck after you reconcile manually in another terminal.'
            }) }}
@@ -59,7 +59,7 @@
     name: neilime.workstation_backup.recovery_decision
   vars:
     workstation_backup_recovery_id: chezmoi-discard
-    workstation_backup_recovery_needed: "{{ workstation_backup_recovery_choices['chezmoi-git'] == 'use-remote' }}"
+    workstation_backup_recovery_needed: "{{ workstation_backup_recovery_choices['chezmoi-git'] == 'from-remote' }}"
     workstation_backup_recovery_request:
       scope: chezmoi
       summary: |-
@@ -81,7 +81,7 @@
   become_user: "{{ workstation_manager_resolved.user.name }}"
   neilime.workstation_backup.git_sync:
     source: "{{ workstation_backup_chezmoi_source_dir }}"
-    merge: "{{ workstation_backup_recovery_choices['chezmoi-git'] == 'merge' }}"
+    merge: "{{ workstation_backup_recovery_choices['chezmoi-git'] == 'from-local' and workstation_backup_chezmoi_git_preflight.state.behind > 0 }}"
     reset_to_upstream: "{{ workstation_backup_recovery_choices['chezmoi-discard'] == 'discard' }}"
     github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
   environment:
@@ -89,7 +89,7 @@
   register: workstation_backup_chezmoi_git_reconciliation
   when:
     - not workstation_backup_dry_run
-    - workstation_backup_recovery_choices['chezmoi-git'] in ['merge', 'keep', 'use-remote', 'retry']
+    - workstation_backup_recovery_choices['chezmoi-git'] in ['from-local', 'from-remote', 'retry']
 
 - name: Require completed chezmoi tracking branch reconciliation
   ansible.builtin.assert:

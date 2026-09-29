@@ -42,7 +42,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         (self.fixture / "projects/project.txt").write_text("project fixture\n")
         (self.fixture / "local-key").write_text("synthetic-private-key\n")
         (self.fixture / "bin").mkdir()
-        self.variables = {
+        self.variables: dict = {
             "ansible_python_interpreter": sys.executable,
             "workstation_backup_dry_run": "{{ ansible_check_mode }}",
             "workstation_backup_timestamp": "fixture",
@@ -167,7 +167,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertIn("incomplete recovery coverage", output)
         self.assertEqual(output.count("Restore missing profile logos."), 1)
         self.assertIn("Fixture (Default)", output)
-        self.assertIn("workstation.sh setup", output)
+        self.assertIn("from-remote", output)
         self.assertIn("stop backup without creating an archive", output)
         self.assertNotIn("profile_drift", output)
         self.assertNotIn("avatar_disabled", output)
@@ -246,7 +246,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             "if command != ['encode'] and os.environ.get('BW_NOINTERACTION') != 'true': sys.exit(3)\n"
             "if command == ['encode']: print(base64.b64encode(sys.stdin.buffer.read()).decode())\n"
             "elif command[0] in ('create', 'edit'):\n"
-            "    item = json.loads(base64.b64decode(sys.stdin.read())); item['id'] = 'fixture-id'\n"
+            "    item = json.loads(base64.b64decode(sys.stdin.read())); item.setdefault('id', 'fixture-id')\n"
             "    if (root / 'save-fails').exists():\n"
             "        print(json.dumps(item), os.environ['BW_SESSION'], file=sys.stderr); sys.exit(2)\n"
             "    store.write_text(json.dumps(item)); print(json.dumps(item))\n"
@@ -284,14 +284,133 @@ class BackupRecoverySkipTests(unittest.TestCase):
             }
         ]
 
+    def test_browser_metadata_directions_reload_and_verify_with_real_adapter(self) -> None:
+        """The actual Brave adapter must reconcile either direction before live confirmation and archiving."""
+
+        self.prepare_keys()
+        tasks = self.prepare_browser(drift=True)
+        setup = self.fixture / "collections/ansible_collections/neilime/workstation_setup/roles"
+        (setup / "browser_brave").symlink_to(
+            WORKSPACE / "ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_brave",
+            target_is_directory=True,
+        )
+        self.variables["workstation_manager_use_become"] = False
+        self.variables["workstation_manager_resolved"] = {
+            "desktop": {"browser": "brave"},
+            "user": {"name": "fixture", "home": str(self.fixture)},
+            "secrets": {"bitwarden": {"browser_profiles_collection_id": "fixture-collection"}},
+        }
+        record = {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "name": "Remote",
+            "type": 2,
+            "notes": "synthetic-recovery-words",
+            "collectionIds": ["fixture-collection"],
+            "fields": [
+                {"name": "id", "value": "fixture"},
+                {"name": "directory", "value": "Default"},
+                {"name": "theme_colors", "value": "#123456"},
+            ],
+        }
+        store = self.fixture / "saved-item.json"
+        (setup / "browser_profile_collection/tasks/main.yml").write_text(
+            json.dumps(
+                [
+                    {
+                        "ansible.builtin.set_fact": {
+                            "workstation_manager_browser_profiles": "{{ [lookup('ansible.builtin.file', '"
+                            + str(store)
+                            + "') | from_json] | "
+                            "neilime.workstation_setup.bitwarden_browser_profiles }}"
+                        },
+                        "no_log": True,
+                    },
+                ]
+            )
+        )
+        root = self.fixture / ".config/BraveSoftware/Brave-Browser"
+        (root / "Default").mkdir(parents=True)
+        preferences = root / "Default/Preferences"
+        for direction in ("from-local", "from-remote"):
+            with self.subTest(direction=direction):
+                store.write_text(json.dumps(record))
+                (root / "Local State").write_text(
+                    json.dumps({"profile": {"info_cache": {"Default": {"name": "Local"}}}})
+                )
+                preferences.write_text(
+                    json.dumps(
+                        {
+                            "profile": {"name": "Local"},
+                            "sync": {"keep_everything_synced": True},
+                            "brave_sync_v2": {"seed": "synthetic-browser-seed"},
+                            "browser": {"theme": {"user_color2": int("654321", 16) - 0x1000000}},
+                            "extensions": {"theme": {"id": "user_color_theme_id"}},
+                            "pinned_tabs": [{"url": "https://example.invalid"}],
+                        }
+                    )
+                )
+                code, output = self.run_backup(
+                    tasks,
+                    (
+                        ("[from-local/from-remote/retry/skip/abort]", direction),
+                        ("[synced/skip/abort]", "synced"),
+                    ),
+                )
+                self.assertEqual(code, 0, output)
+                current = json.loads(preferences.read_text())
+                saved = json.loads(store.read_text())
+                expected = "Local" if direction == "from-local" else "Remote"
+                self.assertEqual(current["profile"]["name"], expected)
+                self.assertEqual(saved["name"], expected)
+                self.assertEqual(saved["notes"], record["notes"])
+                self.assertEqual(current["brave_sync_v2"]["seed"], "synthetic-browser-seed")
+                self.assertEqual(current["pinned_tabs"], [{"url": "https://example.invalid"}])
+                for secret in ("synthetic-recovery-words", "synthetic-browser-seed", "synthetic-current-session"):
+                    self.assertNotIn(secret, output)
+                self.assert_archive([])
+
+    def test_remote_key_directions_restore_without_writing_the_vault(self) -> None:
+        """Both differing and remote-only SSH keys restore only after the matching explicit choice."""
+
+        tasks = self.prepare_keys()
+        tasks[0]["loop"] = tasks[0]["loop"][:1]
+        self.variables["workstation_manager_use_become"] = False
+        self.variables["workstation_manager_resolved"]["user"] = {"name": "fixture", "home": str(self.fixture)}
+        remote = {
+            "id": "fixture-id",
+            "name": "fixture-key",
+            "collectionIds": ["fixture-collection"],
+            "fields": [
+                {"name": "private_key", "value": "remote-private"},
+                {"name": "public_key", "value": "remote-public"},
+            ],
+        }
+        (self.fixture / "saved-item.json").write_text(json.dumps(remote))
+        for action, prompt in (
+            ("restore", "[from-remote/skip/abort]"),
+            ("update", "[from-local/from-remote/skip/abort]"),
+        ):
+            with self.subTest(action=action):
+                tasks[0]["loop"][0]["action"] = action
+                code, output = self.run_backup(tasks, ((prompt, "from-remote"),))
+                self.assertEqual(code, 0, output)
+                self.assertEqual((self.fixture / ".ssh/fixture-key").read_text(), "remote-private\n")
+                self.assertEqual((self.fixture / ".ssh/fixture-key.pub").read_text(), "remote-public\n")
+                self.assertNotIn("remote-private", output)
+                self.assertEqual(json.loads((self.fixture / "saved-item.json").read_text()), remote)
+                (self.fixture / ".ssh/fixture-key").write_text("local change")
+        self.assertEqual(
+            (self.fixture / "bw-calls").read_text().splitlines(), ["status", "sync", "get", "status", "sync", "get"]
+        )
+
     def test_each_key_can_be_skipped_without_any_vault_write(self) -> None:
         """SSH and GPG skips must not encode, save, or claim to verify a key."""
 
         code, output = self.run_backup(
             self.prepare_keys(),
             (
-                ("[add/skip/abort]", "skip"),
-                ("[update/skip/abort]", "skip"),
+                ("[from-local/skip/abort]", "skip"),
+                ("[from-local/from-remote/skip/abort]", "skip"),
             ),
         )
         self.assertEqual(code, 0, output)
@@ -307,8 +426,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
         code, output = self.run_backup(
             self.prepare_keys(),
             (
-                ("[add/skip/abort]", "skip"),
-                ("[update/skip/abort]", "update"),
+                ("[from-local/skip/abort]", "skip"),
+                ("[from-local/from-remote/skip/abort]", "from-local"),
             ),
         )
         self.assertEqual(code, 0, output)
@@ -325,8 +444,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
         code, output = self.run_backup(
             self.prepare_keys(),
             (
-                ("[add/skip/abort]", "skip"),
-                ("[update/skip/abort]", "update"),
+                ("[from-local/skip/abort]", "skip"),
+                ("[from-local/from-remote/skip/abort]", "from-local"),
             ),
         )
         self.assertNotEqual(code, 0, output)
@@ -338,7 +457,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
 
         code, output = self.run_backup(
             self.prepare_keys(),
-            (("[add/skip/abort]", "add"), ("[update/skip/abort]", "update")),
+            (("[from-local/skip/abort]", "from-local"), ("[from-local/from-remote/skip/abort]", "from-local")),
         )
         self.assertEqual(code, 0, output)
         self.assertEqual(
@@ -354,7 +473,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
 
         tasks = self.prepare_keys()
         self.variables["bitwarden_collection_session"] = "synthetic-expired-session"
-        code, output = self.run_backup(tasks, (("[add/skip/abort]", "add"),))
+        code, output = self.run_backup(tasks, (("[from-local/skip/abort]", "from-local"),))
         self.assertNotEqual(code, 0, output)
         self.assertIn("Bitwarden session is locked or expired", output)
         self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status"])
@@ -366,7 +485,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         """A valid session cannot hide a rejected save or expose sensitive CLI errors."""
 
         (self.fixture / "save-fails").touch()
-        code, output = self.run_backup(self.prepare_keys(), (("[add/skip/abort]", "add"),))
+        code, output = self.run_backup(self.prepare_keys(), (("[from-local/skip/abort]", "from-local"),))
         self.assertNotEqual(code, 0, output)
         self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status", "encode", "create"])
         self.assertIn("changed=0", output)
