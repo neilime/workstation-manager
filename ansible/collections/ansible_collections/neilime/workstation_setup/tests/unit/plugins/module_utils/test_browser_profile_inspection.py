@@ -59,12 +59,49 @@ def test_inventory_preserves_bytes_and_exposes_only_safe_sync_metadata(tmp_path:
     assert {path: path.read_bytes() for path in before} == before
 
 
+@pytest.mark.parametrize("cached_name", ["Personal", "Renamed"])
+def test_registered_name_takes_precedence_over_stale_profile_preferences(tmp_path: Path, cached_name: str) -> None:
+    """Brave's profile picker name must win over a stale Preferences placeholder."""
+
+    preferences = _profile(tmp_path, "Default", "Your Chromium")
+    state = _state(tmp_path, {"Default": {"name": cached_name}})
+    before = {path: path.read_bytes() for path in (preferences, state)}
+    result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
+    assert result["profiles"][0]["label"] == cached_name
+    assert result["drift"] == (
+        []
+        if cached_name == "Personal"
+        else [
+            {
+                "kind": "renamed",
+                "directory": "Default",
+                "id": "personal",
+                "configured_label": "Personal",
+                "observed_label": "Renamed",
+            }
+        ]
+    )
+    assert {path: path.read_bytes() for path in before} == before
+    assert "secret-must-not-appear" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("entry", [{}, {"name": None}, {"name": ""}])
+def test_missing_registered_name_falls_back_to_profile_preferences(tmp_path: Path, entry: dict) -> None:
+    """An incomplete registry can still use the saved per-profile name."""
+
+    _profile(tmp_path, "Default", "Personal")
+    _state(tmp_path, {"Default": entry})
+    result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
+    assert result["profiles"][0]["label"] == "Personal"
+    assert result["drift"] == []
+
+
 def test_discovers_unregistered_profiles_and_detects_renames_and_missing_profiles(tmp_path: Path) -> None:
     """Immediate Preferences directories count even if Local State is incomplete."""
 
-    _profile(tmp_path, "Default", "Renamed")
+    _profile(tmp_path, "Default", "Personal")
     _profile(tmp_path, "Profile 2", "New profile")
-    _state(tmp_path, {"Default": {"name": "Personal"}})
+    _state(tmp_path, {"Default": {"name": "Renamed"}})
     missing = {"id": "work", "item_id": _ITEM_ID}
     result = inspect_browser_profiles(str(tmp_path), [_DECLARATION, missing])
     assert [(entry["kind"], entry["directory"]) for entry in result["drift"]] == [
@@ -180,10 +217,14 @@ def test_unsafe_cache_path_is_rejected(tmp_path: Path) -> None:
         inspect_browser_profiles(str(tmp_path), [])
 
 
-def test_labels_are_safe_for_terminal_diagnostics(tmp_path: Path) -> None:
+@pytest.mark.parametrize("registered", [True, False])
+def test_labels_are_safe_for_terminal_diagnostics(tmp_path: Path, registered: bool) -> None:
     """Preserve useful Unicode labels without forwarding terminal control characters."""
 
-    _profile(tmp_path, "Default", "Perso é\n\x1b[0m")
+    label = "Perso é\n\x1b[0m"
+    _profile(tmp_path, "Default", "Your Chromium" if registered else label)
+    if registered:
+        _state(tmp_path, {"Default": {"name": label}})
     result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
     assert result["profiles"][0]["label"] == "Perso é  [0m"
 

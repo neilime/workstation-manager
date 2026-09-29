@@ -92,9 +92,10 @@ optional value stops managing it and leaves the existing local appearance intact
 
 [Backup](backup-and-restore.md) compares local profiles with the collection,
 including names, directories, declared main colors, logos, and saved Sync
-configuration. Resolve reported differences, then select `retry`. A local
-profile missing from Bitwarden needs a record; a missing local profile can be
-recreated by setup. Cleanup preserves all browser profiles.
+configuration. Name checks use the names shown in Brave's profile picker.
+Resolve reported differences, then select `retry`. A local profile missing from
+Bitwarden needs a record; a missing local profile can be recreated by setup.
+Cleanup preserves all browser profiles.
 
 After these checks, backup asks you to confirm that every profile has completed
 live Sync and its first 24 recovery words match its Bitwarden note. Verify this

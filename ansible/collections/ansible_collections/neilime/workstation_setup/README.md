@@ -6,7 +6,8 @@ and browser adapters. Developer tool
 installation uses the GitHub credentials described in the
 [configuration guide](../../../../../docs/usage/configuration.md#automated-runs).
 SSH restoration rejects private-key material in a Bitwarden `public_key` field
-before writing the key pair.
+before writing the key pair. Browser inspection uses registered profile names
+before falling back to saved per-profile names.
 
 See the [development guide](../../../../../docs/development/README.md) for
 structure and checks, and the
