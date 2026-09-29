@@ -51,7 +51,7 @@ and Bitwarden when renaming a profile.
    profiles and applies any stored colors and logos.
 2. Open each profile and go to `brave://settings/braveSync`.
 3. Join that profile's existing chain using its 24 stored Bitwarden recovery
-  words. Append Brave's current rotating 25th word as described in
+   words. Append Brave's current rotating 25th word as described in
    [Brave's Sync setup guide](https://support.brave.app/hc/en-us/articles/360021218111-How-do-I-set-up-Sync).
    Another connected computer can also display a fresh pairing code.
 4. Enable **Sync everything** and wait for synchronization. Check bookmarks,

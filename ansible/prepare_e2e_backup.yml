@@ -1,0 +1,23 @@
+---
+- name: Prepare keys in the disposable E2E workstation
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    workstation_use_become: >-
+      {{ lookup('env', 'WORKSTATION_MANAGER_USE_BECOME') |
+      default('true', true) | bool }}
+    workstation_private_override_file: >-
+      {{ lookup('env', 'WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE') }}
+
+  tasks:
+    - name: Resolve workstation config inputs
+      ansible.builtin.import_tasks: tasks/resolve_workstation_config.yml
+
+    - name: Restore SSH keys before E2E backup verification
+      ansible.builtin.import_role:
+        name: neilime.workstation_setup.ssh_keys
+
+    - name: Restore GPG keys before E2E backup verification
+      ansible.builtin.import_role:
+        name: neilime.workstation_setup.gpg_keys

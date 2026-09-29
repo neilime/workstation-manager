@@ -291,6 +291,10 @@ resolve_local_repository_path() {
 	esac
 
 	[ -d "$repository_path" ] || return 1
+	if [ -f "$repository_path/HEAD" ] && [ -d "$repository_path/objects" ] && [ -d "$repository_path/refs" ] &&
+		[ ! -d "$repository_path/.git" ]; then
+		return 1
+	fi
 	printf '%s\n' "$repository_path"
 }
 
@@ -717,7 +721,7 @@ run_ansible_pull_captured_with_script() {
 	else
 		exit_code="$?"
 	fi
-	sudo cat "$tmp_output_file" >"$output_file" 2>/dev/null || :
+	sudo cat "$tmp_output_file" 2>/dev/null | cat >"$output_file" || :
 	sudo rm -rf "$tmp_output_dir" 2>/dev/null || :
 
 	rm -rf "$runner_dir"

@@ -9,6 +9,9 @@ import shlex
 import subprocess
 import time
 
+INTERACTIVE_DEADLINE_SECONDS = 120
+PROMPT_SETTLE_SECONDS = 0.25
+
 
 def run_interactive(
     command: list[str], directory: pathlib.Path, environment: dict[str, str], answers=()
@@ -29,7 +32,7 @@ def run_interactive(
         bufsize=0,
     ) as process:
         assert process.stdin is not None and process.stdout is not None
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + INTERACTIVE_DEADLINE_SECONDS
         try:
             while process.poll() is None:
                 if time.monotonic() >= deadline:
@@ -46,8 +49,8 @@ def run_interactive(
                     _prompt, answer = pending.pop(0)
                     if callable(answer):
                         answer = answer()
-                    # pause flushes pending input just after displaying the prompt.
-                    time.sleep(0.1)
+                    # pause can still flush tty input just after rendering its prompt on slower CI runners.
+                    time.sleep(PROMPT_SETTLE_SECONDS)
                     process.stdin.write((answer + "\n").encode())
                     process.stdin.flush()
                     unread = ""

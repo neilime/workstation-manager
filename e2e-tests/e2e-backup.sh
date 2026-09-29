@@ -68,24 +68,27 @@ run_e2e_lima_shell env \
 	REPOSITORY_URL="$E2E_REPOSITORY_URL" \
 	REPOSITORY_BRANCH="$E2E_BRANCH_NAME" \
 	WORKSTATION_MANAGER_GITHUB_TOKEN="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}" \
+	BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID" \
+	BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET" \
+	BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD" \
 	bash -s <<'FIXTURE'
 set -euo pipefail
 umask 077
 fixture_dir="$E2E_RECOVERY_FIXTURE_DIR"
 source_dir="$HOME/.local/share/chezmoi"
 config_path="$HOME/.config/chezmoi/chezmoi.yaml"
-for existing_path in "$source_dir" "$config_path" "$HOME/.config/BraveSoftware/Brave-Browser"; do
+# This fixture clears browser profile management in the published override, so
+# an existing local Brave tree must not block the backup smoke test.
+for existing_path in "$source_dir" "$config_path"; do
 	if [[ -e "$existing_path" || -L "$existing_path" ]]; then
-		printf 'Backup fixture requires absent Chezmoi and browser state: %s\n' "$existing_path" >&2
+		printf 'Backup fixture requires absent Chezmoi state: %s\n' "$existing_path" >&2
 		exit 1
 	fi
 done
 
 # shellcheck disable=SC1091
 source "$fixture_dir/wrapper-definitions.sh"
-install_git
-install_ansible_packages
-prepare_private_override_file backup
+prepare_action_dependencies backup
 download_github_file "$E2E_REPOSITORY_PATH" "$REPOSITORY_BRANCH" \
 	ansible/group_vars/all.yml "$fixture_dir/public.yml"
 mkdir -p "$fixture_dir/seed" "$(dirname "$config_path")"
@@ -124,6 +127,11 @@ chmod 0755 "$fixture_dir/chezmoi"
 touch "$fixture_dir/source-created"
 CHEZMOI_CONFIG_FILE="$config_path" "$fixture_dir/chezmoi" init "$fixture_dir/origin.git"
 test -z "$(CHEZMOI_CONFIG_FILE="$config_path" "$fixture_dir/chezmoi" status)"
+
+# A fresh VM has no local keys. Restore them before backup so its recovery
+# checks can verify the configured collections without an interactive decision.
+PRIVATE_OVERRIDE_LOCAL_FILE="$source_dir/private.override.yml"
+run_ansible_pull ansible/prepare_e2e_backup.yml 0
 FIXTURE
 
 run_e2e_workstation_action \
