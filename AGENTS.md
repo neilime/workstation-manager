@@ -25,6 +25,10 @@ more specific `AGENTS.md` files when working in their directories.
 - Keep playbooks and roles focused on orchestration. Put reusable Python logic in
   `plugins/module_utils/`, with thin adapters in `plugins/modules/` and
   `plugins/filter/`.
+- When a role grows multiple files, templates, or task entries for one feature,
+  group that feature into a dedicated task file and matching scoped subdirectories
+  under the role's `files/` and `templates/` trees instead of adding more flat
+  top-level assets.
 - Public defaults belong in `ansible/group_vars/all.yml`; configuration validation
   and normalization belong in the setup collection's `desired_state*` helpers.
   Roles should consume `workstation_manager_resolved` where applicable.

@@ -125,10 +125,14 @@
     mode: "0755"
   loop:
     - "{{ workstation_manager_resolved.user.home }}/.local/bin"
+    - "{{ workstation_manager_resolved.user.home }}/.local/share"
     - "{{ workstation_manager_resolved.user.state_dir }}"
     - "{{ workstation_manager_resolved.user.home }}/.config"
     - "{{ workstation_manager_resolved.user.home }}/.config/mise"
     - "{{ workstation_manager_resolved.user.home }}/.config/workstation-manager"
+
+- name: Install Git project report tooling
+  ansible.builtin.import_tasks: git_project_report.yml
 
 - name: Check whether mise is already installed
   become: "{{ workstation_manager_use_become }}"

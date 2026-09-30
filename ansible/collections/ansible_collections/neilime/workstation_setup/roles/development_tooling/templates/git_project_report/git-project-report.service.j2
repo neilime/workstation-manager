@@ -1,0 +1,6 @@
+[Unit]
+Description=Report Git work in progress under the managed projects directory
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/workstation-manager-git-project-report --notify
