@@ -133,3 +133,43 @@ def test_development_sysctl_configuration(host) -> None:
     assert sysctl_file.exists
     assert has_watch_limit
     assert configured_watch_limit == "524288"
+
+
+def test_git_project_report_command_and_schedule_are_managed(host) -> None:
+    """Development tooling should install the Git report command and its daily schedule."""
+
+    # Arrange
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    report_command = f"{user_home}/.local/bin/workstation-manager-git-project-report"
+    helper_script = host.file(f"{user_home}/.local/share/workstation-manager/git-project-report.py")
+    activator_script = host.file(f"{user_home}/.local/bin/workstation-manager-git-project-report-activate-timer")
+    service_unit = host.file(f"{user_home}/.config/systemd/user/workstation-manager-git-project-report.service")
+    timer_unit = host.file(f"{user_home}/.config/systemd/user/workstation-manager-git-project-report.timer")
+    timer_link = f"{user_home}/.config/systemd/user/timers.target.wants/workstation-manager-git-project-report.timer"
+    autostart_file = host.file(f"{user_home}/.config/autostart/workstation-manager-git-project-report.desktop")
+
+    # Act
+    notify_send_result = host.run("command -v notify-send")
+    report_result = host.run(report_command)
+    timer_link_result = host.run("test -L %s", timer_link)
+
+    # Assert
+    assert notify_send_result.succeeded
+    assert helper_script.exists
+    assert helper_script.mode == 0o644
+    assert activator_script.exists
+    assert activator_script.mode == 0o755
+    assert service_unit.exists
+    assert service_unit.contains(r"^ExecStart=%h/\.local/bin/workstation-manager-git-project-report --notify$")
+    assert timer_unit.exists
+    assert timer_unit.contains(r"^OnCalendar=daily$")
+    assert timer_unit.contains(r"^Persistent=true$")
+    assert timer_link_result.succeeded
+    assert autostart_file.exists
+    assert autostart_file.contains(
+        rf"^Exec={user_home}/\.local/bin/workstation-manager-git-project-report-activate-timer$"
+    )
+    assert report_result.succeeded
+    assert "client-restore [main]" in report_result.stdout
+    assert "local-note.txt" in report_result.stdout
+    assert "tracked.txt" in report_result.stdout

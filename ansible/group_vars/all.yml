@@ -75,6 +75,7 @@ workstation_manager:
     # Core developer packages installed globally from APT.
     packages:
       - git
+      - libnotify-bin
       - zsh
       - make
       - jq

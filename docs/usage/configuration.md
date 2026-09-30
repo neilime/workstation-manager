@@ -132,6 +132,12 @@ or include another location through the [backup options](backup-and-restore.md).
 Changing `user.projects_directory` changes setup paths; backup still uses its
 fixed default directory and any explicitly added paths.
 
+Setup also installs `workstation-manager-git-project-report`. Run it manually to
+print the Git repositories under `user.projects_directory` that still have local
+work in progress. A user-level daily timer is installed alongside it, and the
+desktop session activates that timer so the same summary appears as a
+notification once per day.
+
 Review the public defaults for package lists, GNOME preferences, and application
 settings. Override only the values you need to change.
 

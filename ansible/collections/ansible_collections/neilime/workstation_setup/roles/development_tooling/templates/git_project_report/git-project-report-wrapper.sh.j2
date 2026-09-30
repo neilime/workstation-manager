@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# shellcheck disable=SC1083
+exec python3 "$HOME/.local/share/workstation-manager/git-project-report.py" \
+  --projects-directory {{ workstation_manager_resolved.user.projects_directory | quote }} \
+  "$@"

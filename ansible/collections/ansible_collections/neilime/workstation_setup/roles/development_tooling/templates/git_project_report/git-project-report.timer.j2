@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the managed Git project report every day
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+Unit=workstation-manager-git-project-report.service
+
+[Install]
+WantedBy=timers.target
