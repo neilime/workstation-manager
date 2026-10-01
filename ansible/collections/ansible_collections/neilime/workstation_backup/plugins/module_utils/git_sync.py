@@ -131,63 +131,6 @@ class _GitCheckout:
             message="Could not commit repository changes. Check Git identity and hooks, then retry backup.",
         )
 
-    def require_safe_discard_scope(self, commit: str) -> None:
-        """Keep nested repositories and ignored files outside automatic replacement."""
-
-        for entry in self.git("ls-files", "--stage", "-z").split("\0"):
-            if entry.startswith("160000 "):
-                raise GitSyncError("Source contains submodules. Reconcile it manually before backup.")
-        for path in self.git("ls-files", "--others", "--exclude-standard", "-z").split("\0"):
-            if path and (Path(self.source) / path / ".git").exists():
-                raise GitSyncError("Source contains a nested Git repository. Reconcile it manually before backup.")
-        target_entries = self.git("ls-tree", "-r", "-z", commit).split("\0")
-        if any(entry.startswith("160000 ") for entry in target_entries):
-            raise GitSyncError("Tracking branch contains submodules. Reconcile it manually before backup.")
-        target_paths = [entry.partition("\t")[2] for entry in target_entries if entry]
-        ignored_paths = self.git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z").split(
-            "\0"
-        )
-        for ignored in filter(None, ignored_paths):
-            ignored = ignored.rstrip("/")
-            if any(
-                target == ignored or target.startswith(ignored + "/") or ignored.startswith(target + "/")
-                for target in filter(None, target_paths)
-            ):
-                raise GitSyncError(
-                    "Using the remote version would overwrite ignored source files. "
-                    "Move or reconcile those files manually before backup."
-                )
-
-    def use_remote(self, state: dict) -> dict:
-        """Replace local source changes only after the caller explicitly requests it."""
-
-        if not (state["behind"] or state["needs_publish"]):
-            return state
-        self.require_safe_discard_scope(state["upstream_commit"])
-        # Clean before resetting so local ignore rules still protect ignored data.
-        self.git(
-            "clean",
-            "-fd",
-            mutates=True,
-            message="Could not remove untracked source files. Inspect the checkout before retrying backup.",
-        )
-        self.git(
-            "reset",
-            "--hard",
-            "--no-recurse-submodules",
-            state["upstream_commit"],
-            mutates=True,
-            message="Could not reset the source checkout. Inspect it before retrying backup.",
-        )
-        state = self.inspect()
-        if state["behind"] or state["needs_publish"]:
-            raise GitSyncError(
-                "Remote replacement is incomplete or the tracking branch changed. "
-                "Review the remaining source changes before retrying backup. Nothing was pushed.",
-                changed=self.changed,
-            )
-        return state
-
 
 def synchronize_git(
     source: str,
@@ -199,14 +142,12 @@ def synchronize_git(
 ) -> dict:
     """Inspect tracking state; modify the checkout only for an explicit action."""
 
-    if action not in {"inspect", "merge", "use-remote", "publish"}:
-        raise GitSyncError("Choose one Git action: inspect, merge, use-remote, or publish.")
+    if action not in {"inspect", "merge", "publish"}:
+        raise GitSyncError("Choose one Git action: inspect, merge, or publish.")
     checkout = _GitCheckout(source, run_command, github_token)
     state = checkout.inspect(dry_run=dry_run)
     if dry_run:
         return {"changed": False, "state": state}
-    if action == "use-remote":
-        state = checkout.use_remote(state)
     if action == "merge" and state["behind"]:
         if state["status"]:
             checkout.commit_changes()

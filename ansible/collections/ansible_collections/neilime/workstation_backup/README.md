@@ -6,8 +6,7 @@ checkouts ignored by their enclosing project's Git ignore rules. SSH key discove
 contents; a private key with a `.pub` filename is not skipped. The entrypoint launches Ansible
 with sudo; backup tasks run as the resolved managed user, while dependency
 installation explicitly runs as root. Chezmoi branch reconciliation and
-publication require explicit decisions before backup can continue. Replacing
-local source changes with the remote version also requires a discard confirmation.
+publication require explicit decisions before backup can continue.
 The shared [recovery_decision role](roles/recovery_decision) handles all drift and
 recovery confirmation prompts: explicit choices, input retries, previews,
 noninteractive failures, aborts, and recorded skips. Each source offers `save` and `restore` when usable data exists on that

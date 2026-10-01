@@ -23,7 +23,7 @@ CHEZMOI_RECONCILE_TASKS = (
     WORKSPACE
     / "ansible/collections/ansible_collections/neilime/workstation_backup/roles/chezmoi/tasks/reconcile_git.yml"
 )
-RETRY_PROMPT = b"Choose [save/restore/retry/skip/abort]:"
+DECISION_PROMPT = b"Choose [save/skip/abort]:"
 RETRY_WRAPPER_COMMAND = "run_ansible_pull_with_bitwarden_retry check.yml 0\n"
 
 
@@ -167,7 +167,7 @@ def load_chezmoi_retry_task() -> dict[str, object]:
 
 
 def write_retry_playbook(repository: pathlib.Path, decision_task: dict[str, object]) -> None:
-    """Create a minimal playbook that exercises the real retry decision prompt."""
+    """Create a minimal playbook that exercises the real drift decision prompt."""
 
     (repository / "check.yml").write_text(
         json.dumps(
@@ -193,7 +193,7 @@ def write_retry_playbook(repository: pathlib.Path, decision_task: dict[str, obje
                         {
                             "name": "Verify the answer",
                             "ansible.builtin.assert": {
-                                "that": "workstation_backup_recovery_choices['chezmoi-git'] == 'retry'"
+                                "that": "workstation_backup_recovery_choices['chezmoi-git'] == 'skip'"
                             },
                         },
                         {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
@@ -327,7 +327,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
 
     @staticmethod
     def _read_terminal_session(master: int, process: subprocess.Popen[bytes]) -> str:
-        """Drive the retry prompt over a controlling tty until the fixture exits."""
+        """Drive the decision prompt over a controlling tty until the fixture exits."""
 
         output = bytearray()
         deadline = time.monotonic() + 30
@@ -346,10 +346,10 @@ class InteractiveBootstrapTests(unittest.TestCase):
             if not data:
                 break
             output.extend(data)
-            if RETRY_PROMPT in output and not answered:
+            if DECISION_PROMPT in output and not answered:
                 # Ansible's pause task can still flush pending tty input just after the prompt renders.
                 time.sleep(0.1)
-                os.write(master, b"retry\n")
+                os.write(master, b"skip\n")
                 answered = True
             if b"FIXTURE_COMPLETED" in output:
                 break
@@ -422,7 +422,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
                         output = bytearray()
 
                         try:
-                            self.wait_for_prompt(process, output, RETRY_PROMPT)
+                            self.wait_for_prompt(process, output, DECISION_PROMPT)
                             self.assert_prompt_layout(output)
                             if interrupt:
                                 process.stdin.write(b"\x03")
@@ -430,7 +430,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
                                 self.wait_for_prompt(process, output, b"to abort")
                                 process.stdin.write(b"a")
                             else:
-                                process.stdin.write(b"retry\n")
+                                process.stdin.write(b"skip\n")
                             process.stdin.flush()
                             remaining, _ = process.communicate(timeout=20)
                             output.extend(remaining)
@@ -452,7 +452,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
             fixture = pathlib.Path(temporary_dir)
             environment, bootstrap = self._prepare_retry_fixture(fixture)
             transcript = self._run_direct_terminal_bootstrap(fixture, environment, bootstrap + RETRY_WRAPPER_COMMAND)
-            self.assertIn(RETRY_PROMPT.decode(), transcript)
+            self.assertIn(DECISION_PROMPT.decode(), transcript)
             self.assertIn("FIXTURE_COMPLETED", transcript)
 
     def assert_prompt_layout(self, output: bytearray) -> None:

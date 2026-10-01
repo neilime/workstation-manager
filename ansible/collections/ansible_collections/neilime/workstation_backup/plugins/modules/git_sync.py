@@ -15,7 +15,6 @@ description:
   - Fetches the existing tracking branch and reports unpublished changes.
   - Explicit merging commits local edits and fast-forwards or merges the tracking branch without pushing.
   - Publication rejects behind or diverged branches until reconciled.
-  - Remote replacement discards local source edits and commits only when explicitly requested.
   - Pushes only when publication is explicitly requested.
 options:
   source:
@@ -31,14 +30,6 @@ options:
       - Commit all source changes, then fast-forward or merge the tracking branch without rewriting history.
       - Conflicts stop synchronization and must be resolved or aborted manually in the source checkout.
       - Cannot be combined with O(publish).
-    type: bool
-    default: false
-  reset_to_upstream:
-    description:
-      - Discard tracked source edits, non-ignored untracked files, and local-only commits from the current branch.
-      - Replace the source checkout with the fetched tracking branch without pushing or modifying home files.
-      - Refuses nested repositories, submodules, and replacements that would overwrite ignored files.
-      - Cannot be combined with O(merge) or O(publish). Obtain explicit user confirmation before requesting this action.
     type: bool
     default: false
   github_token:
@@ -85,18 +76,17 @@ def main() -> None:
             "source": {"type": "path", "required": True},
             "publish": {"type": "bool", "default": False},
             "merge": {"type": "bool", "default": False},
-            "reset_to_upstream": {"type": "bool", "default": False},
             "github_token": {"type": "str", "default": "", "no_log": True},
         },
         supports_check_mode=True,
     )
     requested_actions = [
         action
-        for option, action in (("merge", "merge"), ("publish", "publish"), ("reset_to_upstream", "use-remote"))
+        for option, action in (("merge", "merge"), ("publish", "publish"))
         if module.params[option]
     ]
     if len(requested_actions) > 1:
-        module.fail_json(msg="Merging, remote replacement, and publishing require separate decisions.")
+        module.fail_json(msg="Merging and publishing require separate decisions.")
     action = requested_actions[0] if requested_actions else "inspect"
     try:
         result = synchronize_git(
