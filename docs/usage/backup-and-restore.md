@@ -168,14 +168,15 @@ included without browser-specific filtering. Archive paths are relative to the
 common parent of the included sources; keep extra paths under your home and check
 the archive layout before restoring.
 
-Keep these three files together:
+Keep the archive and generated sidecars together. The browser sidecar is created
+when local profiles exist:
 
 | File suffix              | Contents                                                                                                       |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `.tar.gz`                | Archived user files.                                                                                           |
 | `.browser-profiles.json` | Browser bookmarks plus sanitized non-secret preferences for local inspection or manual recovery.               |
 | `.git-repositories.json` | Git remotes, branch, commit, and working-tree status for projects discovered under `~/Documents/dev-projects`. |
-| `.manifest.txt`          | Timestamp, archive path, sources, Git inventory location, and explicitly skipped recovery categories.          |
+| `.manifest.txt`          | Timestamp, archive path, sources, generated sidecar locations, and explicitly skipped recovery categories.     |
 
 These files are **not encrypted**. Project files can contain secrets, the
 inventory contains paths and remote URLs, and bookmarks can reveal private

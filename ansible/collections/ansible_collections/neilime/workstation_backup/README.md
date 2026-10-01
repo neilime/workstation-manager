@@ -24,6 +24,8 @@ session. Pending synchronization stays unverified; failed operations stop backup
 When native browser profiles exist, backup also writes a standalone sidecar with
 their bookmarks and sanitized non-secret preferences. Setup restore does not
 replay that sidecar; Bitwarden and Sync remain the browser recovery source.
+The state role initializes manifest records before browser export; filesystem
+planning preserves those records, so the manifest lists each generated sidecar.
 
 See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
 user workflow and recovery limits, and the

@@ -116,11 +116,18 @@ def test_backup_manifest_records_expected_entries(host) -> None:
     assert git_inventory_line.succeeded
 
 
-def test_backup_creates_no_browser_exports(host) -> None:
-    """General backups must not create standalone browser recovery files."""
+def test_backup_browser_export_matches_manifest(host) -> None:
+    """A generated browser sidecar must have exactly one matching manifest record."""
 
-    assert not host.file(f"{BACKUP_ROOT}/browser-bookmarks").exists
-    assert not host.check_output("find %s -type f -name '*.gpg'", BACKUP_ROOT)
+    browser_export_path = resolve_backup_archive_path(host).removesuffix(".tar.gz") + ".browser-profiles.json"
+    browser_export = host.file(browser_export_path)
+    manifest = host.file(resolve_backup_manifest_path(host)).content_string
+    export_lines = [line for line in manifest.splitlines() if line.startswith("export\tbrowser-profiles\t")]
+    assert export_lines == ([f"export\tbrowser-profiles\t{browser_export_path}"] if browser_export.exists else [])
+    if browser_export.exists:
+        assert browser_export.is_file
+        assert browser_export.mode == 0o600
+        assert browser_export.user == host.check_output("id -un")
 
 
 def test_backup_verifies_recovery_without_skips(host) -> None:

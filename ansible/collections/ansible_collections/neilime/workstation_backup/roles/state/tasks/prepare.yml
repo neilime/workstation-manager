@@ -14,6 +14,11 @@
   ansible.builtin.set_fact:
     workstation_backup_timestamp: "{{ workstation_backup_timestamp }}"
 
+- name: Initialize backup manifest records
+  ansible.builtin.set_fact:
+    workstation_backup_manifest_lines: []
+  when: workstation_backup_manifest_lines is not defined
+
 - name: Initialize backup execution context
   ansible.builtin.set_fact:
     workstation_backup_archive_path: >-
