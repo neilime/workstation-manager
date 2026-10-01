@@ -9,6 +9,7 @@
 
 - name: Publish Brave recovery inspection
   ansible.builtin.set_fact:
+    workstation_backup_browser_user_data_dir: "{{ browser_brave_user_data_dir }}"
     workstation_backup_browser_inspection: >-
       {{ {'profiles': browser_brave_backup_inspection.profiles,
           'drift': browser_brave_backup_inspection.drift,

@@ -410,10 +410,13 @@ class BackupRecoverySkipTests(unittest.TestCase):
         preferences = root / "Default/Preferences"
         return tasks, record, store, preferences
 
+    # Scenario test keeps setup, action, and verification in one place for each prompt path.
+    # pylint: disable-next=too-many-locals
     def test_browser_metadata_directions_reload_and_verify_with_real_adapter(self) -> None:
         """Metadata and Sync-only repairs must finish before automatic live verification and archiving."""
 
         tasks, record, store, preferences = self._prepare_native_browser()
+        browser_export_path = self.fixture / "backup.browser-profiles.json"
         for direction, sync_only in (("save", False), ("restore", False), ("restore", True)):
             with self.subTest(direction=direction, sync_only=sync_only):
                 store.write_text(json.dumps(record))
@@ -430,8 +433,20 @@ class BackupRecoverySkipTests(unittest.TestCase):
                             "browser": {
                                 "theme": {"user_color2": int("123456" if sync_only else "654321", 16) - 0x1000000}
                             },
-                            "extensions": {"theme": {"id": "user_color_theme_id"}},
+                            "extensions": {
+                                "theme": {"id": "user_color_theme_id"},
+                                "settings": {"fixture-extension": {"token": "synthetic-extension-token"}},
+                            },
                             "pinned_tabs": [{"url": "https://example.invalid"}],
+                        }
+                    )
+                )
+                (preferences.parent / "Bookmarks").write_text(
+                    json.dumps(
+                        {
+                            "roots": {
+                                "bookmark_bar": {"children": [{"name": "Docs", "url": "https://example.invalid/docs"}]}
+                            }
                         }
                     )
                 )
@@ -461,6 +476,23 @@ class BackupRecoverySkipTests(unittest.TestCase):
                 self.assertEqual(saved["notes"], record["notes"])
                 self.assertEqual(current["brave_sync_v2"]["seed"], "synthetic-browser-seed")
                 self.assertEqual(current["pinned_tabs"], [{"url": "https://example.invalid"}])
+                browser_export = json.loads(browser_export_path.read_text())
+                self.assertEqual(browser_export["browser"], "brave")
+                self.assertEqual(browser_export["created_at"], "fixture")
+                self.assertEqual(browser_export["profiles"][0]["label"], expected)
+                self.assertEqual(
+                    browser_export["profiles"][0]["bookmarks"]["roots"]["bookmark_bar"]["children"],
+                    [{"name": "Docs", "url": "https://example.invalid/docs"}],
+                )
+                self.assertEqual(
+                    browser_export["profiles"][0]["preferences"]["pinned_tabs"],
+                    [{"url": "https://example.invalid"}],
+                )
+                self.assertNotIn("sync", browser_export["profiles"][0]["preferences"])
+                self.assertNotIn("brave_sync_v2", browser_export["profiles"][0]["preferences"])
+                self.assertNotIn("settings", browser_export["profiles"][0]["preferences"]["extensions"])
+                manifest = (self.fixture / "backup.manifest.txt").read_text()
+                self.assertIn(f"export\tbrowser-profiles\t{browser_export_path}", manifest)
                 for secret in ("synthetic-recovery-words", "synthetic-browser-seed", "synthetic-current-session"):
                     self.assertNotIn(secret, output)
                 self.assert_archive([])

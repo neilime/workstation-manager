@@ -1,8 +1,9 @@
 # Backup and restore
 
-Recovery uses Bitwarden for keys and browser profiles, Git for Chezmoi files, and
-an archive for project files and workstation-manager user configuration. Keep
-access to all three; the archive alone is not a complete recovery source.
+Recovery uses Bitwarden for keys and browser profiles, Git for Chezmoi files, a
+browser sidecar for bookmarks plus sanitized non-secret preferences, and an archive
+for project files and workstation-manager user configuration. Keep access to all
+four; the archive alone is not a complete recovery source.
 
 ## Create a backup
 
@@ -73,13 +74,15 @@ backup work:
 - In browser drift, `skip` skips browser recovery and automatic live Sync verification.
   At the live Sync prompt, it skips live verification alone.
 
-Skipping does not undo actions you already approved. It does not add dotfiles,
-keys, or browser data to the archive automatically. Unsynchronized local changes
-may therefore be unavailable during restoration. An archive can still be created,
-but the final output reports **incomplete recovery coverage**, and its manifest
-contains `recovery_status` set to `incomplete` plus `recovery_skipped` records for
-the affected categories. Key records identify only SSH/GPG categories, not key
-contents or vault records.
+Skipping does not undo actions you already approved. It does not add dotfiles or
+keys to the archive automatically, and setup still does not restore browser data
+from local files. Backup can still write a separate browser sidecar with local
+bookmarks and sanitized non-secret preferences when native profiles exist, but
+Bitwarden and Sync remain the recovery path for profile recreation. An archive can
+still be created, and the final output reports **incomplete recovery coverage**,
+with its manifest containing `recovery_status` set to `incomplete` plus
+`recovery_skipped` records for the affected categories. Key records identify only
+SSH/GPG categories, not key contents or vault records.
 
 Choose `abort` to stop backup. You can also press Ctrl+C, then `a` when Ansible
 asks whether to abort or continue.
@@ -148,7 +151,9 @@ exists. The archive excludes nested `.git` metadata and the contents of
 
 SSH/GPG keys, browser data, and other home directories are not archive sources by
 default. Setup restores keys from Bitwarden, applies Chezmoi, and recreates browser
-profiles for [manual Sync pairing](browser.md).
+profiles for [manual Sync pairing](browser.md). Backup writes browser bookmarks and
+sanitized non-secret preferences to a separate sidecar when profiles exist, but
+setup does not import that sidecar automatically.
 
 To include additional directories, set a colon-separated list:
 
@@ -168,11 +173,13 @@ Keep these three files together:
 | File suffix              | Contents                                                                                                       |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `.tar.gz`                | Archived user files.                                                                                           |
+| `.browser-profiles.json` | Browser bookmarks plus sanitized non-secret preferences for local inspection or manual recovery.               |
 | `.git-repositories.json` | Git remotes, branch, commit, and working-tree status for projects discovered under `~/Documents/dev-projects`. |
 | `.manifest.txt`          | Timestamp, archive path, sources, Git inventory location, and explicitly skipped recovery categories.          |
 
-These files are **not encrypted**. Project files can contain secrets, and the
-inventory contains paths and remote URLs. Store them in a private destination;
+These files are **not encrypted**. Project files can contain secrets, the
+inventory contains paths and remote URLs, and bookmarks can reveal private
+services even when preferences are sanitized. Store them in a private destination;
 copying them off the computer is your responsibility.
 
 The Git inventory supports repositories with a `.git` directory. It does not
@@ -190,8 +197,9 @@ curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/wo
 ```
 
 Setup installs the managed baseline and applies Chezmoi before extracting files
-into your home. Existing files at archived paths can be overwritten. Check the
-archive layout first:
+into your home. Existing files at archived paths can be overwritten. The browser
+sidecar is backup-only and is not consumed by setup; browser recovery still comes
+from Bitwarden and Sync. Check the archive layout first:
 
 ```sh
 tar -tzf /path/to/workstation-manager-backup.tar.gz

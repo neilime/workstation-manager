@@ -45,6 +45,11 @@
           ansible.builtin.import_role:
             name: neilime.workstation_backup.secret_manager_keys
 
+        - name: Resolve backup artifact paths before browser export
+          ansible.builtin.import_role:
+            name: neilime.workstation_backup.state
+            tasks_from: prepare
+
         - name: Verify browser profile recovery and completed Sync
           ansible.builtin.import_role:
             name: neilime.workstation_backup.browser

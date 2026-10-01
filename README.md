@@ -4,7 +4,9 @@ Set up, maintain, and recover an Ubuntu workstation with Ansible.
 
 The project installs applications and developer tools, configures GNOME, applies
 Chezmoi dotfiles, restores SSH/GPG keys from Bitwarden, and creates Brave profiles.
-Backup checks recovery sources before archiving project files. Cleanup maintains
+Backup checks recovery sources before archiving project files and writes a
+browser sidecar with bookmarks plus sanitized non-secret preferences when
+profiles exist. Cleanup maintains
 packages, removes unused artifacts, and reports configuration drift.
 
 ## Before you start

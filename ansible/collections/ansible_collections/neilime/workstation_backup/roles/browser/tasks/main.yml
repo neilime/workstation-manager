@@ -18,3 +18,6 @@
   when:
     - not workstation_backup_browser_has_drift
     - workstation_backup_browser_inspection.profiles | length > 0
+
+- name: Export browser bookmarks and non-secret preferences
+  ansible.builtin.include_tasks: export.yml

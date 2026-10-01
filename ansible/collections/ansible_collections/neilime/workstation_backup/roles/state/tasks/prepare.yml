@@ -1,0 +1,76 @@
+---
+- name: Ensure backup output directory is provided
+  ansible.builtin.fail:
+    msg: WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR is required
+  when: workstation_backup_output_dir | length == 0
+
+- name: Ensure backup output directory exists
+  ansible.builtin.file:
+    path: "{{ workstation_backup_output_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Resolve backup timestamp
+  ansible.builtin.set_fact:
+    workstation_backup_timestamp: "{{ workstation_backup_timestamp }}"
+
+- name: Initialize backup execution context
+  ansible.builtin.set_fact:
+    workstation_backup_archive_path: >-
+      {{
+        lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+        default(
+          workstation_backup_output_dir ~
+          '/workstation-manager-backup-' ~
+          workstation_backup_timestamp ~
+          '.tar.gz',
+          true
+        )
+      }}
+    workstation_backup_manifest_path: >-
+      {{
+        lookup('env', 'WORKSTATION_MANAGER_BACKUP_MANIFEST') |
+        default(
+          (
+            lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+            default(
+              workstation_backup_output_dir ~
+              '/workstation-manager-backup-' ~
+              workstation_backup_timestamp ~
+              '.tar.gz',
+              true
+            )
+          ) | regex_replace('\.tar\.gz$', '.manifest.txt'),
+          true
+        )
+      }}
+    workstation_backup_git_inventory_path: >-
+      {{
+        lookup('env', 'WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY') |
+        default(
+          (
+            lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+            default(
+              workstation_backup_output_dir ~
+              '/workstation-manager-backup-' ~
+              workstation_backup_timestamp ~
+              '.tar.gz',
+              true
+            )
+          ) | regex_replace('\.tar\.gz$', '.git-repositories.json'),
+          true
+        )
+      }}
+    workstation_backup_browser_export_path: >-
+      {{
+        (
+          lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+          default(
+            workstation_backup_output_dir ~
+            '/workstation-manager-backup-' ~
+            workstation_backup_timestamp ~
+            '.tar.gz',
+            true
+          )
+        ) | regex_replace('\.tar\.gz$', '.browser-profiles.json')
+      }}

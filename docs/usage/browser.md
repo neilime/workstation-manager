@@ -71,7 +71,9 @@ that has expired or been deleted. See the
 Open Tabs Sync does not promise restoration of a pinned-tab layout. Check and
 re-pin important tabs after recovery; a bookmark folder is useful for frequently
 used sites. Extensions may need their own settings or sign-in restored. Browser
-profiles are not included in the default workstation archive.
+profiles are not included in the default workstation archive. Backup writes a
+separate `*.browser-profiles.json` sidecar with bookmarks and sanitized non-secret
+preferences, but setup does not restore it automatically.
 
 Browser passwords are not imported into Bitwarden by setup. Import and verify
 them separately before deleting any browser copies. The current recovery check
@@ -129,6 +131,8 @@ If Sync remains pending or the server is unavailable, choose `sync` to try again
 or failed verification after saving or restoring stops backup. Unsupported native
 browser interfaces also stop verification rather than accepting a manual assertion.
 See [backup skips](backup-and-restore.md#create-a-backup) for incomplete coverage.
+When profiles exist locally, backup also writes the sidecar noted above for manual
+inspection or manual recovery of bookmarks and non-secret preferences.
 
 Automatic verification requires Brave and access to the managed user's desktop
 session and unlocked system keyring. A new local profile still needs a secure note
