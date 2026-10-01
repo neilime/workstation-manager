@@ -247,8 +247,8 @@ def test_gpg_sync_planner_skips_matching_remote_item() -> None:
 
 
 @pytest.mark.parametrize("kind", ["ssh", "gpg"])
-def test_remote_only_keys_offer_restore_without_deleting_the_record(kind: str) -> None:
-    """Remote-only keys need a separate restore decision and can never become uploads or deletions."""
+def test_remote_only_keys_are_not_flagged_for_backup(kind: str) -> None:
+    """Backup only uploads local keys; a key present solely in Bitwarden needs no action."""
 
     item: dict = {
         "id": "remote-only",
@@ -263,10 +263,4 @@ def test_remote_only_keys_offer_restore_without_deleting_the_record(kind: str) -
         actions = BitwardenSshKeySyncPlanner().build([], [item], "/home/fixture")
     else:
         actions = BitwardenGpgKeySyncPlanner().build([], [item])
-    assert len(actions) == 1
-    assert actions[0]["action"] == "restore"
-    assert actions[0]["bitwarden_item_id"] == "remote-only"
-    assert actions[0]["name"] == "other-key"
-    fields = actions[0]["fields"]
-    assert isinstance(fields, list)
-    assert {field["name"]: field["value"] for field in fields}["private_key"] == "remote-private\n"
+    assert actions == []

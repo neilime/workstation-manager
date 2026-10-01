@@ -41,15 +41,13 @@ class BitwardenSshKeySyncPlanner:
         bitwarden_items: list[dict[str, object]],
         user_home: str,
     ) -> list[dict[str, object]]:
-        """Return upload or restore decisions for keys missing or different on either side."""
+        """Return upload decisions for local keys missing or different in Bitwarden."""
 
         remote_items_by_name = self._remote_items_by_name(bitwarden_items, user_home)
         actions: list[dict[str, object]] = []
 
-        local_identities = set()
         for local_item in local_items:
             normalized_local_item = self._normalized_local_item(local_item)
-            local_identities.add(normalized_local_item["name"])
             remote_item = remote_items_by_name.get(normalized_local_item["name"])
 
             if remote_item is None:
@@ -72,13 +70,6 @@ class BitwardenSshKeySyncPlanner:
                 )
             )
 
-        for name, remote_item in remote_items_by_name.items():
-            if name not in local_identities:
-                actions.append(
-                    self._action_payload(
-                        {**remote_item, "name": name}, action="restore", bitwarden_item_id=remote_item["item_id"]
-                    )
-                )
         return actions
 
     def _remote_items_by_name(
@@ -152,16 +143,14 @@ class BitwardenGpgKeySyncPlanner:
         local_items: list[dict[str, object]],
         bitwarden_items: list[dict[str, object]],
     ) -> list[dict[str, object]]:
-        """Return upload or restore decisions for keys missing or different on either side."""
+        """Return upload decisions for local keys missing or different in Bitwarden."""
 
         remote_items_by_fingerprint = self._remote_items_by_fingerprint(bitwarden_items)
         actions: list[dict[str, object]] = []
 
-        local_identities = set()
         for local_item in local_items:
             normalized_local_item = self._normalized_local_item(local_item)
             fingerprint = cast(str, normalized_local_item["fingerprint"])
-            local_identities.add(fingerprint)
             remote_item = remote_items_by_fingerprint.get(fingerprint)
 
             if remote_item is None:
@@ -184,15 +173,6 @@ class BitwardenGpgKeySyncPlanner:
                 )
             )
 
-        for fingerprint, remote_item in remote_items_by_fingerprint.items():
-            if fingerprint not in local_identities:
-                actions.append(
-                    self._action_payload(
-                        {**remote_item, "fingerprint": fingerprint},
-                        action="restore",
-                        bitwarden_item_id=remote_item["item_id"],
-                    )
-                )
         return actions
 
     def _remote_items_by_fingerprint(

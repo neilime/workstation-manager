@@ -9,13 +9,9 @@
       summary: >-
         {{ item.kind | upper }} key {{ item.name }}
         {{ 'exists only locally' if item.action == 'add'
-           else 'exists only in Bitwarden' if item.action == 'restore'
            else 'differs between this computer and Bitwarden' }}.
-      actions: >-
-        {{ ({'save': 'Save the local key in Bitwarden, replacing its saved values, then verify.'}
-             if item.action != 'restore' else {})
-           | combine({'restore': 'Restore the Bitwarden key locally, replacing its local values, then verify.'}
-                     if item.action != 'add' else {}) }}
+      actions:
+        save: Save the local key in Bitwarden, replacing its saved values, then verify.
       skip: Leave this key unchanged in both places and continue with other keys.
       abort_message: "Backup stopped: {{ item.kind }} key {{ item.name }} is not synchronized with Bitwarden."
 
@@ -25,12 +21,4 @@
     - not workstation_backup_dry_run
     - not ansible_check_mode
     - workstation_backup_recovery_choices['key'] == 'save'
-  no_log: true
-
-- name: Restore only the explicitly selected remote key
-  ansible.builtin.include_tasks: restore_action.yml
-  when:
-    - not workstation_backup_dry_run
-    - not ansible_check_mode
-    - workstation_backup_recovery_choices['key'] == 'restore'
   no_log: true
