@@ -21,6 +21,9 @@ Browser actions reconcile metadata, run live Sync, and compare recovery codes
 with Bitwarden automatically. Code mismatches offer explicit `save` or `restore`
 directions. Approved operations close Brave gracefully and preserve its previous
 session. Pending synchronization stays unverified; failed operations stop backup.
+When native browser profiles exist, backup also writes a standalone sidecar with
+their bookmarks and sanitized non-secret preferences. Setup restore does not
+replay that sidecar; Bitwarden and Sync remain the browser recovery source.
 
 See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
 user workflow and recovery limits, and the

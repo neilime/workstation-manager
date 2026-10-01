@@ -225,12 +225,8 @@ def inspect_browser_profiles(user_data_dir: str, profiles: list[dict]) -> dict:
     Neither inspection nor check mode writes files or contacts a Sync server.
     """
 
-    root = Path(user_data_dir)
-    if not root.is_absolute() or root.is_symlink():
-        raise ValueError("Browser user data directory must be absolute and must not be a symlink")
-    if root.exists() and not root.is_dir():
-        raise ValueError("Browser user data directory must be a directory")
     planner = BrowserProfilePathsPlanner()
+    root = planner.validate_user_data_dir(user_data_dir)
     declarations = _declarations(profiles, planner)
     cache = _object(_object(_read_settings(root / "Local State"), "profile"), "info_cache")
     directories = set(cache) - _IGNORED_PROFILES

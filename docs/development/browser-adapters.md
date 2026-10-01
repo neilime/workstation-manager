@@ -29,7 +29,9 @@ Add the role under
   text report grouping detected issues by action, with affected profile names and
   directories. Keep vendor-specific instructions in the adapter. Publish
   `workstation_backup_browser_sync_instructions` for the later live verification,
-  naming the inspected profiles and explaining the automatic operation.
+  naming the inspected profiles and explaining the automatic operation. Publish
+  `workstation_backup_browser_user_data_dir` so backup can emit its browser-only
+  sidecar export without changing setup restore.
 - `tasks/reconcile.yml`: apply the explicitly selected `save` or
   `restore` choice in `workstation_backup_recovery_choices['browser-recovery']`,
   guard previews, and verify the changed metadata. Publish supported direction
@@ -110,6 +112,8 @@ browser policies, disable the sandbox, or change password-storage backends.
 Only the selected profile's native code reaches the vault helper, in memory.
 Diagnostic node contents are reduced inside Brave to boolean status; browsing
 data never reaches an Ansible result. Child environments exclude vault credentials.
+The backup-only browser export sidecar is separate: it carries local bookmarks
+and sanitized non-secret preferences, and setup does not replay it automatically.
 
 Verification requires a new successful GetUpdates response after requesting a
 refresh, healthy Sync diagnostics, and two observations without unacknowledged

@@ -1,0 +1,48 @@
+---
+- name: Resolve browser backup export path
+  ansible.builtin.set_fact:
+    workstation_backup_browser_export_path: >-
+      {{
+        workstation_backup_browser_export_path |
+        default(
+          workstation_backup_archive_path | regex_replace('\.tar\.gz$', '.browser-profiles.json'),
+          true
+        )
+      }}
+
+- name: Build browser backup export
+  neilime.workstation_backup.browser_profile_export:
+    browser: "{{ workstation_manager_resolved.desktop.browser }}"
+    timestamp: "{{ workstation_backup_timestamp }}"
+    user_data_dir: "{{ workstation_backup_browser_user_data_dir }}"
+    profiles: "{{ workstation_backup_browser_inspection.profiles }}"
+  register: workstation_backup_browser_export
+  changed_when: false
+  when:
+    - workstation_backup_browser_user_data_dir is defined
+    - workstation_backup_browser_inspection.profiles | length > 0
+
+- name: Write browser backup export sidecar
+  ansible.builtin.copy:
+    dest: "{{ workstation_backup_browser_export_path }}"
+    mode: "0600"
+    content: "{{ workstation_backup_browser_export.export | to_nice_json }}\n"
+  when:
+    - workstation_backup_browser_export is defined
+    - "'export' in workstation_backup_browser_export"
+    - workstation_backup_browser_export.export.profiles | length > 0
+
+- name: Record browser backup export in the manifest
+  ansible.builtin.set_fact:
+    workstation_backup_manifest_lines: >-
+      {{
+        workstation_backup_manifest_lines + [
+          'export' ~ workstation_backup_tab ~
+          'browser-profiles' ~ workstation_backup_tab ~
+          workstation_backup_browser_export_path
+        ]
+      }}
+  when:
+    - workstation_backup_browser_export is defined
+    - "'export' in workstation_backup_browser_export"
+    - workstation_backup_browser_export.export.profiles | length > 0

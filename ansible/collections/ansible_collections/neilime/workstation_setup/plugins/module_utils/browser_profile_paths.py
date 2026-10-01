@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 # pylint: disable=too-few-public-methods
@@ -29,6 +30,16 @@ class BrowserProfilePathsPlanner:
         if not isinstance(directory, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]*", directory):
             raise ValueError("profile directory must be a safe single directory name")
         return directory
+
+    def validate_user_data_dir(self, user_data_dir: str) -> Path:
+        """Return a validated absolute browser user-data root."""
+
+        root = Path(self._normalize_required_value(user_data_dir, "user_data_dir"))
+        if not root.is_absolute() or root.is_symlink():
+            raise ValueError("Browser user data directory must be absolute and must not be a symlink")
+        if root.exists() and not root.is_dir():
+            raise ValueError("Browser user data directory must be a directory")
+        return root
 
     def has_valid_profile_id(self, profile_id: object) -> bool:
         """Return whether the given profile id matches the supported slug format."""
