@@ -38,58 +38,31 @@
         Source changes:
         {{ workstation_backup_chezmoi_git_preflight.state.status or '(none)' }}
 
-        These actions do not push; publication requires separate approval.
+        This action does not push; publication requires separate approval.
         Managed workstation files will be checked after reconciliation.
       actions: >-
-        {{ (
+        {{
              {'save': 'Commit source edits as "Update managed dotfiles", then fast-forward or merge upstream without rewriting local history. '
                        ~ 'Conflicts stop backup for manual resolution.'}
              if workstation_backup_chezmoi_git_preflight.state.behind > 0
              else {'save': 'Retain local source edits and commits for later publication.'}
-           ) | combine({
-             'restore': 'Replace the source with the fetched remote version. Discards source edits, non-ignored untracked files, '
-                           ~ 'and local-only commits after a separate confirmation.',
-             'retry': 'Recheck after you reconcile manually in another terminal.'
-           }) }}
+           }}
       skip: Leave Chezmoi unchanged and skip its remaining recovery checks.
       abort_message: Backup stopped because the chezmoi tracking branch has not been reconciled.
 
-- name: Confirm discarding local chezmoi source changes
-  ansible.builtin.include_role:
-    name: neilime.workstation_backup.recovery_decision
-  vars:
-    workstation_backup_recovery_id: chezmoi-discard
-    workstation_backup_recovery_needed: "{{ workstation_backup_recovery_choices['chezmoi-git'] == 'restore' }}"
-    workstation_backup_recovery_request:
-      scope: chezmoi
-      summary: |-
-        Replace {{ workstation_backup_chezmoi_source_dir }}
-        with {{ workstation_backup_chezmoi_git_preflight.state.upstream }}?
-
-        This discards staged and unstaged source edits and deletes non-ignored
-        untracked source files. It also removes
-        {{ workstation_backup_chezmoi_git_preflight.state.ahead }} local-only commits from this branch.
-        No commit or stash saves these edits, and nothing is pushed.
-        Workstation files require a separate apply decision afterward.
-      actions:
-        discard: Confirm discarding these local source edits, untracked files, and local-only commits.
-      skip: Leave Chezmoi unchanged and skip its remaining recovery checks.
-      abort_message: Backup stopped without discarding local chezmoi source changes.
-
-- name: Reconcile or recheck the chezmoi tracking branch after the chosen action
+- name: Reconcile the chezmoi tracking branch after the chosen action
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   neilime.workstation_backup.git_sync:
     source: "{{ workstation_backup_chezmoi_source_dir }}"
-    merge: "{{ workstation_backup_recovery_choices['chezmoi-git'] == 'save' and workstation_backup_chezmoi_git_preflight.state.behind > 0 }}"
-    reset_to_upstream: "{{ workstation_backup_recovery_choices['chezmoi-discard'] == 'discard' }}"
+    merge: "{{ workstation_backup_chezmoi_git_preflight.state.behind > 0 }}"
     github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
   register: workstation_backup_chezmoi_git_reconciliation
   when:
     - not workstation_backup_dry_run
-    - workstation_backup_recovery_choices['chezmoi-git'] in ['save', 'restore', 'retry']
+    - workstation_backup_recovery_choices['chezmoi-git'] == 'save'
 
 - name: Require completed chezmoi tracking branch reconciliation
   ansible.builtin.assert:

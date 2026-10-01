@@ -107,18 +107,13 @@ shows the ahead/behind counts and source file status before asking what to do:
   made to save local edits remains available after aborting the merge.
   When there are no incoming commits, it keeps local changes for the separate
   publication approval.
-- `restore` offers to replace the source checkout with its fetched tracking
-  branch. Type `discard` at the confirmation prompt to discard staged and unstaged
-  source edits, delete non-ignored untracked source files, and remove local-only
-  commits from the current branch. No commit or stash is created to save the
-  edits, and nothing is pushed. Choose `abort` to cancel. Nested repositories,
-  submodules, and ignored files that would be overwritten require manual
-  reconciliation instead.
-- `retry` fetches and checks again after you reconcile the source in another
-  terminal, for example using your preferred rebase workflow.
 - `skip` leaves this step unchanged and skips the remaining Chezmoi recovery
   checks. It does not publish local changes or add dotfiles to the archive.
 - `abort` stops backup without changing source files or publishing anything.
+
+Backup never discards local source changes to match the remote, because that
+would drop the very changes a backup exists to preserve. Reconcile manually in
+another terminal if you need to replace local work, then retry backup.
 
 After Git reconciliation, backup checks managed workstation files against the
 updated source and offers `save`, `restore`, `skip`, or `abort` if they differ. Remaining
@@ -126,9 +121,6 @@ local Git changes require a separate `publish` approval or an explicit `skip`
 before backup can continue. A remote update during these checks stops backup so you can review it
 on the next run.
 
-To discard local changes in both places, choose **`restore`, confirm `discard`,
-then choose `restore`** when prompted about managed workstation files. Choosing
-`save` would capture the workstation's current contents back into the source.
 Files no longer managed by the remote source are not automatically deleted from
 your home.
 

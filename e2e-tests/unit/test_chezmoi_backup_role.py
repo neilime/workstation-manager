@@ -124,26 +124,21 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
             command.append("--check")
         return run_interactive(command, self.fixture, self.environment, answers)
 
-    def test_skip_tracking_or_discard_preserves_all_local_changes(self) -> None:
-        """Either skip must leave staged edits, workstation files, and both branches intact."""
+    def test_skip_tracking_preserves_all_local_changes(self) -> None:
+        """Skipping must leave staged edits, workstation files, and both branches intact."""
 
         (self.source / "dot_settings").write_text("local edit\n")
         self.git(self.source, "add", ".")
-        for answers in (
-            (("[save/restore/retry/skip/abort]", "skip"),),
-            (("[save/restore/retry/skip/abort]", "restore"), ("[discard/skip/abort]", "skip")),
-        ):
-            with self.subTest(answers=answers):
-                code, output = self.run_backup(answers)
-                self.assertEqual(code, 0, output)
-                self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
-                self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
-                self.assertEqual(self.git(self.source, "diff", "--cached", "--name-only"), "dot_settings")
-                self.assertEqual((self.source / "dot_settings").read_text(), "local edit\n")
-                self.assertEqual((self.home / ".settings").read_text(), "original\n")
-                self.assertEqual(json.loads((self.fixture / "recovery-skips.json").read_text()), ["chezmoi"])
-                self.assertNotIn("Choose [save/restore/skip/abort]", output)
-                self.assertNotIn("Choose [publish/skip/abort]", output)
+        code, output = self.run_backup((("[save/skip/abort]", "skip"),))
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
+        self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
+        self.assertEqual(self.git(self.source, "diff", "--cached", "--name-only"), "dot_settings")
+        self.assertEqual((self.source / "dot_settings").read_text(), "local edit\n")
+        self.assertEqual((self.home / ".settings").read_text(), "original\n")
+        self.assertEqual(json.loads((self.fixture / "recovery-skips.json").read_text()), ["chezmoi"])
+        self.assertNotIn("Choose [save/restore/skip/abort]", output)
+        self.assertNotIn("Choose [publish/skip/abort]", output)
 
     def test_skip_file_drift_or_publication_keeps_prior_approved_changes(self) -> None:
         """Skipping a later decision neither rolls back a merge nor implicitly publishes it."""
@@ -151,7 +146,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         for stage in ("files", "publication"):
             with self.subTest(stage=stage):
                 self.git(self.source, "reset", "--hard", self.original)
-                answers = [("[save/restore/retry/skip/abort]", "save")]
+                answers = [("[save/skip/abort]", "save")]
                 answers.append(("[save/restore/skip/abort]", "skip" if stage == "files" else "save"))
                 if stage == "publication":
                     answers.append(("[publish/skip/abort]", "skip"))
@@ -169,7 +164,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
 
         code, output = self.run_backup(
             (
-                ("[save/restore/retry/skip/abort]", "save"),
+                ("[save/skip/abort]", "save"),
                 ("[save/restore/skip/abort]", "restore"),
             )
         )
@@ -183,7 +178,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
 
         code, output = self.run_backup(
             (
-                ("[save/restore/retry/skip/abort]", "save"),
+                ("[save/skip/abort]", "save"),
                 ("[save/restore/skip/abort]", "save"),
                 ("[publish/skip/abort]", "publish"),
             )
@@ -196,44 +191,19 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
     def test_abort_preserves_source_worktree_and_remote(self) -> None:
         """Declining reconciliation must stop backup before touching managed files."""
 
-        code, output = self.run_backup((("[save/restore/retry/skip/abort]", "abort"),))
+        code, output = self.run_backup((("[save/skip/abort]", "abort"),))
         self.assertNotEqual(code, 0, output)
         self.assertIn("has not been reconciled", output)
         self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
         self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
         self.assertEqual((self.home / ".settings").read_text(), "original\n")
 
-    def test_retry_does_not_bypass_unresolved_drift(self) -> None:
-        """Retry rechecks the upstream instead of assuming manual work is complete."""
-
-        code, output = self.run_backup((("[save/restore/retry/skip/abort]", "retry"),))
-        self.assertNotEqual(code, 0, output)
-        self.assertIn("still behind", output)
-        self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.original)
-
-    def test_retry_accepts_completed_manual_reconciliation(self) -> None:
-        """Work done in another terminal can continue into the managed file checks."""
-
-        def reconcile_manually() -> str:
-            self.git(self.source, "merge", "--ff-only", "origin/main")
-            return "retry"
-
-        code, output = self.run_backup(
-            (
-                ("[save/restore/retry/skip/abort]", reconcile_manually),
-                ("[save/restore/skip/abort]", "restore"),
-            )
-        )
-        self.assertEqual(code, 0, output)
-        self.assertEqual((self.home / ".settings").read_text(), "upstream\n")
-        self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.upstream)
-
     def test_declining_publication_keeps_captured_files_local(self) -> None:
         """A merge approval must not authorize pushing subsequently captured files."""
 
         code, output = self.run_backup(
             (
-                ("[save/restore/retry/skip/abort]", "save"),
+                ("[save/skip/abort]", "save"),
                 ("[save/restore/skip/abort]", "save"),
                 ("[publish/skip/abort]", "abort"),
             )
@@ -244,60 +214,6 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
         self.assertEqual(self.git(self.remote, "show", "main:dot_settings"), "upstream")
 
-    def test_use_remote_discards_source_changes_only_after_confirmation(self) -> None:
-        """Users may discard both local-only commits and edits without publishing them."""
-
-        (self.source / "dot_settings").write_text("local commit\n")
-        self.git(self.source, "commit", "-am", "Local")
-        (self.source / "dot_settings").write_text("local edit\n")
-        (self.source / "untracked").write_text("discard me\n")
-        (self.home / ".settings").write_text("unwanted workstation edit\n")
-        code, output = self.run_backup(
-            (
-                ("[save/restore/retry/skip/abort]", "restore"),
-                ("[discard/skip/abort]", "discard"),
-                ("[save/restore/skip/abort]", "restore"),
-            )
-        )
-        self.assertEqual(code, 0, output)
-        self.assertEqual((self.home / ".settings").read_text(), "upstream\n")
-        self.assertFalse((self.source / "untracked").exists())
-        self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), self.upstream)
-        self.assertEqual(self.git(self.remote, "rev-parse", "main"), self.upstream)
-        self.assertNotIn("Choose [publish/skip/abort]", output)
-
-    def test_declining_discard_preserves_local_edits_and_commits(self) -> None:
-        """Selecting restore alone is not sufficient approval to discard edits."""
-
-        (self.source / "dot_settings").write_text("local commit\n")
-        self.git(self.source, "commit", "-am", "Local")
-        local_head = self.git(self.source, "rev-parse", "HEAD")
-        (self.source / "dot_settings").write_text("local edit\n")
-        code, output = self.run_backup(
-            (("[save/restore/retry/skip/abort]", "restore"), ("[discard/skip/abort]", "abort"))
-        )
-        self.assertNotEqual(code, 0, output)
-        self.assertEqual(self.git(self.source, "rev-parse", "HEAD"), local_head)
-        self.assertEqual((self.source / "dot_settings").read_text(), "local edit\n")
-        self.assertEqual((self.home / ".settings").read_text(), "original\n")
-
-    def test_use_remote_is_available_without_incoming_commits(self) -> None:
-        """Locally modified source files can be discarded even when Git is not behind."""
-
-        self.git(self.source, "fetch", "origin")
-        self.git(self.source, "merge", "--ff-only", "origin/main")
-        (self.source / "dot_settings").write_text("unwanted local edit\n")
-        code, output = self.run_backup(
-            (
-                ("[save/restore/retry/skip/abort]", "restore"),
-                ("[discard/skip/abort]", "discard"),
-                ("[save/restore/skip/abort]", "restore"),
-            )
-        )
-        self.assertEqual(code, 0, output)
-        self.assertEqual((self.home / ".settings").read_text(), "upstream\n")
-        self.assertEqual(self.git(self.source, "status", "--porcelain"), "")
-
     def test_keep_retains_local_source_for_separate_publication(self) -> None:
         """A local-only change can still take the existing apply-and-publish path."""
 
@@ -306,7 +222,7 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         (self.source / "dot_settings").write_text("wanted local edit\n")
         code, output = self.run_backup(
             (
-                ("[save/restore/retry/skip/abort]", "save"),
+                ("[save/skip/abort]", "save"),
                 ("[save/restore/skip/abort]", "restore"),
                 ("[publish/skip/abort]", "publish"),
             )
