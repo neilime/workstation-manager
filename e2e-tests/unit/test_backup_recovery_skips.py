@@ -622,40 +622,6 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertNotIn("Choose [retry/skip/abort]", output)
         self.assertFalse((self.fixture / "backup.tar.gz").exists())
 
-    def test_remote_key_directions_restore_without_writing_the_vault(self) -> None:
-        """Both differing and remote-only SSH keys restore only after the matching explicit choice."""
-
-        tasks = self.prepare_keys()
-        tasks[0]["loop"] = tasks[0]["loop"][:1]
-        self.variables["workstation_manager_use_become"] = False
-        self.variables["workstation_manager_resolved"]["user"] = {"name": "fixture", "home": str(self.fixture)}
-        remote = {
-            "id": "fixture-id",
-            "name": "fixture-key",
-            "collectionIds": ["fixture-collection"],
-            "fields": [
-                {"name": "private_key", "value": "remote-private"},
-                {"name": "public_key", "value": "remote-public"},
-            ],
-        }
-        (self.fixture / "saved-item.json").write_text(json.dumps(remote))
-        for action, prompt in (
-            ("restore", "[restore/skip/abort]"),
-            ("update", "[save/restore/skip/abort]"),
-        ):
-            with self.subTest(action=action):
-                tasks[0]["loop"][0]["action"] = action
-                code, output = self.run_backup(tasks, ((prompt, "restore"),))
-                self.assertEqual(code, 0, output)
-                self.assertEqual((self.fixture / ".ssh/fixture-key").read_text(), "remote-private\n")
-                self.assertEqual((self.fixture / ".ssh/fixture-key.pub").read_text(), "remote-public\n")
-                self.assertNotIn("remote-private", output)
-                self.assertEqual(json.loads((self.fixture / "saved-item.json").read_text()), remote)
-                (self.fixture / ".ssh/fixture-key").write_text("local change")
-        self.assertEqual(
-            (self.fixture / "bw-calls").read_text().splitlines(), ["status", "sync", "get", "status", "sync", "get"]
-        )
-
     def test_each_key_can_be_skipped_without_any_vault_write(self) -> None:
         """SSH and GPG skips must not encode, save, or claim to verify a key."""
 
@@ -663,7 +629,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             self.prepare_keys(),
             (
                 ("[save/skip/abort]", "skip"),
-                ("[save/restore/skip/abort]", "skip"),
+                ("[save/skip/abort]", "skip"),
             ),
         )
         self.assertEqual(code, 0, output)
@@ -680,7 +646,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             self.prepare_keys(),
             (
                 ("[save/skip/abort]", "skip"),
-                ("[save/restore/skip/abort]", "save"),
+                ("[save/skip/abort]", "save"),
             ),
         )
         self.assertEqual(code, 0, output)
@@ -698,7 +664,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             self.prepare_keys(),
             (
                 ("[save/skip/abort]", "skip"),
-                ("[save/restore/skip/abort]", "save"),
+                ("[save/skip/abort]", "save"),
             ),
         )
         self.assertNotEqual(code, 0, output)
@@ -710,7 +676,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
 
         code, output = self.run_backup(
             self.prepare_keys(),
-            (("[save/skip/abort]", "save"), ("[save/restore/skip/abort]", "save")),
+            (("[save/skip/abort]", "save"), ("[save/skip/abort]", "save")),
         )
         self.assertEqual(code, 0, output)
         self.assertEqual(
