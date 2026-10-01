@@ -103,12 +103,14 @@ including names, directories, declared main colors, logos, and saved Sync
 configuration. Name checks use the names shown in Brave's profile picker.
 The prompt names affected profiles and offers machine actions:
 
-- `restore` applies saved names, colors, and logos locally, recreates missing
-  profiles, and enables **Sync everything**.
 - `save` updates existing Bitwarden records from local names, colors, and logos.
   It preserves recovery words, unrelated fields, and secondary palette colors.
   Disabled logos and managed colors that no longer exist locally are removed
   from the corresponding note.
+
+Backup does not apply saved settings locally, recreate missing profiles, or enable
+**Sync everything**; run setup to restore those from Bitwarden. Use `retry` to
+recheck after you fix a manual step such as enabling Sync everything.
 
 Brave closes gracefully during approved operations and reopens its previous
 saved session if it was running; private windows cannot be restored. Backup never
@@ -121,14 +123,13 @@ pending changes, and compares its stable recovery code with Bitwarden. You do
 not need to inspect diagnostic pages or compare words. Codes stay private.
 
 If recovery codes differ, choose `save` to store the current Brave code in its
-existing note, or `restore` to connect the affected profile to its stored chain.
-Restoring a chain enables **Sync everything** and can merge local browsing data
-with that chain. Both actions verify synchronization and matching codes afterward.
-Neither direction deletes profiles or vault records.
+existing note. Backup verifies synchronization and matching codes afterward and
+never deletes profiles or vault records. To connect a profile to a stored chain or
+enable **Sync everything**, run setup; backup does not pull a chain onto this computer.
 
 If Sync remains pending or the server is unavailable, choose `sync` to try again,
 `skip` to continue with browser recovery unverified, or `abort`. A failed operation
-or failed verification after saving or restoring stops backup. Unsupported native
+or failed verification after saving stops backup. Unsupported native
 browser interfaces also stop verification rather than accepting a manual assertion.
 See [backup skips](backup-and-restore.md#create-a-backup) for incomplete coverage.
 When profiles exist locally, backup also writes the sidecar noted above for manual

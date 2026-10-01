@@ -81,9 +81,7 @@ def main() -> None:
         supports_check_mode=True,
     )
     requested_actions = [
-        action
-        for option, action in (("merge", "merge"), ("publish", "publish"))
-        if module.params[option]
+        action for option, action in (("merge", "merge"), ("publish", "publish")) if module.params[option]
     ]
     if len(requested_actions) > 1:
         module.fail_json(msg="Merging and publishing require separate decisions.")

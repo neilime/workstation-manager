@@ -29,7 +29,8 @@
       scope: browser-recovery
       summary: "{{ workstation_backup_browser_recovery_report }}"
       actions: >-
-        {{ workstation_backup_browser_sync_actions | default({})
+        {{ (workstation_backup_browser_sync_actions | default({})
+            | dict2items | rejectattr('key', 'equalto', 'restore') | items2dict)
            | combine({'retry': 'Recheck profiles and Bitwarden after you fix the remaining manual steps.'}) }}
       skip: Leave browser state unchanged and skip the remaining browser recovery checks.
       abort_message: Browser recovery was not synchronized; no archive was created.
@@ -38,8 +39,8 @@
   ansible.builtin.include_role:
     name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"
     tasks_from: reconcile
-  when: workstation_backup_recovery_choices['browser-recovery'] in ['save', 'restore']
+  when: workstation_backup_recovery_choices['browser-recovery'] == 'save'
 
 - name: Recheck browser recovery after the user resolves drift
   ansible.builtin.include_tasks: verify.yml
-  when: workstation_backup_recovery_choices['browser-recovery'] in ['save', 'restore', 'retry']
+  when: workstation_backup_recovery_choices['browser-recovery'] in ['save', 'retry']
