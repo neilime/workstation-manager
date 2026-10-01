@@ -110,7 +110,9 @@ interactive_terminal_flag() {
 }
 
 shell_quote() {
-	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\''/g")"
+	printf '%s' "'"
+	printf '%s' "$1" | sed "s/'/'\\\\''/g"
+	printf '%s' "'"
 }
 
 usage() {
@@ -602,36 +604,43 @@ run_ansible_pull() {
 }
 
 resolve_entrypoint_source() {
-	if [ -n "${WORKSTATION_MANAGER_ENTRYPOINT_SOURCE:-}" ] && [ -f "$WORKSTATION_MANAGER_ENTRYPOINT_SOURCE" ]; then
-		printf '%s\n' "$WORKSTATION_MANAGER_ENTRYPOINT_SOURCE"
-		return 0
-	fi
-
-	if [ -f "$0" ]; then
-		printf '%s\n' "$0"
-		return 0
-	fi
-
-	resolved_path="$(command -v "$0" 2>/dev/null || true)"
-	if [ -n "$resolved_path" ] && [ -f "$resolved_path" ]; then
-		printf '%s\n' "$resolved_path"
-		return 0
-	fi
+	for entrypoint_candidate in \
+		"${WORKSTATION_MANAGER_ENTRYPOINT_SOURCE:-}" \
+		"$0" \
+		"$(command -v "$0" 2>/dev/null || true)"; do
+		# With curl ... | sh, $0 resolves to the shell executable, not this source.
+		if [ -f "$entrypoint_candidate" ] && grep -q '^run_ansible_pull() {' "$entrypoint_candidate"; then
+			printf '%s\n' "$entrypoint_candidate"
+			return 0
+		fi
+	done
 
 	return 1
 }
 
-copy_entrypoint_definitions() {
-	entrypoint_source="$1"
-	definitions_file="$2"
+prepare_entrypoint_definitions() {
+	definitions_file="$1"
+	if ! entrypoint_source="$(resolve_entrypoint_source)"; then
+		initialize_repository_source
+		if repository_root="$(resolve_local_repository_path "$REPOSITORY_URL")"; then
+			entrypoint_source="$repository_root/workstation.sh"
+		else
+			repository_path="$(resolve_github_repository_path "$REPOSITORY_URL")" || return 1
+			entrypoint_source="${definitions_file}.source"
+			download_github_file "$repository_path" "$REPOSITORY_BRANCH" workstation.sh "$entrypoint_source" || return 1
+		fi
+	fi
+
+	grep -q '^run_ansible_pull() {' "$entrypoint_source" || return 1
 	last_line="$(tail -n 1 "$entrypoint_source" 2>/dev/null || true)"
 
 	if [ "$last_line" = 'main "$@"' ]; then
-		sed '$d' "$entrypoint_source" >"$definitions_file"
-		return
+		sed '$d' "$entrypoint_source" >"$definitions_file" || return 1
+	else
+		cp "$entrypoint_source" "$definitions_file" || return 1
 	fi
 
-	cp "$entrypoint_source" "$definitions_file"
+	/bin/sh -n "$definitions_file"
 }
 
 run_ansible_pull_captured_with_fifo() {
@@ -662,7 +671,6 @@ run_ansible_pull_captured_with_script() {
 	output_file="$3"
 	shift 3
 
-	entrypoint_source="$(resolve_entrypoint_source)" || return 1
 	runner_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-script-XXXXXX")"
 	definitions_file="$runner_dir/entrypoint-definitions.sh"
 	runner_script="$runner_dir/run-ansible-pull.sh"
@@ -670,8 +678,9 @@ run_ansible_pull_captured_with_script() {
 	tmp_output_dir=""
 	tmp_output_file=""
 
-	copy_entrypoint_definitions "$entrypoint_source" "$definitions_file" || {
+	prepare_entrypoint_definitions "$definitions_file" || {
 		rm -rf "$runner_dir"
+		printf '%s\n' "x Failed to prepare the entrypoint for interactive Ansible execution. Check repository access and workstation.sh at $REPOSITORY_URL#$REPOSITORY_BRANCH." >&2
 		return 1
 	}
 
@@ -707,6 +716,8 @@ run_ansible_pull_captured_with_script() {
 	}
 	tmp_output_file="$tmp_output_dir/typescript"
 
+	# The invoking user's terminal supplies input before sudo starts the relay.
+	# shellcheck disable=SC2024
 	if sudo \
 		--preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD \
 		env \
@@ -716,7 +727,7 @@ run_ansible_pull_captured_with_script() {
 		WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
 		GPG_TTY="${GPG_TTY:-}" \
 		SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-}" \
-		script --quiet --return --command "$runner_command" "$tmp_output_file"; then
+		script --quiet --return --command "$runner_command" "$tmp_output_file" </dev/tty; then
 		exit_code=0
 	else
 		exit_code="$?"

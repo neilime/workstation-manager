@@ -7,6 +7,7 @@ import os
 import pathlib
 import pty
 import select
+import shlex
 import shutil
 import signal
 import subprocess
@@ -16,9 +17,81 @@ import termios
 import time
 import unittest
 
+from backup_prompt_helpers import run_interactive
 from entrypoint_test_helpers import controlling_tty_exec_python, sudo_passthrough_script
 
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
+
+
+class EntrypointSourceTests(unittest.TestCase):
+    """Resolve shell source without mistaking the piped interpreter for it."""
+
+    def test_piped_source_does_not_resolve_the_shell_executable(self) -> None:
+        """Both shell names and absolute interpreter paths must reject the binary."""
+
+        definitions = ENTRYPOINT_PATH.read_text().rsplit('main "$@"', 1)[0]
+        for interpreter in ("sh", "/bin/sh"):
+            with self.subTest(interpreter=interpreter):
+                result = subprocess.run(
+                    [interpreter, "-s"],
+                    input=definitions + "resolve_entrypoint_source\n",
+                    env={"PATH": "/usr/bin:/bin"},
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_shell_quoting_preserves_literal_values(self) -> None:
+        """Generated assignments must retain quotes, whitespace, and shell metacharacters."""
+
+        definitions = ENTRYPOINT_PATH.read_text().rsplit('main "$@"', 1)[0]
+        for value in (
+            "",
+            "a'b",
+            "'",
+            "two''quotes",
+            "spaces $HOME `false` $(false) \\\nnext line\n",
+        ):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    ["/bin/sh", "-s"],
+                    input=definitions + 'eval "value=$(shell_quote "$TEST_QUOTE_VALUE")"\nprintf "%s" "$value"\n',
+                    env={"PATH": "/usr/bin:/bin", "TEST_QUOTE_VALUE": value},
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, value)
+
+    def test_piped_local_source_uses_the_configured_checkout(self) -> None:
+        """A local repository override must prepare its source without downloading it."""
+
+        definitions = ENTRYPOINT_PATH.read_text().rsplit('main "$@"', 1)[0]
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            shutil.copyfile(ENTRYPOINT_PATH, fixture / "workstation.sh")
+            output = fixture / "definitions.sh"
+            result = subprocess.run(
+                ["/bin/sh", "-s"],
+                input=definitions + 'prepare_entrypoint_definitions "$TEST_DEFINITIONS_FILE"\n',
+                env={
+                    "PATH": "/usr/bin:/bin",
+                    "REPOSITORY_URL": str(fixture),
+                    "REPOSITORY_BRANCH": "fixture-ref",
+                    "TEST_DEFINITIONS_FILE": str(output),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(output.read_text(), definitions)
 
 
 class TerminalPromptTests(unittest.TestCase):
@@ -532,16 +605,24 @@ class BitwardenRetryTests(unittest.TestCase):
 
             result = subprocess.run(
                 [
-                    "/bin/sh",
-                    "-c",
-                    '. "$1"\n'
-                    "has_interactive_terminal() { return 0; }\n"
-                    'TARGET_USER="fixture"\n'
-                    'TARGET_USER_HOME="$HOME"\n'
-                    'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
-                    "run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n",
-                    "entrypoint-test",
-                    str(wrapper),
+                    shutil.which("script") or "script",
+                    "--quiet",
+                    "--return",
+                    "--command",
+                    shlex.join(
+                        [
+                            "/bin/sh",
+                            "-c",
+                            '. "$1"\n'
+                            'TARGET_USER="fixture"\n'
+                            'TARGET_USER_HOME="$HOME"\n'
+                            'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
+                            "run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n",
+                            "entrypoint-test",
+                            str(wrapper),
+                        ]
+                    ),
+                    os.devnull,
                 ],
                 env={
                     "PATH": f"{fixture}:/usr/bin:/bin",
@@ -566,6 +647,151 @@ class BitwardenRetryTests(unittest.TestCase):
             self.assertIn("WORKSTATION_MANAGER_SKIP_SUDO=1", runner_content_file.read_text())
             self.assertIn("run_ansible_pull 'ansible/backup.yml' '0' \"$@\"", runner_content_file.read_text())
             self.assertEqual(script_output_file.read_text(), "synthetic success\n")
+
+
+class PipedBackupTests(unittest.TestCase):
+    """Exercise the public piped backup with a real terminal and isolated commands."""
+
+    def _prepare_fixture(self, fixture: pathlib.Path) -> dict[str, str]:
+        """Stub dependencies and Ansible while retaining the actual shell and script relay."""
+
+        commands = fixture / "bin"
+        commands.mkdir()
+        (fixture / "private.override.yml").write_text("{}\n")
+        scripts = {
+            "sudo": sudo_passthrough_script('if [ "$1" = "-v" ]; then exit 0; fi\n'),
+            "git": "#!/bin/sh\nexit 99\n",
+            "getent": '#!/bin/sh\nprintf "fixture:x:1000:1000::%s:/bin/sh\\n" "$HOME"\n',
+            "ansible-playbook": "#!/bin/sh\nexit 99\n",
+            "ansible-galaxy": "#!/bin/sh\nexit 0\n",
+            "curl": (
+                f"#!{sys.executable}\n"
+                "import os, pathlib, shutil, sys\n"
+                "url, destination = sys.argv[2], pathlib.Path(sys.argv[4])\n"
+                'with open(os.environ["TEST_DOWNLOAD_LOG"], "a") as log:\n'
+                '    log.write(url + "\\n")\n'
+                'if url.endswith("/workstation.sh"):\n'
+                '    if os.environ.get("TEST_DOWNLOAD_FAILURE") == "1":\n'
+                "        sys.exit(22)\n"
+                '    if os.environ.get("TEST_INVALID_SOURCE") == "1":\n'
+                '        destination.write_text("run_ansible_pull() {\\nunterminated=\\"\\n")\n'
+                "    else:\n"
+                '        shutil.copyfile(os.environ["TEST_ENTRYPOINT_FILE"], destination)\n'
+                'elif url.endswith("/ansible/collections/requirements.yml"):\n'
+                '    destination.write_text("collections: []\\n")\n'
+                "else:\n"
+                "    sys.exit(99)\n"
+            ),
+            "ansible-pull": (
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                'print("Fixture recovery confirmation: ", end="", flush=True)\n'
+                "answer = sys.stdin.readline().strip()\n"
+                'with open(os.environ["TEST_INVOCATION_FILE"], "w") as output:\n'
+                "    json.dump({\n"
+                '        "args": sys.argv[1:], "answer": answer,\n'
+                '        "stdin_tty": sys.stdin.isatty(), "stdout_tty": sys.stdout.isatty(),\n'
+                '        "password": os.environ["BITWARDEN_PASSWORD"],\n'
+                '        "output_dir": os.environ["WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR"],\n'
+                '        "user_home": os.environ["WORKSTATION_MANAGER_USER_HOME"],\n'
+                "    }, output)\n"
+                'sys.exit(0 if answer == "continue" else 9)\n'
+            ),
+        }
+        for name, content in scripts.items():
+            command = commands / name
+            command.write_text(content)
+            command.chmod(0o700)
+        return {
+            "PATH": f"{commands}:/usr/bin:/bin",
+            "HOME": str(fixture),
+            "TMPDIR": str(fixture),
+            "SUDO_USER": "fixture",
+            "REPOSITORY_URL": "https://github.com/fixture/workstation-manager.git",
+            "REPOSITORY_BRANCH": "fixture-ref",
+            "WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE": str(fixture / "private.override.yml"),
+            "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR": str(fixture / "backup's files"),
+            "BITWARDEN_CLIENT_ID": "fixture-client",
+            "BITWARDEN_CLIENT_SECRET": "fixture-secret",
+            "BITWARDEN_PASSWORD": "fixture'password $HOME `false` $(false)",
+            "TEST_ENTRYPOINT_FILE": str(ENTRYPOINT_PATH),
+            "TEST_DOWNLOAD_LOG": str(fixture / "downloads.txt"),
+            "TEST_INVOCATION_FILE": str(fixture / "invocation.json"),
+        }
+
+    def test_piped_backup_preserves_terminal_credentials_paths_and_check_mode(
+        self,
+    ) -> None:
+        """The downloaded runner must execute backup once with literal values and a tty."""
+
+        for dry_run in (False, True):
+            with (
+                self.subTest(dry_run=dry_run),
+                tempfile.TemporaryDirectory() as temporary_dir,
+            ):
+                fixture = pathlib.Path(temporary_dir) / "runner's files"
+                fixture.mkdir()
+                environment = self._prepare_fixture(fixture)
+                command = 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'
+                if dry_run:
+                    command += " --dry-run"
+                returncode, output = run_interactive(
+                    ["sh", "-c", command],
+                    fixture,
+                    environment,
+                    [("Fixture recovery confirmation: ", "continue")],
+                )
+                self.assertEqual(returncode, 0, output)
+                invocation = json.loads((fixture / "invocation.json").read_text())
+                self.assertEqual(invocation["password"], environment["BITWARDEN_PASSWORD"])
+                self.assertEqual(
+                    invocation["output_dir"],
+                    environment["WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR"],
+                )
+                self.assertEqual(invocation["user_home"], str(fixture))
+                self.assertEqual(invocation["answer"], "continue")
+                self.assertTrue(invocation["stdin_tty"])
+                self.assertTrue(invocation["stdout_tty"])
+                self.assertIn("ansible/backup.yml", invocation["args"])
+                self.assertEqual("--check" in invocation["args"], dry_run)
+                self.assertEqual("--diff" in invocation["args"], dry_run)
+                self.assertEqual(output.count("Running workstation backup from"), 1)
+                self.assertIn("Workstation command completed", output)
+                self.assertNotIn(environment["BITWARDEN_PASSWORD"], output)
+                self.assertEqual(
+                    (fixture / "downloads.txt").read_text().splitlines(),
+                    [
+                        "https://raw.githubusercontent.com/fixture/workstation-manager/fixture-ref/"
+                        "ansible/collections/requirements.yml",
+                        "https://raw.githubusercontent.com/fixture/workstation-manager/fixture-ref/workstation.sh",
+                    ],
+                )
+                self.assertEqual(list(fixture.glob("workstation-manager-*")), [])
+
+    def test_unavailable_or_invalid_runner_source_stops_before_ansible(self) -> None:
+        """Download and parsing failures must fail clearly and remove temporary source files."""
+
+        for failure in ("TEST_DOWNLOAD_FAILURE", "TEST_INVALID_SOURCE"):
+            with (
+                self.subTest(failure=failure),
+                tempfile.TemporaryDirectory() as temporary_dir,
+            ):
+                fixture = pathlib.Path(temporary_dir)
+                environment = self._prepare_fixture(fixture)
+                environment[failure] = "1"
+                returncode, output = run_interactive(
+                    ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'],
+                    fixture,
+                    environment,
+                )
+                self.assertNotEqual(returncode, 0, output)
+                self.assertIn(
+                    "Failed to prepare the entrypoint for interactive Ansible execution",
+                    output,
+                )
+                self.assertNotIn("Workstation command completed", output)
+                self.assertFalse((fixture / "invocation.json").exists())
+                self.assertEqual(list(fixture.glob("workstation-manager-*")), [])
 
 
 if __name__ == "__main__":

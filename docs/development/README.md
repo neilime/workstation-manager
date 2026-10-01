@@ -95,6 +95,13 @@ the local working tree, including uncommitted changes. The piped `curl ... | sh`
 bootstrap still uses the published GitHub repository unless you override
 `REPOSITORY_URL`.
 
+Interactive runs capture Ansible output through `script` while keeping prompts
+on a terminal. When the entrypoint is piped into `sh`, this runner loads
+`workstation.sh` from the configured repository and ref because the running
+script has no source file on disk. Local runs reuse their entrypoint source.
+The runner validates shell syntax before execution and removes its temporary
+source and credential files afterward.
+
 ## Dependency updates
 
 The [Renovate workflow](../../.github/workflows/renovate.yml) runs every Friday
