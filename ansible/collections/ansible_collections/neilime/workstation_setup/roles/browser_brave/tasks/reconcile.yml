@@ -26,7 +26,7 @@
         {{ browser_brave_sync_result.blocker }}
         No browser settings or Bitwarden records were changed by this attempt.
       actions:
-        retry: Retry the automatic close request, then choose save or restore again.
+        retry: Retry the automatic close request, then choose save again.
       skip: Skip the remaining browser recovery checks.
       abort_message: Browser recovery was not synchronized; no archive was created.
   when: browser_brave_sync_result.blocked | default(false)

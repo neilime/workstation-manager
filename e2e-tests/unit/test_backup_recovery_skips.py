@@ -413,89 +413,74 @@ class BackupRecoverySkipTests(unittest.TestCase):
     # Scenario test keeps setup, action, and verification in one place for each prompt path.
     # pylint: disable-next=too-many-locals
     def test_browser_metadata_directions_reload_and_verify_with_real_adapter(self) -> None:
-        """Metadata and Sync-only repairs must finish before automatic live verification and archiving."""
+        """Metadata repairs must finish before automatic live verification and archiving."""
 
         tasks, record, store, preferences = self._prepare_native_browser()
         browser_export_path = self.fixture / "backup.browser-profiles.json"
-        for direction, sync_only in (("save", False), ("restore", False), ("restore", True)):
-            with self.subTest(direction=direction, sync_only=sync_only):
-                store.write_text(json.dumps(record))
-                local_name = "Remote" if sync_only else "Local"
-                (preferences.parent.parent / "Local State").write_text(
-                    json.dumps({"profile": {"info_cache": {"Default": {"name": local_name}}}})
-                )
-                preferences.write_text(
-                    json.dumps(
-                        {
-                            "profile": {"name": local_name},
-                            "sync": {"keep_everything_synced": not sync_only},
-                            "brave_sync_v2": {"seed": "synthetic-browser-seed"},
-                            "browser": {
-                                "theme": {"user_color2": int("123456" if sync_only else "654321", 16) - 0x1000000}
-                            },
-                            "extensions": {
-                                "theme": {"id": "user_color_theme_id"},
-                                "settings": {"fixture-extension": {"token": "synthetic-extension-token"}},
-                            },
-                            "pinned_tabs": [{"url": "https://example.invalid"}],
-                        }
-                    )
-                )
-                (preferences.parent / "Bookmarks").write_text(
-                    json.dumps(
-                        {
-                            "roots": {
-                                "bookmark_bar": {"children": [{"name": "Docs", "url": "https://example.invalid/docs"}]}
-                            }
-                        }
-                    )
-                )
-                before = json.loads(preferences.read_text())
-                code, output = self.run_backup(
-                    tasks,
-                    (
-                        ("[restore/retry/skip/abort]" if sync_only else "[save/restore/retry/skip/abort]", direction),
-                        ("[sync/skip/abort]", "sync"),
-                    ),
-                )
-                self.assertEqual(code, 0, output)
-                current = json.loads(preferences.read_text())
-                saved = json.loads(store.read_text())
-                if sync_only:
-                    before["sync"]["keep_everything_synced"] = True
-                    self.assertEqual(current, before)
-                    self.assertEqual(saved, record)
-                    self.assertIn("Enable Sync everything", output)
-                expected = "Local" if direction == "save" else "Remote"
-                self.assertIn(f"{expected} (Default)", output.split("Synchronize and verify browser recovery.", 1)[1])
-                self.assertIn("automatically", output)
-                self.assertNotIn("View Sync Code", output)
-                self.assertEqual((self.fixture / "live-action").read_text(), "sync")
-                self.assertEqual(current["profile"]["name"], expected)
-                self.assertEqual(saved["name"], expected)
-                self.assertEqual(saved["notes"], record["notes"])
-                self.assertEqual(current["brave_sync_v2"]["seed"], "synthetic-browser-seed")
-                self.assertEqual(current["pinned_tabs"], [{"url": "https://example.invalid"}])
-                browser_export = json.loads(browser_export_path.read_text())
-                self.assertEqual(browser_export["browser"], "brave")
-                self.assertEqual(browser_export["created_at"], "fixture")
-                self.assertEqual(browser_export["profiles"][0]["label"], expected)
-                self.assertEqual(
-                    browser_export["profiles"][0]["bookmarks"]["roots"]["bookmark_bar"]["children"],
-                    [{"name": "Docs", "url": "https://example.invalid/docs"}],
-                )
-                self.assertEqual(
-                    browser_export["profiles"][0]["preferences"]["pinned_tabs"],
-                    [{"url": "https://example.invalid"}],
-                )
-                self.assertNotIn("sync", browser_export["profiles"][0]["preferences"])
-                self.assertNotIn("brave_sync_v2", browser_export["profiles"][0]["preferences"])
-                self.assertNotIn("settings", browser_export["profiles"][0]["preferences"]["extensions"])
-                manifest = (self.fixture / "backup.manifest.txt").read_text()
-                self.assertIn(f"export\tbrowser-profiles\t{browser_export_path}", manifest)
-                for secret in ("synthetic-recovery-words", "synthetic-browser-seed", "synthetic-current-session"):
-                    self.assertNotIn(secret, output)
-                self.assert_archive([])
+        store.write_text(json.dumps(record))
+        (preferences.parent.parent / "Local State").write_text(
+            json.dumps({"profile": {"info_cache": {"Default": {"name": "Local"}}}})
+        )
+        preferences.write_text(
+            json.dumps(
+                {
+                    "profile": {"name": "Local"},
+                    "sync": {"keep_everything_synced": True},
+                    "brave_sync_v2": {"seed": "synthetic-browser-seed"},
+                    "browser": {"theme": {"user_color2": int("654321", 16) - 0x1000000}},
+                    "extensions": {
+                        "theme": {"id": "user_color_theme_id"},
+                        "settings": {"fixture-extension": {"token": "synthetic-extension-token"}},
+                    },
+                    "pinned_tabs": [{"url": "https://example.invalid"}],
+                }
+            )
+        )
+        (preferences.parent / "Bookmarks").write_text(
+            json.dumps(
+                {"roots": {"bookmark_bar": {"children": [{"name": "Docs", "url": "https://example.invalid/docs"}]}}}
+            )
+        )
+        code, output = self.run_backup(
+            tasks,
+            (
+                ("[save/retry/skip/abort]", "save"),
+                ("[sync/skip/abort]", "sync"),
+            ),
+        )
+        self.assertEqual(code, 0, output)
+        current = json.loads(preferences.read_text())
+        saved = json.loads(store.read_text())
+        expected = "Local"
+        self.assertIn(f"{expected} (Default)", output.split("Synchronize and verify browser recovery.", 1)[1])
+        self.assertIn("automatically", output)
+        self.assertNotIn("View Sync Code", output)
+        self.assertEqual((self.fixture / "live-action").read_text(), "sync")
+        self.assertEqual(current["profile"]["name"], expected)
+        self.assertEqual(saved["name"], expected)
+        self.assertEqual(saved["notes"], record["notes"])
+        self.assertEqual(current["brave_sync_v2"]["seed"], "synthetic-browser-seed")
+        self.assertEqual(current["pinned_tabs"], [{"url": "https://example.invalid"}])
+        browser_export = json.loads(browser_export_path.read_text())
+        self.assertEqual(browser_export["browser"], "brave")
+        self.assertEqual(browser_export["created_at"], "fixture")
+        self.assertEqual(browser_export["profiles"][0]["label"], expected)
+        self.assertEqual(
+            browser_export["profiles"][0]["bookmarks"]["roots"]["bookmark_bar"]["children"],
+            [{"name": "Docs", "url": "https://example.invalid/docs"}],
+        )
+        self.assertEqual(
+            browser_export["profiles"][0]["preferences"]["pinned_tabs"],
+            [{"url": "https://example.invalid"}],
+        )
+        self.assertNotIn("sync", browser_export["profiles"][0]["preferences"])
+        self.assertNotIn("brave_sync_v2", browser_export["profiles"][0]["preferences"])
+        self.assertNotIn("settings", browser_export["profiles"][0]["preferences"]["extensions"])
+        manifest = (self.fixture / "backup.manifest.txt").read_text()
+        self.assertIn(f"export\tbrowser-profiles\t{browser_export_path}", manifest)
+        for secret in ("synthetic-recovery-words", "synthetic-browser-seed", "synthetic-current-session"):
+            self.assertNotIn(secret, output)
+        self.assert_archive([])
 
     def _prepare_locked_browser(self) -> tuple[list, pathlib.Path, pathlib.Path]:
         """Use the real adapter with a disposable, drifted profile and a persistent lock."""
@@ -507,7 +492,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             json.dumps(
                 {
                     "profile": {"name": "Local"},
-                    "sync": {"keep_everything_synced": False},
+                    "sync": {"keep_everything_synced": True},
                     "brave_sync_v2": {"seed": "synthetic-browser-seed"},
                 }
             )
@@ -537,24 +522,24 @@ class BackupRecoverySkipTests(unittest.TestCase):
         code, output = self.run_backup(
             tasks,
             (
-                ("[save/restore/retry/skip/abort]", "restore"),
+                ("[save/retry/skip/abort]", "save"),
                 ("[retry/skip/abort]", "retry"),
-                ("[save/restore/retry/skip/abort]", "restore"),
+                ("[save/retry/skip/abort]", "save"),
                 ("[retry/skip/abort]", close_browser),
-                ("[save/restore/retry/skip/abort]", "restore"),
+                ("[save/retry/skip/abort]", "save"),
                 ("[sync/skip/abort]", "sync"),
             ),
         )
         self.assertEqual(code, 0, output)
-        self.assertEqual(output.count("Choose [save/restore/retry/skip/abort]"), 3)
+        self.assertEqual(output.count("Choose [save/retry/skip/abort]"), 3)
         self.assertIn("profile is still locked", output)
         self.assertIn("No browser settings or Bitwarden records were changed by this attempt.", output)
         self.assertNotIn("synthetic-browser-seed", output)
         self.assertNotIn("synthetic-recovery-words", output)
         current = json.loads(preferences.read_text())
-        self.assertEqual(current["profile"]["name"], "Remote")
+        self.assertEqual(current["profile"]["name"], "Local")
         self.assertTrue(current["sync"]["keep_everything_synced"])
-        self.assertEqual(store.read_bytes(), saved)
+        self.assertEqual(json.loads(store.read_text())["name"], "Local")
         self.assert_archive([])
 
     def test_locked_browser_can_abort_or_explicitly_skip_without_changes(self) -> None:
@@ -566,7 +551,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             with self.subTest(decision=decision):
                 code, output = self.run_backup(
                     tasks,
-                    (("[save/restore/retry/skip/abort]", "save"), ("[retry/skip/abort]", decision)),
+                    (("[save/retry/skip/abort]", "save"), ("[retry/skip/abort]", decision)),
                 )
                 self.assertEqual(preferences.read_bytes(), before)
                 self.assertTrue(lock.is_symlink())
@@ -615,9 +600,9 @@ class BackupRecoverySkipTests(unittest.TestCase):
             original = preferences.with_name("fixture-original")
             preferences.rename(original)
             preferences.symlink_to(original)
-            return "restore"
+            return "save"
 
-        code, output = self.run_backup(tasks, (("[save/restore/retry/skip/abort]", break_destination),))
+        code, output = self.run_backup(tasks, (("[save/retry/skip/abort]", break_destination),))
         self.assertNotEqual(code, 0, output)
         self.assertNotIn("Choose [retry/skip/abort]", output)
         self.assertFalse((self.fixture / "backup.tar.gz").exists())

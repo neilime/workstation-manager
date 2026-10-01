@@ -31,8 +31,8 @@ Backup checks recovery sources before creating the archive:
 
 - Chezmoi managed files: Choose `save` to capture workstation files, or `restore` to apply source state locally.
 - Chezmoi Git checkout: Choose how to reconcile local and remote source changes, then approve `publish` separately if keeping local changes.
-- Local SSH/GPG keys: Choose `save` to update Bitwarden, or `restore` to use its saved key on this computer. Each result is verified.
-- Browser profiles: Choose a direction for names, colors and logos; use `retry` after manual pairing or record creation. See [browser recovery](browser.md).
+- Local SSH/GPG keys: Choose `save` to update Bitwarden with the local key. Each save is verified. Keys stored only in Bitwarden are left untouched.
+- Browser profiles: Choose `save` to update Bitwarden with local names, colors and logos; use `retry` after manual pairing or record creation. See [browser recovery](browser.md).
 - Browser Sync: Check every profile has finished syncing and its stable 24 recovery words match its Bitwarden note. Brave supplies the current rotating 25th pairing word when joining. Never paste the words into the prompt.
 
 SSH keys are identified by their contents. If backup reports private-key material
@@ -55,16 +55,14 @@ Recovery prompts use the same direction names, chosen separately at each step:
 - `save` keeps this computer's version in recovery storage.
 - `restore` replaces this computer's version with the stored version.
 
-Only directions with usable source data are offered. A key present on just one
-side offers copying from that side; neither direction deletes unrelated keys or
-remote records. SSH restoration replaces the selected private/public pair. GPG
-restoration imports the selected key and ownertrust, verifies the resulting key
-material, and stops if local-only packets prevent a match. An omitted ownertrust
-entry restores undefined trust. Unlock protected GPG keys before restoration.
+Backup only offers `save` for keys, copying the local key to Bitwarden without
+deleting unrelated keys or remote records. A key present only in Bitwarden is left
+untouched, because backup never overwrites local keys to match the vault. GPG `save`
+includes the key's ownertrust record when one exists.
 
-Backup verifies each applied change. When Sync everything is disabled, `restore`
-turns it on automatically. Browser `sync` runs synchronization and verifies recovery
-codes against Bitwarden; code mismatches offer `save` or `restore`.
+Backup verifies each applied change. When Sync everything is disabled, enable it in
+the browser and choose `retry`. Browser `sync` runs synchronization and verifies recovery
+codes against Bitwarden; code mismatches offer `save`.
 Each prompt also offers `skip` and `abort`; an earlier approval never selects a later action.
 `skip` leaves that recovery source unchanged at this step and continues the other
 backup work:
