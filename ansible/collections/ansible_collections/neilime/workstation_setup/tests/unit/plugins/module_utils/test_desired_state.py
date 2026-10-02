@@ -19,7 +19,7 @@ DECLARED_DOCKER_CLI_PLUGINS = [
 ]
 
 DEFAULT_HOME_ENVIRONMENT_ITEMS = (
-    ("version", "2.72.2"),
+    ("version", "2.73.0"),
     ("source", "https://github.com/neilime/workstation-config.git"),
     ("apply", True),
     ("bin_path", "/usr/local/bin/chezmoi"),

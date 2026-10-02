@@ -140,7 +140,7 @@ workstation_manager:
     # Manage user-home dotfiles through the built-in Chezmoi integration.
     chezmoi:
       # Pin a stable Chezmoi release for reproducible workstation bootstrap.
-      version: "2.72.2"
+      version: "2.73.0"
       # Git repository used to initialize the managed dotfiles checkout.
       source: "https://github.com/neilime/workstation-config.git"
       # Apply dotfiles after init.
