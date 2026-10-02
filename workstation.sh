@@ -238,7 +238,7 @@ prompt_for_github_cli_authentication() {
 
 	info "Private override access requires GitHub authentication; prompting through GitHub CLI"
 	println_to_tty "Complete the GitHub CLI login flow. If this machine has no browser, use the device code on another device."
-	gh auth login --git-protocol https --skip-ssh-key ||
+	gh auth login --git-protocol https ||
 		fail "GitHub CLI authentication failed"
 	gh auth setup-git ||
 		fail "GitHub CLI could not configure git credentials"
