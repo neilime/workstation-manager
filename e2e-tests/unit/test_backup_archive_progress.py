@@ -22,10 +22,16 @@ def archive_fixture_builder(tmp_path):
 
     source = tmp_path / "source with spaces"
     source.mkdir()
+    subprocess.run(["git", "init", "-q", str(source)], check=True, capture_output=True)
+    (source / ".gitignore").write_text("ignored-dependencies/\n*.private\n")
+    ignored = source / "ignored-dependencies"
+    ignored.mkdir()
+    (ignored / "excluded.txt").write_text("synthetic-excluded-marker\n")
+    (source / "ignored.private").write_text("synthetic-excluded-marker\n")
     (source / "payload.bin").write_bytes(os.urandom(8 * 1024 * 1024))
     (source / "linked-payload").symlink_to("payload.bin")
     for directory in (".git", "node_modules"):
-        (source / directory).mkdir()
+        (source / directory).mkdir(exist_ok=True)
         (source / directory / "excluded.txt").write_text("synthetic-excluded-marker\n")
     destination = tmp_path / "backup.tar.gz"
     playbook = tmp_path / "playbook.json"
@@ -60,6 +66,8 @@ def archive_fixture_builder(tmp_path):
         "ANSIBLE_COLLECTIONS_PATH": f"{WORKSPACE / 'ansible/collections'}:"
         + os.environ.get("ANSIBLE_COLLECTIONS_PATH", "/opt/ansible/collections"),
         "PYTHONUNBUFFERED": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
     }
     return playbook, destination, environment
 
@@ -130,7 +138,7 @@ def test_preview_and_sensitive_tasks_do_not_display_progress(archive_fixture, ch
 
 
 def test_archive_failure_remains_fatal(archive_fixture):
-    """Progress must stop and propagate the delegated module's write failure."""
+    """Progress must stop and propagate the writer's failure."""
 
     playbook, destination, environment = archive_fixture
     content = json.loads(playbook.read_text())
@@ -150,3 +158,18 @@ def test_archive_failure_remains_fatal(archive_fixture):
     assert "Creating backup archive: preparing files" in result.stdout
     assert "FAILED!" in result.stdout
     assert not destination.exists()
+
+
+def test_repeat_backup_reports_no_change_and_keeps_a_valid_archive(archive_fixture):
+    """The real action/module boundary must preserve idempotence and repeat progress."""
+
+    playbook, destination, environment = archive_fixture
+    command = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)]
+    for expected_changes in (1, 0):
+        result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60, check=False)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"changed={expected_changes}" in result.stdout
+        assert "MiB written, elapsed" in result.stdout
+        assert not pathlib.Path(str(destination) + ".partial").exists()
+        with tarfile.open(destination, "r:gz") as archive:
+            assert any(name.endswith("/payload.bin") for name in archive.getnames())

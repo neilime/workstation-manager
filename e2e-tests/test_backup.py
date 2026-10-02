@@ -164,3 +164,16 @@ def test_backup_omits_ignored_dependency_repositories(host) -> None:
 
     git_inventory = host.file(resolve_backup_git_inventory_path(host))
     assert not git_inventory.contains('"relative_path": "client-restore/tools/vendor/')
+
+
+def test_backup_archive_omits_git_ignored_files_and_keeps_local_edits(host) -> None:
+    """Project recovery should retain source edits without ignored dependencies or secrets."""
+
+    archive_path = resolve_backup_archive_path(host)
+    members = host.check_output("tar -tzf %s", archive_path).splitlines()
+    assert not any("/.git/" in name or name.endswith("/.git") for name in members)
+    assert not any("/tools/vendor/" in name or name.endswith(".private") for name in members)
+    prefix = "Documents/dev-projects/client-restore/"
+    assert prefix + "local-note.txt" in members
+    assert host.check_output("tar -xOzf %s %s", archive_path, prefix + "tracked.txt") == "remote-base\nlocal-change"
+    assert host.file(archive_path).mode == 0o600

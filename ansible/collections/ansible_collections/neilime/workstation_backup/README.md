@@ -27,8 +27,9 @@ their bookmarks and sanitized non-secret preferences. Setup restore does not
 replay that sidecar; Bitwarden and Sync remain the browser recovery source.
 The state role initializes manifest records before browser export; filesystem
 planning preserves those records, so the manifest lists each generated sidecar.
-Archive creation reports compressed archive size and elapsed time while retaining
-the upstream archive module's exclusions and managed-user permissions.
+Archive creation streams files once with fast gzip compression, prunes excluded
+directories, and applies standard Git ignore rules. It reports compressed archive
+size and elapsed time and runs under the managed user's permissions.
 
 See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
 user workflow and recovery limits, and the

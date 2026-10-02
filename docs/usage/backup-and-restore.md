@@ -131,13 +131,30 @@ checked for publication.
 The default archive includes:
 
 - `~/Documents/dev-projects`: project files, including local modifications and
-  untracked and ignored files outside the exclusions below.
+  untracked files outside the exclusions below.
 - `~/.config/workstation-manager`: workstation-manager user configuration.
 
 Missing source paths are listed in the manifest. Backup fails if no source path
 exists. The archive excludes nested `.git` metadata and the contents of
 `node_modules`, `.venv`, `.pytest_cache`, `__pycache__`, `dist`, `build`, `.next`,
 `coverage`, and `target` directories.
+
+Inside Git repositories, backup also excludes untracked files and directories
+ignored by `.gitignore` files, `.git/info/exclude`, or your global Git ignore file.
+Nested projects, worktrees, and submodules use their own ignore rules; ignored
+nested checkouts are omitted entirely. Tracked files remain eligible even when
+they match a Git ignore pattern, because Git does not treat tracked files as
+ignored. Files outside Git repositories use the directory exclusions above.
+
+Backup skips excluded directory trees before reading their contents and streams
+each included entry once through native `tar` and `gzip`. It uses fast gzip
+compression; archives can be larger than with maximum compression. A private
+`.partial` file holds the archive until creation succeeds, then replaces the
+destination. A failed backup leaves any
+previous completed archive intact. If an interrupted process leaves a `.partial`
+file, check that no backup is running and move it aside before retrying.
+If a source file changes while `tar` reads it, backup fails; stop writes to your
+projects and retry.
 
 During archive creation, backup displays the compressed archive size and elapsed
 time every five seconds. Updates start with `preparing files` until the archive

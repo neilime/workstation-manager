@@ -9,6 +9,9 @@ from pathlib import Path
 from threading import Event
 from time import monotonic
 
+from ansible_collections.neilime.workstation_backup.plugins.module_utils.project_archive import (
+    archive_staging_path,
+)
 from ansible_collections.neilime.workstation_backup.plugins.module_utils.terminal import (
     terminal_prompt,
 )
@@ -34,16 +37,16 @@ def _progress_message(size: int | None, elapsed: float) -> str:
 
 @contextmanager
 def archive_progress(destination: str, display: Callable[[str], None], interval: float = 5.0) -> Iterator[None]:
-    """Report live size while the calling thread runs Ansible's archive module."""
+    """Report staging-file growth until the completed archive replaces its destination."""
 
     path = Path(destination)
     initial_snapshot = _archive_snapshot(path)
     started_at = monotonic()
     stopped = Event()
 
-    def update() -> None:
-        snapshot = _archive_snapshot(path)
-        size = snapshot[2] if snapshot is not None and snapshot != initial_snapshot else None
+    def update(*, final: bool = False) -> None:
+        snapshot = _archive_snapshot(archive_staging_path(destination)) or _archive_snapshot(path)
+        size = snapshot[2] if snapshot is not None and (snapshot != initial_snapshot or final) else None
         display(_progress_message(size, monotonic() - started_at))
 
     def monitor() -> None:
@@ -58,4 +61,4 @@ def archive_progress(destination: str, display: Callable[[str], None], interval:
         finally:
             stopped.set()
         pending.result()
-    update()
+    update(final=True)

@@ -1,4 +1,4 @@
-"""Keep Ansible's archive implementation and display progress on the controller."""
+"""Run the project archive writer and display progress on the controller."""
 
 from __future__ import annotations
 
@@ -41,7 +41,6 @@ class ActionModule(ActionBase):
         if not destination.is_absolute():
             # The local connection executes modules from the playbook's directory.
             arguments["dest"] = str(Path(self._loader.get_basedir()) / destination)
-        arguments.update(format="gz", mode="0600")
         progress = (
             nullcontext()
             if self._task.check_mode or self._task.no_log
@@ -51,7 +50,9 @@ class ActionModule(ActionBase):
             with progress:
                 result.update(
                     self._execute_module(
-                        module_name="community.general.archive", module_args=arguments, task_vars=task_vars
+                        module_name="neilime.workstation_backup.archive_with_progress",
+                        module_args=arguments,
+                        task_vars=task_vars,
                     )
                 )
         except OSError as error:

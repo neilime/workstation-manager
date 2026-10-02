@@ -49,6 +49,28 @@ def test_existing_archive_is_not_reported_as_newly_written_data(tmp_path):
     assert "MiB written" in remaining[-1]
 
 
+def test_partial_archive_growth_is_reported_before_atomic_publication(tmp_path):
+    """Progress must follow staging output while the old completed backup is preserved."""
+
+    destination = tmp_path / "backup.tar.gz"
+    destination.write_bytes(b"previous archive")
+    staging = tmp_path / "backup.tar.gz.partial"
+    messages = Queue()
+    with archive_progress.archive_progress(str(destination), messages.put, interval=0.01):
+        assert "preparing files" in messages.get(timeout=2)
+        staging.write_bytes(b"x" * (2 * 1024 * 1024))
+        for _attempt in range(20):
+            message = messages.get(timeout=2)
+            if "2.0 MiB written" in message:
+                break
+        assert "2.0 MiB written" in message
+        staging.replace(destination)
+    remaining = []
+    while not messages.empty():
+        remaining.append(messages.get_nowait())
+    assert "2.0 MiB written" in remaining[-1]
+
+
 def test_creation_failure_stops_progress_and_preserves_the_failure(tmp_path):
     """The monitor must exit promptly without replacing a failed archive result."""
 
