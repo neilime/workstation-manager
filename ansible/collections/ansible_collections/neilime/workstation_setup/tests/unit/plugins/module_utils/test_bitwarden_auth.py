@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import bitwarden_auth
+from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
+    bitwarden_auth,
+)
 
 
 def _write_fake_bw(path: Path, scenario: str) -> None:
@@ -28,7 +30,10 @@ password = os.environ["BITWARDEN_PASSWORD"]
 
 if sys.argv[1:] == ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD", "--method", "1", "--raw"]:
     if password != "fixture-password":
-        print("Invalid master password. Confirm your email is correct and your account was created on vault.example.invalid.")
+        print(
+            "Invalid master password. Confirm your email is correct and your account was created on "
+            "vault.example.invalid."
+        )
         sys.exit(1)
     if scenario == "success":
         print("fixture-login-session")
@@ -103,11 +108,15 @@ def test_login_retries_after_rejected_verification_code(tmp_path: Path, monkeypa
     notices: list[str] = []
     answers = iter(["bad-code", "123456"])
 
+    def prompt_code(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
     result = bitwarden_auth.login_with_email_password(
         "fixture@example.com",
         "fixture-password",
         interactive=True,
-        prompt_for_code=lambda prompt: prompts.append(prompt) or next(answers),
+        prompt_for_code=prompt_code,
         notice=notices.append,
     )
 
@@ -116,7 +125,9 @@ def test_login_retries_after_rejected_verification_code(tmp_path: Path, monkeypa
         "Bitwarden emailed a two-step login code: ",
         "Bitwarden emailed a two-step login code: ",
     ]
-    assert notices == [bitwarden_auth._LOGIN_RETRY_NOTICE]
+    assert notices == [
+        "Bitwarden rejected the supplied verification code; request the latest email code and try again.\n"
+    ]
     assert (tmp_path / "attempt.txt").read_text() == "2"
 
 
@@ -129,11 +140,15 @@ def test_login_handles_two_distinct_emailed_codes_in_one_attempt(
     prompts: list[str] = []
     answers = iter(["123456", "654321"])
 
+    def prompt_code(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
     result = bitwarden_auth.login_with_email_password(
         "fixture@example.com",
         "fixture-password",
         interactive=True,
-        prompt_for_code=lambda prompt: prompts.append(prompt) or next(answers),
+        prompt_for_code=prompt_code,
         notice=lambda _message: None,
     )
 
