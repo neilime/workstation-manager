@@ -118,8 +118,11 @@ class BackupManifestTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         if check:
+            self.assertNotIn("Creating backup archive:", result.stdout)
             self.assertEqual(list(self.output.iterdir()), [])
             return
+        self.assertIn("Creating backup archive: preparing files, elapsed 00:00", result.stdout)
+        self.assertRegex(result.stdout, r"Creating backup archive: [0-9.]+ MiB written, elapsed [0-9:]+")
         self.assertEqual(
             self.archive.with_suffix("").with_suffix(".manifest.txt").read_text().splitlines(),
             ["created_at\tfixture", f"archive\t{self.archive}", "dry_run\t0"] + expected_lines,
@@ -131,6 +134,7 @@ class BackupManifestTests(unittest.TestCase):
             self.assertEqual(export["profiles"][0]["directory"], "Default")
             self.assertEqual(self.browser_export.stat().st_mode & 0o777, 0o600)
         self.assertTrue(self.archive.is_file())
+        self.assertEqual(self.archive.stat().st_mode & 0o777, 0o600)
 
     def test_browser_export_survives_repeated_preparation(self) -> None:
         """The manifest must retain the browser sidecar through filesystem planning."""
@@ -151,6 +155,34 @@ class BackupManifestTests(unittest.TestCase):
         """A preview without browser profiles must keep its manifest plan valid."""
 
         self._assert_backup(profiles_present=False, check=True)
+
+    def test_ignored_dependency_repository_is_omitted_from_inventory(self) -> None:
+        """The full role must ignore a nested dependency before trying to read its missing HEAD."""
+
+        repository = self.playbook.parent / "Documents/dev-projects/open-source/twbs-helper-module"
+        repository.mkdir(parents=True)
+        (repository / ".gitignore").write_text("tools/vendor/\n")
+        dependency = repository / "tools/vendor/phpstan/extension-installer"
+        for arguments in (
+            ["init", "--initial-branch=main", str(repository)],
+            ["-C", str(repository), "add", ".gitignore"],
+            [
+                "-C",
+                str(repository),
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-m",
+                "Initial",
+            ],
+            ["init", "--initial-branch=main", str(dependency)],
+        ):
+            subprocess.run(["git", *arguments], env=self.environment, check=True, capture_output=True)
+        self._assert_backup(profiles_present=False, check=False)
+        inventory = json.loads(self.inventory.read_text())
+        self.assertEqual([record["relative_path"] for record in inventory], ["open-source/twbs-helper-module"])
 
 
 if __name__ == "__main__":

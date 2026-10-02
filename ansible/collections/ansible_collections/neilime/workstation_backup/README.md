@@ -1,7 +1,8 @@
 # neilime.workstation_backup
 
 Owns key and browser recovery checks, Chezmoi synchronization, archive creation,
-Git repository inventory, and backup manifests. SSH key discovery uses file
+Git repository inventory, and backup manifests. Git inventory omits nested
+checkouts ignored by their enclosing project's Git ignore rules. SSH key discovery uses file
 contents; a private key with a `.pub` filename is not skipped. The entrypoint launches Ansible
 with sudo; backup tasks run as the resolved managed user, while dependency
 installation explicitly runs as root. Chezmoi branch reconciliation and
@@ -26,6 +27,8 @@ their bookmarks and sanitized non-secret preferences. Setup restore does not
 replay that sidecar; Bitwarden and Sync remain the browser recovery source.
 The state role initializes manifest records before browser export; filesystem
 planning preserves those records, so the manifest lists each generated sidecar.
+Archive creation reports compressed archive size and elapsed time while retaining
+the upstream archive module's exclusions and managed-user permissions.
 
 See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
 user workflow and recovery limits, and the

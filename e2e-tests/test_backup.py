@@ -157,3 +157,10 @@ def test_backup_exports_git_inventory_for_dev_projects(host) -> None:
     assert has_origin_name
     assert has_origin_url
     assert has_branch
+
+
+def test_backup_omits_ignored_dependency_repositories(host) -> None:
+    """The dependency fixture must stay outside the project recovery inventory."""
+
+    git_inventory = host.file(resolve_backup_git_inventory_path(host))
+    assert not git_inventory.contains('"relative_path": "client-restore/tools/vendor/')
