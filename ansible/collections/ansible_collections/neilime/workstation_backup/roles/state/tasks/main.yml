@@ -10,6 +10,10 @@
   ansible.builtin.import_role:
     name: neilime.workstation_backup.git_repositories
 
+- name: Create backup restore command sidecar
+  ansible.builtin.import_role:
+    name: neilime.workstation_backup.restore_command
+
 - name: Write backup manifest
   ansible.builtin.import_role:
     name: neilime.workstation_backup.manifest
