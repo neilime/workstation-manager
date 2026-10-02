@@ -29,12 +29,14 @@ git init --initial-branch main '$git_seed_dir'
 git -C '$git_seed_dir' config user.name 'E2E User'
 git -C '$git_seed_dir' config user.email 'e2e@example.com'
 printf '%s\n' 'remote-base' >'$git_seed_dir/tracked.txt'
-git -C '$git_seed_dir' add tracked.txt
+printf '%s\n' 'tools/vendor/' >'$git_seed_dir/.gitignore'
+git -C '$git_seed_dir' add tracked.txt .gitignore
 git -C '$git_seed_dir' commit -m 'initial commit'
 git -C '$git_seed_dir' remote add origin '$git_remote_dir'
 git -C '$git_seed_dir' push origin main
 git --git-dir='$git_remote_dir' symbolic-ref HEAD refs/heads/main
 git clone '$git_remote_dir' '$projects_dir'
+git init --initial-branch main '$projects_dir/tools/vendor/phpstan/extension-installer'
 printf '%s\n' 'restored-project' >'$projects_dir/project.txt'
 printf '%s\n' 'local-untracked' >'$projects_dir/local-note.txt'
 printf '%s\n' 'local-change' >>'$projects_dir/tracked.txt'

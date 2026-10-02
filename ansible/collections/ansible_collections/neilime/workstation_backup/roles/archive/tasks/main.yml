@@ -7,11 +7,9 @@
     - workstation_backup_include_paths | length == 0
 
 - name: Create backup archive
-  community.general.archive:
+  neilime.workstation_backup.archive_with_progress:
     path: "{{ workstation_backup_include_paths }}"
     dest: "{{ workstation_backup_archive_path }}"
-    format: gz
-    mode: "0600"
     exclusion_patterns: "{{ workstation_backup_archive_exclusion_patterns }}"
   when:
     - not workstation_backup_dry_run

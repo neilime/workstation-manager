@@ -141,13 +141,17 @@ checked for publication.
 The default archive includes:
 
 - `~/Documents/dev-projects`: project files, including local modifications and
-  untracked files.
+  untracked and ignored files outside the exclusions below.
 - `~/.config/workstation-manager`: workstation-manager user configuration.
 
 Missing source paths are listed in the manifest. Backup fails if no source path
 exists. The archive excludes nested `.git` metadata and the contents of
 `node_modules`, `.venv`, `.pytest_cache`, `__pycache__`, `dist`, `build`, `.next`,
 `coverage`, and `target` directories.
+
+During archive creation, backup displays the compressed archive size and elapsed
+time every five seconds. Updates start with `preparing files` until the archive
+begins growing. A final size update appears when archive creation finishes.
 
 SSH/GPG keys, browser data, and other home directories are not archive sources by
 default. Setup restores keys from Bitwarden, applies Chezmoi, and recreates browser
@@ -183,7 +187,10 @@ inventory contains paths and remote URLs, and bookmarks can reveal private
 services even when preferences are sanitized. Store them in a private destination;
 copying them off the computer is your responsibility.
 
-The Git inventory supports repositories with a `.git` directory. It does not
+The Git inventory supports repositories with a physical `.git` directory.
+It omits nested checkouts ignored by the enclosing project's Git rules, such as
+repositories under `tools/vendor/` when that directory is ignored. Non-ignored
+nested projects remain in the inventory. It does not
 preserve Git history that exists only locally, stashes, reflogs, or the staging
 index. Push commits you need to recover before relying on this backup.
 
