@@ -16,11 +16,11 @@ GITHUB_TOKEN_VALUE="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}"
 BACKUP_OUTPUT_DIR="${WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR:-}"
 RESTORE_ARCHIVE_PATH="${WORKSTATION_MANAGER_RESTORE_ARCHIVE:-}"
 PROMPTED_BACKUP_OUTPUT_DIR=""
-PROMPTED_BITWARDEN_EMAIL=""
 BITWARDEN_CLIENT_ID_VALUE="${BITWARDEN_CLIENT_ID:-}"
 BITWARDEN_CLIENT_SECRET_VALUE="${BITWARDEN_CLIENT_SECRET:-}"
 BITWARDEN_PASSWORD_VALUE="${BITWARDEN_PASSWORD:-}"
-BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER="WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED"
+BITWARDEN_API_KEY_REQUIRED_MARKER="WORKSTATION_MANAGER_BITWARDEN_API_KEY_REQUIRED"
+BITWARDEN_API_KEY_REJECTED_MARKER="WORKSTATION_MANAGER_BITWARDEN_API_KEY_REJECTED"
 BITWARDEN_PASSWORD_REJECTED_MARKER="WORKSTATION_MANAGER_BITWARDEN_PASSWORD_REJECTED"
 
 PRIVATE_OVERRIDE_REPOSITORY_URL="https://github.com/neilime/workstation-config.git"
@@ -439,14 +439,18 @@ prompt_for_bitwarden_credentials_if_needed() {
 	fi
 
 	has_interactive_terminal ||
-		fail "$action_name requires interactive Bitwarden login for end users, or BITWARDEN_CLIENT_ID, BITWARDEN_CLIENT_SECRET, and BITWARDEN_PASSWORD in CI"
+		fail "$action_name requires an interactive terminal for Bitwarden credential prompts, or BITWARDEN_CLIENT_ID, BITWARDEN_CLIENT_SECRET, and BITWARDEN_PASSWORD in non-interactive runs"
 
 	info "$action_purpose requires Bitwarden access; prompting for credentials"
-	PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value "BITWARDEN_EMAIL" "Bitwarden email: " 0)"
-	BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
-	BITWARDEN_CLIENT_ID_VALUE=""
-	BITWARDEN_CLIENT_SECRET_VALUE=""
-	return
+	if [ -n "$BITWARDEN_CLIENT_ID_VALUE" ] && [ -z "$BITWARDEN_CLIENT_SECRET_VALUE" ]; then
+		BITWARDEN_CLIENT_SECRET_VALUE="$(prompt_for_required_value "BITWARDEN_CLIENT_SECRET" "Bitwarden API client secret: " 1)"
+	fi
+	if [ -z "$BITWARDEN_CLIENT_ID_VALUE" ] && [ -n "$BITWARDEN_CLIENT_SECRET_VALUE" ]; then
+		BITWARDEN_CLIENT_ID_VALUE="$(prompt_for_required_value "BITWARDEN_CLIENT_ID" "Bitwarden API client ID: " 0)"
+	fi
+	if [ -z "$BITWARDEN_PASSWORD_VALUE" ]; then
+		BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
+	fi
 }
 
 reprompt_for_bitwarden_credentials() {
@@ -455,12 +459,23 @@ reprompt_for_bitwarden_credentials() {
 	has_interactive_terminal || return 1
 
 	case "$failure_marker" in
-	"$BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER")
-		info "Bitwarden rejected the supplied email or password; prompting again"
-		PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value "BITWARDEN_EMAIL" "Bitwarden email: " 0)"
-		BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
-		BITWARDEN_CLIENT_ID_VALUE=""
-		BITWARDEN_CLIENT_SECRET_VALUE=""
+	"$BITWARDEN_API_KEY_REQUIRED_MARKER")
+		info "Bitwarden needs an API key because the current CLI session is unauthenticated; prompting for credentials"
+		if [ -z "$BITWARDEN_CLIENT_ID_VALUE" ]; then
+			BITWARDEN_CLIENT_ID_VALUE="$(prompt_for_required_value "BITWARDEN_CLIENT_ID" "Bitwarden API client ID: " 0)"
+		fi
+		if [ -z "$BITWARDEN_CLIENT_SECRET_VALUE" ]; then
+			BITWARDEN_CLIENT_SECRET_VALUE="$(prompt_for_required_value "BITWARDEN_CLIENT_SECRET" "Bitwarden API client secret: " 1)"
+		fi
+		if [ -z "$BITWARDEN_PASSWORD_VALUE" ]; then
+			BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
+		fi
+		return
+		;;
+	"$BITWARDEN_API_KEY_REJECTED_MARKER")
+		info "Bitwarden rejected the supplied API key; prompting again"
+		BITWARDEN_CLIENT_ID_VALUE="$(prompt_for_required_value "BITWARDEN_CLIENT_ID" "Bitwarden API client ID: " 0)"
+		BITWARDEN_CLIENT_SECRET_VALUE="$(prompt_for_required_value "BITWARDEN_CLIENT_SECRET" "Bitwarden API client secret: " 1)"
 		return
 		;;
 	"$BITWARDEN_PASSWORD_REJECTED_MARKER")
@@ -507,7 +522,6 @@ run_ansible_pull() {
 	authenticated_repository_url="$(resolve_authenticated_repository_url "$REPOSITORY_URL")"
 
 	# Share credentials through the environment, including across sudo.
-	export BITWARDEN_EMAIL="$PROMPTED_BITWARDEN_EMAIL"
 	export BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID_VALUE"
 	export BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET_VALUE"
 	export BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
@@ -538,7 +552,7 @@ run_ansible_pull() {
 			"$@"
 	else
 		set -- \
-			sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
+			sudo --preserve-env=BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
 			PYTHONUNBUFFERED=1 \
 			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
 			"$@"
@@ -687,7 +701,6 @@ run_ansible_pull_captured_with_script() {
 	{
 		printf '. %s\n' "$(shell_quote "$definitions_file")"
 		printf 'WORKSTATION_MANAGER_SKIP_SUDO=1\n'
-		printf 'PROMPTED_BITWARDEN_EMAIL=%s\n' "$(shell_quote "$PROMPTED_BITWARDEN_EMAIL")"
 		printf 'BITWARDEN_CLIENT_ID_VALUE=%s\n' "$(shell_quote "$BITWARDEN_CLIENT_ID_VALUE")"
 		printf 'BITWARDEN_CLIENT_SECRET_VALUE=%s\n' "$(shell_quote "$BITWARDEN_CLIENT_SECRET_VALUE")"
 		printf 'BITWARDEN_PASSWORD_VALUE=%s\n' "$(shell_quote "$BITWARDEN_PASSWORD_VALUE")"
@@ -719,7 +732,7 @@ run_ansible_pull_captured_with_script() {
 	# The invoking user's terminal supplies input before sudo starts the relay.
 	# shellcheck disable=SC2024
 	if sudo \
-		--preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD \
+		--preserve-env=BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD \
 		env \
 		DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
 		XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
@@ -772,8 +785,10 @@ run_ansible_pull_with_bitwarden_retry() {
 		fi
 
 		failure_marker=""
-		if grep -Fq "$BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER" "$output_file"; then
-			failure_marker="$BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER"
+		if grep -Fq "$BITWARDEN_API_KEY_REQUIRED_MARKER" "$output_file"; then
+			failure_marker="$BITWARDEN_API_KEY_REQUIRED_MARKER"
+		elif grep -Fq "$BITWARDEN_API_KEY_REJECTED_MARKER" "$output_file"; then
+			failure_marker="$BITWARDEN_API_KEY_REJECTED_MARKER"
 		elif grep -Fq "$BITWARDEN_PASSWORD_REJECTED_MARKER" "$output_file"; then
 			failure_marker="$BITWARDEN_PASSWORD_REJECTED_MARKER"
 		fi

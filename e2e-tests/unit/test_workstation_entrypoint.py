@@ -469,8 +469,8 @@ class RepositorySourceTests(unittest.TestCase):
 class BitwardenRetryTests(unittest.TestCase):
     """Retry interactive Bitwarden auth without leaking credentials."""
 
-    def test_retry_helper_reprompts_after_rejected_email_password(self) -> None:
-        """A rejected interactive login should prompt again and rerun with the replacement values."""
+    def test_retry_helper_prompts_for_api_key_after_unauthenticated_session_failure(self) -> None:
+        """Interactive runs should prompt for the API key only after the CLI reports an unauthenticated session."""
 
         definitions = ENTRYPOINT_PATH.read_text().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
@@ -495,10 +495,9 @@ class BitwardenRetryTests(unittest.TestCase):
                     "  prompt_count=$((prompt_count + 1))\n"
                     '  printf "%s\\n" "$prompt_count" >"$TEST_PROMPT_COUNT_FILE"\n'
                     '  case "$prompt_count" in\n'
-                    '    1) printf "%s" "first@example.com" ;;\n'
-                    '    2) printf "%s" "first-password" ;;\n'
-                    '    3) printf "%s" "second@example.com" ;;\n'
-                    '    4) printf "%s" "second-password" ;;\n'
+                    '    1) printf "%s" "first-password" ;;\n'
+                    '    2) printf "%s" "first-client" ;;\n'
+                    '    3) printf "%s" "first-secret" ;;\n'
                     "    *) return 99 ;;\n"
                     "  esac\n"
                     "}\n"
@@ -509,16 +508,101 @@ class BitwardenRetryTests(unittest.TestCase):
                     "  fi\n"
                     "  attempt=$((attempt + 1))\n"
                     '  printf "%s\\n" "$attempt" >"$TEST_ATTEMPT_FILE"\n'
-                    '  printf "%s|%s\\n" "$PROMPTED_BITWARDEN_EMAIL" '
-                    '"$BITWARDEN_PASSWORD_VALUE" >>"$TEST_RECORDS_FILE"\n'
+                    '  printf "%s|%s|%s\\n" "$BITWARDEN_CLIENT_ID_VALUE" '
+                    '"$BITWARDEN_CLIENT_SECRET_VALUE" "$BITWARDEN_PASSWORD_VALUE" >>"$TEST_RECORDS_FILE"\n'
                     '  if [ "$attempt" -eq 1 ]; then\n'
-                    '    printf "%s\\n" "WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED: synthetic rejection"\n'
+                    '    printf "%s\\n" "WORKSTATION_MANAGER_BITWARDEN_API_KEY_REQUIRED: synthetic rejection"\n'
                     "    return 2\n"
                     "  fi\n"
                     '  printf "%s\\n" "synthetic success"\n'
                     "}\n"
-                    'PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value '
-                    'BITWARDEN_EMAIL "Bitwarden email: " 0)"\n'
+                    'prompt_for_bitwarden_credentials_if_needed setup "Bitwarden-backed secrets restore"\n'
+                    "run_ansible_pull_with_bitwarden_retry ansible/setup.yml 0\n",
+                    "entrypoint-test",
+                    str(wrapper),
+                ],
+                env={
+                    "PATH": "/usr/bin:/bin",
+                    "HOME": temporary_dir,
+                    "TEST_ATTEMPT_FILE": str(attempt_file),
+                    "TEST_RECORDS_FILE": str(records_file),
+                    "TEST_PROMPT_COUNT_FILE": str(prompt_count_file),
+                    "WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE": "1",
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                records_file.read_text().splitlines(),
+                [
+                    "||first-password",
+                    "first-client|first-secret|first-password",
+                ],
+            )
+            self.assertEqual(prompt_count_file.read_text().strip(), "3")
+            self.assertIn(
+                "Bitwarden needs an API key because the current CLI session is unauthenticated; prompting for credentials",
+                result.stdout,
+            )
+            self.assertIn("synthetic success", result.stdout)
+
+    def test_retry_helper_reprompts_after_rejected_api_key(self) -> None:
+        """A rejected interactive API key should prompt again and rerun with the replacement values."""
+
+        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        self.assertEqual(definitions.pop(), 'main "$@"')
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            wrapper = fixture / "wrapper-definitions.sh"
+            wrapper.write_text("\n".join(definitions) + "\n")
+            attempt_file = fixture / "attempt.txt"
+            records_file = fixture / "records.txt"
+            prompt_count_file = fixture / "prompt-count.txt"
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$1"\n'
+                    "has_interactive_terminal() { return 0; }\n"
+                    "prompt_for_required_value() {\n"
+                    "  prompt_count=0\n"
+                    '  if [ -f "$TEST_PROMPT_COUNT_FILE" ]; then\n'
+                    '    prompt_count="$(cat "$TEST_PROMPT_COUNT_FILE")"\n'
+                    "  fi\n"
+                    "  prompt_count=$((prompt_count + 1))\n"
+                    '  printf "%s\\n" "$prompt_count" >"$TEST_PROMPT_COUNT_FILE"\n'
+                    '  case "$prompt_count" in\n'
+                    '    1) printf "%s" "first-client" ;;\n'
+                    '    2) printf "%s" "first-secret" ;;\n'
+                    '    3) printf "%s" "first-password" ;;\n'
+                    '    4) printf "%s" "second-client" ;;\n'
+                    '    5) printf "%s" "second-secret" ;;\n'
+                    '    6) printf "%s" "second-password" ;;\n'
+                    "    *) return 99 ;;\n"
+                    "  esac\n"
+                    "}\n"
+                    "run_ansible_pull() {\n"
+                    "  attempt=0\n"
+                    '  if [ -f "$TEST_ATTEMPT_FILE" ]; then\n'
+                    '    attempt="$(cat "$TEST_ATTEMPT_FILE")"\n'
+                    "  fi\n"
+                    "  attempt=$((attempt + 1))\n"
+                    '  printf "%s\\n" "$attempt" >"$TEST_ATTEMPT_FILE"\n'
+                    '  printf "%s|%s|%s\\n" "$BITWARDEN_CLIENT_ID_VALUE" '
+                    '"$BITWARDEN_CLIENT_SECRET_VALUE" "$BITWARDEN_PASSWORD_VALUE" >>"$TEST_RECORDS_FILE"\n'
+                    '  if [ "$attempt" -eq 1 ]; then\n'
+                    '    printf "%s\\n" "WORKSTATION_MANAGER_BITWARDEN_API_KEY_REJECTED: synthetic rejection"\n'
+                    "    return 2\n"
+                    "  fi\n"
+                    '  printf "%s\\n" "synthetic success"\n'
+                    "}\n"
+                    'BITWARDEN_CLIENT_ID_VALUE="$(prompt_for_required_value '
+                    'BITWARDEN_CLIENT_ID "Bitwarden API client ID: " 0)"\n'
+                    'BITWARDEN_CLIENT_SECRET_VALUE="$(prompt_for_required_value '
+                    'BITWARDEN_CLIENT_SECRET "Bitwarden API client secret: " 1)"\n'
                     'BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value '
                     'BITWARDEN_PASSWORD "Bitwarden vault password: " 1)"\n'
                     "run_ansible_pull_with_bitwarden_retry ansible/setup.yml 0\n",
@@ -542,12 +626,12 @@ class BitwardenRetryTests(unittest.TestCase):
             self.assertEqual(
                 records_file.read_text().splitlines(),
                 [
-                    "first@example.com|first-password",
-                    "second@example.com|second-password",
+                    "first-client|first-secret|first-password",
+                    "second-client|second-secret|first-password",
                 ],
             )
-            self.assertEqual(prompt_count_file.read_text().strip(), "4")
-            self.assertIn("Bitwarden rejected the supplied email or password; prompting again", result.stdout)
+            self.assertEqual(prompt_count_file.read_text().strip(), "5")
+            self.assertIn("Bitwarden rejected the supplied API key; prompting again", result.stdout)
             self.assertIn("synthetic success", result.stdout)
 
     def test_script_capture_uses_one_outer_sudo_and_marks_runner_to_skip_nested_sudo(self) -> None:

@@ -57,7 +57,11 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "if command == ['--version']:\n"
             "    print('fixture')\n"
             "elif command == ['status']:\n"
-            "    print(json.dumps({'status': 'locked', 'serverUrl': 'https://vault.example.invalid'}))\n"
+            "    status = 'unauthenticated' if (root / 'unauthenticated').exists() else 'locked'\n"
+            "    print(json.dumps({'status': status, 'serverUrl': 'https://vault.example.invalid'}))\n"
+            "elif command == ['login', '--apikey']:\n"
+            "    if (root / 'login-rejected').exists():\n"
+            "        sys.exit(1)\n"
             "elif command[0] == 'unlock':\n"
             "    if (root / 'unlock-rejected').exists():\n"
             "        sys.exit(1)\n"
@@ -81,7 +85,9 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             if task.get("ansible.builtin.import_role", {}).get("name") == COLLECTION_ROLE
         )
 
-    def run_loader(self, *, cleanup: bool = True, check: bool = False) -> subprocess.CompletedProcess[str]:
+    def run_loader(
+        self, *, cleanup: bool = True, check: bool = False, include_api_key: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         """Execute the production cleanup import or the full recovery loader without live credentials."""
 
         (self.fixture / "items.json").write_text(json.dumps(self.items))
@@ -136,16 +142,21 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 ]
             )
         )
+        environment = {
+            "PATH": f"{self.fixture / 'bin'}:{os.environ['PATH']}",
+            "HOME": str(self.fixture),
+            "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
+            "ANSIBLE_HOME": str(self.fixture / ".ansible"),
+            "ANSIBLE_COLLECTIONS_PATH": str(WORKSPACE / "ansible/collections"),
+            "BITWARDEN_PASSWORD": "fixture-password",
+        }
+        if include_api_key:
+            environment["BITWARDEN_CLIENT_ID"] = "fixture-client"
+            environment["BITWARDEN_CLIENT_SECRET"] = "fixture-secret"
+
         result = subprocess.run(
             ["ansible-playbook", "-i", "localhost,", str(playbook), *(["--check"] if check else [])],
-            env={
-                "PATH": f"{self.fixture / 'bin'}:{os.environ['PATH']}",
-                "HOME": str(self.fixture),
-                "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
-                "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-                "ANSIBLE_COLLECTIONS_PATH": str(WORKSPACE / "ansible/collections"),
-                "BITWARDEN_PASSWORD": "fixture-password",
-            },
+            env=environment,
             cwd=self.fixture,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -198,6 +209,34 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
         (self.fixture / "attachment-unavailable").touch()
         result = self.run_loader(cleanup=False)
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.fixture / "result.json").exists())
+
+    def test_setup_loader_authenticates_with_api_key_when_session_is_unauthenticated(self) -> None:
+        """An unauthenticated Bitwarden CLI must log in with the configured API key before unlock."""
+
+        (self.fixture / "unauthenticated").touch()
+        result = self.run_loader(cleanup=False)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
+        self.assertIn(["login", "--apikey"], calls)
+
+    def test_missing_api_key_surfaces_a_retryable_marker(self) -> None:
+        """An unauthenticated Bitwarden CLI without API credentials must stop with a retry marker."""
+
+        (self.fixture / "unauthenticated").touch()
+        result = self.run_loader(cleanup=False, include_api_key=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("WORKSTATION_MANAGER_BITWARDEN_API_KEY_REQUIRED", result.stdout)
+        self.assertFalse((self.fixture / "result.json").exists())
+
+    def test_api_key_rejection_surfaces_a_retryable_marker(self) -> None:
+        """A rejected API key must fail without exposing secrets and leave a retry marker."""
+
+        (self.fixture / "unauthenticated").touch()
+        (self.fixture / "login-rejected").touch()
+        result = self.run_loader(cleanup=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("WORKSTATION_MANAGER_BITWARDEN_API_KEY_REJECTED", result.stdout)
         self.assertFalse((self.fixture / "result.json").exists())
 
     def test_unlock_rejection_surfaces_a_retryable_marker(self) -> None:

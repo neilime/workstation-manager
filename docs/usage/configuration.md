@@ -38,6 +38,11 @@ corresponding default list.
 Keep passwords, private keys, and browser recovery words in Bitwarden. Only
 non-secret settings and collection identifiers belong in Git.
 
+Setup, backup, and cleanup unlock the Bitwarden CLI with the vault password.
+When the local Bitwarden CLI session is unauthenticated, they also need a
+Bitwarden API client ID and API client secret. Export those values ahead of
+time or let `workstation.sh` prompt on an interactive terminal.
+
 To use a local override instead:
 
 ```sh
@@ -157,9 +162,10 @@ their environment and uses it for the Orca release lookup, including previews.
 The Orca request keeps the token out of logs and redirected requests. Setup does
 not write it to application configuration or shell activation files.
 
-All three Bitwarden values must be present to skip interactive credential prompts.
-Automation must also supply `WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR` for backup.
-Recovery checks that require a human decision stop noninteractive backup; browser
-Sync completion requires interactive confirmation.
+Interactive runs can prompt for the vault password and any required Bitwarden
+API key values. Noninteractive runs must provide all three Bitwarden values,
+and backup automation must also supply `WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR`.
+Recovery checks that require a human decision stop noninteractive backup;
+browser Sync completion requires interactive confirmation.
 
 Do not put credential values in command examples, configuration files, or Git.

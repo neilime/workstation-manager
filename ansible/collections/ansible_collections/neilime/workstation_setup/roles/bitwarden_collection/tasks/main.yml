@@ -15,8 +15,6 @@
 
 - name: Read Bitwarden automation environment
   ansible.builtin.set_fact:
-    bitwarden_collection_email: >-
-      {{ lookup('ansible.builtin.env', 'BITWARDEN_EMAIL') | default('', true) }}
     bitwarden_collection_client_id: >-
       {{ lookup('ansible.builtin.env', 'BITWARDEN_CLIENT_ID') | default('', true) }}
     bitwarden_collection_client_secret: >-
@@ -121,21 +119,15 @@
   when:
     - bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
     - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))
-- name: Ensure Bitwarden authentication data exists before login
+- name: Ensure Bitwarden API credentials exist before login
   ansible.builtin.assert:
     that:
-      - >-
-        (bitwarden_collection_email | length > 0)
-        or
-        (
-          (bitwarden_collection_client_id | length > 0)
-          and
-          (bitwarden_collection_client_secret | length > 0)
-        )
+      - bitwarden_collection_client_id | length > 0
+      - bitwarden_collection_client_secret | length > 0
     fail_msg: >-
-      {{ bitwarden_collection_purpose }} needs either BITWARDEN_EMAIL or both
-      BITWARDEN_CLIENT_ID and BITWARDEN_CLIENT_SECRET when the current CLI
-      session is unauthenticated.
+      WORKSTATION_MANAGER_BITWARDEN_API_KEY_REQUIRED:
+      {{ bitwarden_collection_purpose }} needs both BITWARDEN_CLIENT_ID and
+      BITWARDEN_CLIENT_SECRET when the current CLI session is unauthenticated.
   when: bitwarden_collection_status.status == 'unauthenticated'
 
 - name: Login to Bitwarden with the configured API key
@@ -155,53 +147,20 @@
   no_log: true
   when:
     - bitwarden_collection_status.status == 'unauthenticated'
-    - bitwarden_collection_email | length == 0
     - bitwarden_collection_client_id | length > 0
     - bitwarden_collection_client_secret | length > 0
 
 - name: Fail when the configured Bitwarden API key is rejected
   ansible.builtin.fail:
     msg: >-
+      WORKSTATION_MANAGER_BITWARDEN_API_KEY_REJECTED:
       {{ bitwarden_collection_purpose }} could not authenticate Bitwarden with
       the configured API key.
   when:
     - bitwarden_collection_status.status == 'unauthenticated'
-    - bitwarden_collection_email | length == 0
     - bitwarden_collection_client_id | length > 0
     - bitwarden_collection_client_secret | length > 0
     - bitwarden_collection_api_key_login.rc != 0
-
-- name: Login to Bitwarden with the configured email and password
-  check_mode: false
-  ansible.builtin.command:
-    argv:
-      - bw
-      - login
-      - "{{ bitwarden_collection_email }}"
-      - --passwordenv
-      - BITWARDEN_PASSWORD
-      - --raw
-  environment:
-    BITWARDEN_PASSWORD: "{{ bitwarden_collection_password }}"
-    BW_SESSION: ""
-  register: bitwarden_collection_email_password_login
-  changed_when: false
-  failed_when: false
-  no_log: true
-  when:
-    - bitwarden_collection_status.status == 'unauthenticated'
-    - bitwarden_collection_email | length > 0
-
-- name: Fail when the supplied Bitwarden email or password is rejected
-  ansible.builtin.fail:
-    msg: >-
-      WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED:
-      {{ bitwarden_collection_purpose }} could not authenticate Bitwarden with
-      the supplied email or password.
-  when:
-    - bitwarden_collection_status.status == 'unauthenticated'
-    - bitwarden_collection_email | length > 0
-    - bitwarden_collection_email_password_login.rc != 0
 
 - name: Ensure a Bitwarden vault password is available for unlock
   ansible.builtin.assert:

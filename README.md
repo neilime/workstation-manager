@@ -19,9 +19,11 @@ You need Ubuntu, internet access, `curl`, `sudo`, and:
 
 Set up your [private configuration](docs/usage/configuration.md) first. Run the
 commands below from a terminal in your desktop session. Setup prompts for GitHub
-authentication when needed; setup, backup, and cleanup prompt for Bitwarden access.
-Password input is hidden. If Bitwarden rejects the entered email or vault
-password, the script asks again. Press Ctrl-C to cancel a prompt.
+authentication when needed; setup, backup, and cleanup prompt for the
+Bitwarden vault password and, when the local CLI session is unauthenticated, a
+Bitwarden API client ID and API client secret. Secret input is hidden. If
+Bitwarden rejects the entered API key or vault password, the script asks
+again. Press Ctrl-C to cancel a prompt.
 
 ## Set up or update the workstation
 
