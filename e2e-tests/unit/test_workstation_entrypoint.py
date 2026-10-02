@@ -789,7 +789,7 @@ class PipedBackupTests(unittest.TestCase):
                 "if destination is None or not url:\n"
                 "    sys.exit(98)\n"
                 'with open(os.environ[\"TEST_DOWNLOAD_LOG\"], \"a\") as log:\n'
-                '    log.write(url + \"\\\\n\")\n'
+                '    log.write(url + \"\\n\")\n'
                 'if url.endswith(\"/workstation.sh\"):\n'
                 '    if os.environ.get(\"TEST_DOWNLOAD_FAILURE\") == \"1\":\n'
                 "        sys.exit(22)\n"
