@@ -138,7 +138,7 @@ class BackupRestoreCommandBuilder:
             )
 
         return (
-            f"wget -qO- {entrypoint_url} | "
+            f"wget -qO- {shlex.quote(entrypoint_url)} | "
             f"WORKSTATION_MANAGER_RESTORE_ARCHIVE={shlex.quote(str(archive_path))} "
             "sh -s -- setup\n"
         )
