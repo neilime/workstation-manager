@@ -1,0 +1,24 @@
+---
+- name: Write backup restore command
+  ansible.builtin.copy:
+    dest: "{{ workstation_backup_restore_command_path }}"
+    mode: "0600"
+    content: >-
+      {{
+        workstation_backup_archive_path |
+        neilime.workstation_backup.backup_restore_command({
+          'repository_url': lookup('env', 'REPOSITORY_URL') | default('', true),
+          'repository_ref': lookup('env', 'REPOSITORY_BRANCH') | default('main', true)
+        })
+      }}
+
+- name: Record backup restore command in the backup manifest
+  ansible.builtin.set_fact:
+    workstation_backup_manifest_lines: >-
+      {{
+        workstation_backup_manifest_lines + [
+          'export' ~ workstation_backup_tab ~
+          'restore-command' ~ workstation_backup_tab ~
+          workstation_backup_restore_command_path
+        ]
+      }}

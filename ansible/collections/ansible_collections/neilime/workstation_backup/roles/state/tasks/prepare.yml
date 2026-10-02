@@ -79,3 +79,16 @@
           )
         ) | regex_replace('\.tar\.gz$', '.browser-profiles.json')
       }}
+    workstation_backup_restore_command_path: >-
+      {{
+        (
+          lookup('env', 'WORKSTATION_MANAGER_BACKUP_ARCHIVE') |
+          default(
+            workstation_backup_output_dir ~
+            '/workstation-manager-backup-' ~
+            workstation_backup_timestamp ~
+            '.tar.gz',
+            true
+          )
+        ) | regex_replace('\.tar\.gz$', '.restore-command.txt')
+      }}

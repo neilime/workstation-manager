@@ -143,11 +143,11 @@ CI environment overrides:
 	BITWARDEN_PASSWORD                Bitwarden vault password for secret restore.
 
 Examples:
-	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
-	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
-	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup.tar.gz sh -s -- setup
-	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
-	curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup --dry-run
+	wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
+	wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
+	wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup.tar.gz sh -s -- setup
+	wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
+	wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup --dry-run
 EOF
 }
 
@@ -358,20 +358,38 @@ download_github_file() {
 	repository_file="$3"
 	destination="$4"
 
-	require_command curl
-
 	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
+		if command -v wget >/dev/null 2>&1; then
+			wget -q -O "$destination" \
+				--header="Authorization: Bearer $GITHUB_TOKEN_VALUE" \
+				--header="Accept: application/vnd.github.raw" \
+				"https://api.github.com/repos/${repository_path}/contents/${repository_file}?ref=${ref_name}"
+			return
+		fi
+		if command -v curl >/dev/null 2>&1; then
+			curl -fsSL \
+				-H "Authorization: Bearer $GITHUB_TOKEN_VALUE" \
+				-H "Accept: application/vnd.github.raw" \
+				"https://api.github.com/repos/${repository_path}/contents/${repository_file}?ref=${ref_name}" \
+				-o "$destination"
+			return
+		fi
+		fail "wget or curl is required"
+	fi
+
+	if command -v wget >/dev/null 2>&1; then
+		wget -q -O "$destination" \
+			"https://raw.githubusercontent.com/${repository_path}/${ref_name}/${repository_file}"
+		return
+	fi
+	if command -v curl >/dev/null 2>&1; then
 		curl -fsSL \
-			-H "Authorization: Bearer $GITHUB_TOKEN_VALUE" \
-			-H "Accept: application/vnd.github.raw" \
-			"https://api.github.com/repos/${repository_path}/contents/${repository_file}?ref=${ref_name}" \
+			"https://raw.githubusercontent.com/${repository_path}/${ref_name}/${repository_file}" \
 			-o "$destination"
 		return
 	fi
 
-	curl -fsSL \
-		"https://raw.githubusercontent.com/${repository_path}/${ref_name}/${repository_file}" \
-		-o "$destination"
+	fail "wget or curl is required"
 }
 
 install_collection_requirements() {
@@ -608,7 +626,7 @@ resolve_entrypoint_source() {
 		"${WORKSTATION_MANAGER_ENTRYPOINT_SOURCE:-}" \
 		"$0" \
 		"$(command -v "$0" 2>/dev/null || true)"; do
-		# With curl ... | sh, $0 resolves to the shell executable, not this source.
+		# With wget ... | sh, $0 resolves to the shell executable, not this source.
 		if [ -f "$entrypoint_candidate" ] && grep -q '^run_ansible_pull() {' "$entrypoint_candidate"; then
 			printf '%s\n' "$entrypoint_candidate"
 			return 0

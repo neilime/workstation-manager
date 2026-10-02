@@ -9,14 +9,14 @@ their storage before running it.
 Preview the drift report first:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   sh -s -- cleanup --dry-run
 ```
 
 Apply cleanup:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   sh -s -- cleanup
 ```
 

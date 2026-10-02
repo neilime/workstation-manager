@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import Any
+from urllib.parse import quote
 
 from ansible_collections.neilime.workstation_backup.plugins.module_utils.recovery import (
     RECOVERY_SCOPES,
 )
 
+DEFAULT_RESTORE_ENTRYPOINT_URL = "https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh"
+
 # pylint: disable=too-few-public-methods
+
+
+def _resolve_github_repository_path(repository_url: str) -> str | None:
+    """Return the owner/repository segment for supported GitHub URLs."""
+
+    if repository_url.startswith("git@github.com:"):
+        return repository_url.removeprefix("git@github.com:").removesuffix(".git")
+    if repository_url.startswith("https://github.com/"):
+        return repository_url.removeprefix("https://github.com/").removesuffix(".git")
+    return None
 
 
 class BackupRequestedPathsBuilder:
@@ -99,3 +113,32 @@ class BackupManifestContentBuilder:
             header_lines.append(f"recovery_status{tab_character}incomplete")
             header_lines.extend(f"recovery_skipped{tab_character}{scope}" for scope in dict.fromkeys(recovery_skips))
         return newline_character.join(header_lines + manifest_lines) + newline_character
+
+
+class BackupRestoreCommandBuilder:
+    """Render the restore command sidecar content."""
+
+    def build(
+        self,
+        archive_path: str,
+        metadata: dict[str, Any],
+    ) -> str:
+        """Return a copy-pasteable setup command for replaying a backup archive."""
+
+        repository_url = str(metadata.get("repository_url") or "")
+        repository_ref = str(metadata.get("repository_ref") or "main")
+        entrypoint_url = DEFAULT_RESTORE_ENTRYPOINT_URL
+
+        repository_path = _resolve_github_repository_path(repository_url)
+        if repository_path is not None:
+            entrypoint_url = (
+                "https://raw.githubusercontent.com/"
+                f"{quote(repository_path, safe='/')}/"
+                f"{quote(repository_ref, safe='/')}/workstation.sh"
+            )
+
+        return (
+            f"wget -qO- {shlex.quote(entrypoint_url)} | "
+            f"WORKSTATION_MANAGER_RESTORE_ARCHIVE={shlex.quote(str(archive_path))} "
+            "sh -s -- setup\n"
+        )
