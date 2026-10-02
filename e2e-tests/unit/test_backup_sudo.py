@@ -74,6 +74,7 @@ class BackupPrivilegeTests(unittest.TestCase):
             "Ensure backup output directory exists",
             "Collect Git repository metadata",
             "Write Git repository inventory",
+            "Write backup restore command",
             "Write backup manifest",
             "Create backup archive",
         ):

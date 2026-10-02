@@ -10,7 +10,7 @@ four; the archive alone is not a complete recovery source.
 Run from an interactive terminal:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   sh -s -- backup
 ```
 
@@ -18,7 +18,7 @@ Enter the destination when prompted. Choose a directory outside the files being
 backed up. You can provide it directly:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=/media/backup/workstation sh -s -- backup
 ```
 
@@ -169,7 +169,7 @@ setup does not import that sidecar automatically.
 To include additional directories, set a colon-separated list:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS="$HOME/Documents/notes:$HOME/Pictures" \
   sh -s -- backup
 ```
@@ -180,15 +180,22 @@ common parent of all requested sources, including missing default sources. Defau
 backups therefore keep paths relative to your home. Keep extra paths under your
 home and check the archive layout before restoring.
 
-Keep the archive and generated sidecars together. The browser sidecar is created
-when local profiles exist:
+Backup also writes `<archive>.restore-command.txt` beside the archive with the
+full `setup` command for replaying that specific backup on another computer.
 
-| File suffix              | Contents                                                                                                       |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `.tar.gz`                | Archived user files.                                                                                           |
-| `.browser-profiles.json` | Browser bookmarks plus sanitized non-secret preferences for local inspection or manual recovery.               |
-| `.git-repositories.json` | Git remotes, branch, commit, and working-tree status for projects discovered under `~/Documents/dev-projects`. |
-| `.manifest.txt`          | Timestamp, archive path, sources, generated sidecar locations, and explicitly skipped recovery categories.     |
+Keep the archive and generated sidecars together. Backup always writes the
+manifest, Git inventory, and restore-command sidecars; the browser sidecar is
+created when local profiles exist:
+
+- `.tar.gz`: Archived user files.
+- `.restore-command.txt`: Copy-pasteable `setup` command for replaying the
+  paired archive.
+- `.browser-profiles.json`: Browser bookmarks plus sanitized non-secret
+  preferences for local inspection or manual recovery.
+- `.git-repositories.json`: Git remotes, branch, commit, and working-tree
+  status for discovered dev projects.
+- `.manifest.txt`: Timestamp, archive path, source paths, sidecars, and skipped
+  recovery categories.
 
 These files are **not encrypted**. Project files can contain secrets, the
 inventory contains paths and remote URLs, and bookmarks can reveal private
@@ -207,10 +214,13 @@ index. Push commits you need to recover before relying on this backup.
 Place the archive and its matching sidecars together, then run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   WORKSTATION_MANAGER_RESTORE_ARCHIVE=/media/backup/workstation/workstation-manager-backup-20260927T120000Z.tar.gz \
   sh -s -- setup
 ```
+
+If the archive was created by workstation-manager, you can copy the command from
+the matching `.restore-command.txt` sidecar instead of rebuilding it manually.
 
 Setup installs the managed baseline and applies Chezmoi before extracting files
 into your home. Existing files at archived paths can be overwritten. The browser

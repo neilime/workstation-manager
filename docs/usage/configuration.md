@@ -41,7 +41,7 @@ non-secret settings and collection identifiers belong in Git.
 To use a local override instead:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=/absolute/path/private.override.yml sh -s -- setup
 ```
 
