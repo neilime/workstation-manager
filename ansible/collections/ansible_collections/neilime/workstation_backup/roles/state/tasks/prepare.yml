@@ -79,6 +79,10 @@
           )
         ) | regex_replace('\.tar\.gz$', '.browser-profiles.json')
       }}
+    workstation_backup_repository_url: >-
+      {{ lookup('env', 'REPOSITORY_URL') | default('', true) }}
+    workstation_backup_repository_ref: >-
+      {{ lookup('env', 'REPOSITORY_BRANCH') | default('main', true) }}
     workstation_backup_restore_command_path: >-
       {{
         (

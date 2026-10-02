@@ -7,8 +7,8 @@
       {{
         workstation_backup_archive_path |
         neilime.workstation_backup.backup_restore_command({
-          'repository_url': lookup('env', 'REPOSITORY_URL') | default('', true),
-          'repository_ref': lookup('env', 'REPOSITORY_BRANCH') | default('main', true)
+          'repository_url': workstation_backup_repository_url,
+          'repository_ref': workstation_backup_repository_ref
         })
       }}
 
