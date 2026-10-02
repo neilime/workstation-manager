@@ -649,6 +649,66 @@ class BitwardenRetryTests(unittest.TestCase):
             self.assertEqual(script_output_file.read_text(), "synthetic success\n")
 
 
+class GitHubCliAuthenticationTests(unittest.TestCase):
+    """Prompt for GitHub CLI authentication with supported flags."""
+
+    def test_prompt_uses_https_login_without_skip_ssh_key_flag(self) -> None:
+        """Private override auth should not depend on the removed skip-ssh-key flag."""
+
+        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        self.assertEqual(definitions.pop(), 'main "$@"')
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            wrapper = fixture / "wrapper-definitions.sh"
+            wrapper.write_text("\n".join(definitions) + "\n")
+            gh_log = fixture / "gh.log"
+            gh = fixture / "gh"
+            gh.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$*" >>"$TEST_GH_LOG_FILE"\n'
+                'case "$1 $2" in\n'
+                '  "auth login") exit 0 ;;\n'
+                '  "auth setup-git") exit 0 ;;\n'
+                "  *) exit 99 ;;\n"
+                "esac\n"
+            )
+            gh.chmod(0o700)
+
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$1"\n'
+                    "install_github_cli() { :; }\n"
+                    'println_to_tty() { printf "%s\\n" "$1"; }\n'
+                    "prompt_for_github_cli_authentication\n",
+                    "entrypoint-test",
+                    str(wrapper),
+                ],
+                env={
+                    "PATH": f"{fixture}:/usr/bin:/bin",
+                    "HOME": temporary_dir,
+                    "TEST_GH_LOG_FILE": str(gh_log),
+                },
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            self.assertIn(
+                "Private override access requires GitHub authentication; prompting through GitHub CLI",
+                result.stdout,
+            )
+            self.assertIn(
+                "Complete the GitHub CLI login flow. If this machine has no browser, use the device code on another device.",
+                result.stdout,
+            )
+            self.assertEqual(
+                gh_log.read_text().splitlines(),
+                ["auth login --git-protocol https", "auth setup-git"],
+            )
+
+
 class PipedBackupTests(unittest.TestCase):
     """Exercise the public piped backup with a real terminal and isolated commands."""
 
