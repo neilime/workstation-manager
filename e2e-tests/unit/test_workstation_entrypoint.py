@@ -700,7 +700,8 @@ class GitHubCliAuthenticationTests(unittest.TestCase):
                 result.stdout,
             )
             self.assertIn(
-                "Complete the GitHub CLI login flow. If this machine has no browser, use the device code on another device.",
+                "Complete the GitHub CLI login flow. If this machine has no "
+                "browser, use the device code on another device.",
                 result.stdout,
             )
             self.assertEqual(
