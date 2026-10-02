@@ -60,7 +60,6 @@ def login_with_email_password(
     password: str,
     *,
     interactive: bool,
-    executable: str = "bw",
     prompt_for_code: Callable[[str], str] | None = None,
     notice: Callable[[str], None] | None = None,
 ) -> BitwardenLoginResult:
@@ -74,7 +73,6 @@ def login_with_email_password(
             email,
             password,
             interactive=interactive,
-            executable=executable,
             prompt_for_code=prompt_callback,
         )
         if result.failure_reason != "code_rejected" or not interactive:
@@ -87,12 +85,11 @@ def _run_login_attempt(
     password: str,
     *,
     interactive: bool,
-    executable: str,
     prompt_for_code: Callable[[str], str],
 ) -> BitwardenLoginResult:
     """Execute one Bitwarden login attempt and classify only safe failure reasons."""
 
-    argv = [executable, "login", email, *_LOGIN_ARGUMENTS]
+    argv = ["bw", "login", email, *_LOGIN_ARGUMENTS]
     environment = os.environ.copy()
     environment["BITWARDEN_PASSWORD"] = password
     environment["BW_SESSION"] = ""
@@ -122,45 +119,37 @@ def _run_interactive_login(
     handled_prompts = {prompt: 0 for prompt, _ in _CODE_PROMPTS}
     try:
         _disable_echo(slave_fd)
-        process = subprocess.Popen(  # noqa: S603,S607
+        with subprocess.Popen(  # noqa: S603,S607
             argv,
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
             env=environment,
             close_fds=True,
-        )
+        ) as process:
+            while True:
+                if process.poll() is not None:
+                    _drain_master(master_fd, output)
+                    break
+                ready, _, _ = select.select([master_fd], [], [], 0.1)
+                if master_fd not in ready:
+                    continue
+                chunk = _read_master(master_fd)
+                if not chunk:
+                    continue
+                output.extend(chunk)
+                result = _handle_code_prompts(
+                    _normalize_output(bytes(output)),
+                    handled_prompts,
+                    prompt_for_code,
+                    master_fd,
+                    process,
+                )
+                if result is not None:
+                    return result
+            return _result_from_output(process.wait(), _normalize_output(bytes(output)))
     finally:
         os.close(slave_fd)
-
-    try:
-        while True:
-            if process.poll() is not None:
-                _drain_master(master_fd, output)
-                break
-            ready, _, _ = select.select([master_fd], [], [], 0.1)
-            if master_fd not in ready:
-                continue
-            chunk = _read_master(master_fd)
-            if not chunk:
-                continue
-            output.extend(chunk)
-            normalized = _normalize_output(bytes(output))
-            for prompt, tty_prompt in _CODE_PROMPTS:
-                prompt_count = normalized.count(prompt)
-                while handled_prompts[prompt] < prompt_count:
-                    try:
-                        code = prompt_for_code(tty_prompt)
-                    except BitwardenPromptUnavailableError:
-                        _terminate(process)
-                        return BitwardenLoginResult(failure_reason="code_required")
-                    except BitwardenPromptCancelledError as error:
-                        _terminate(process)
-                        raise ValueError("Bitwarden verification code entry was cancelled.") from error
-                    os.write(master_fd, code.encode() + b"\n")
-                    handled_prompts[prompt] += 1
-        return _result_from_output(process.wait(), _normalize_output(bytes(output)))
-    finally:
         os.close(master_fd)
 
 
@@ -189,6 +178,31 @@ def _disable_echo(tty_fd: int) -> None:
     attributes = termios.tcgetattr(tty_fd)
     attributes[3] &= ~termios.ECHO
     termios.tcsetattr(tty_fd, termios.TCSANOW, attributes)
+
+
+def _handle_code_prompts(
+    output: str,
+    handled_prompts: dict[str, int],
+    prompt_for_code: Callable[[str], str],
+    master_fd: int,
+    process: subprocess.Popen[bytes],
+) -> BitwardenLoginResult | None:
+    """Prompt privately for each newly seen Bitwarden verification-code request."""
+
+    for prompt, tty_prompt in _CODE_PROMPTS:
+        prompt_count = output.count(prompt)
+        while handled_prompts[prompt] < prompt_count:
+            try:
+                code = prompt_for_code(tty_prompt)
+            except BitwardenPromptUnavailableError:
+                _terminate(process)
+                return BitwardenLoginResult(failure_reason="code_required")
+            except BitwardenPromptCancelledError as error:
+                _terminate(process)
+                raise ValueError("Bitwarden verification code entry was cancelled.") from error
+            os.write(master_fd, code.encode() + b"\n")
+            handled_prompts[prompt] += 1
+    return None
 
 
 def _drain_master(master_fd: int, output: bytearray) -> None:
@@ -257,7 +271,7 @@ def _write_notice(message: str) -> None:
         with Path("/dev/tty").open("w", encoding="utf-8", buffering=1) as tty:
             tty.write(message)
     except OSError:
-        return
+        pass
 
 
 def _terminate(process: subprocess.Popen[bytes]) -> None:
