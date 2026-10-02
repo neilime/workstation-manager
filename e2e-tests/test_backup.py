@@ -55,11 +55,7 @@ def resolve_backup_restore_command_path(host) -> str:
     """Return the restore-command sidecar paired with the generated E2E backup archive."""
 
     archive_path = resolve_backup_archive_path(host)
-    restore_command_path = (
-        archive_path.removesuffix(".tar.gz") + ".restore-command.txt"
-    )
-    assert restore_command_path
-    return restore_command_path
+    return archive_path.removesuffix(".tar.gz") + ".restore-command.txt"
 
 
 def test_backup_archive_and_manifest_exist(host) -> None:
