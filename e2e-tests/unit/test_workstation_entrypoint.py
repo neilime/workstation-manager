@@ -544,7 +544,10 @@ class BitwardenRetryTests(unittest.TestCase):
             )
             self.assertEqual(prompt_count_file.read_text().strip(), "3")
             self.assertIn(
-                "Bitwarden needs an API key because the current CLI session is unauthenticated; prompting for credentials",
+                (
+                    "Bitwarden needs an API key because the current CLI session is "
+                    "unauthenticated; prompting for credentials"
+                ),
                 result.stdout,
             )
             self.assertIn("synthetic success", result.stdout)
