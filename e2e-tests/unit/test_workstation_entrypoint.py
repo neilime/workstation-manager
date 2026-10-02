@@ -741,6 +741,12 @@ class PipedBackupTests(unittest.TestCase):
                 "        destination = pathlib.Path(arguments[index + 1])\n"
                 "        index += 2\n"
                 "        continue\n"
+                '    if argument == \"--header\":\n'
+                "        index += 2\n"
+                "        continue\n"
+                '    if argument.startswith(\"--header=\"):\n'
+                "        index += 1\n"
+                "        continue\n"
                 "    url = argument\n"
                 "    index += 1\n"
                 "if destination is None or not url:\n"
@@ -759,7 +765,43 @@ class PipedBackupTests(unittest.TestCase):
                 "else:\n"
                 "    sys.exit(99)\n"
             ),
-            "curl": "#!/bin/sh\nexit 99\n",
+            "curl": (
+                f"#!{sys.executable}\n"
+                "import os, pathlib, shutil, sys\n"
+                "arguments = sys.argv[1:]\n"
+                "destination = None\n"
+                'url = \"\"\n'
+                "index = 0\n"
+                "while index < len(arguments):\n"
+                "    argument = arguments[index]\n"
+                '    if argument == \"-o\":\n'
+                "        destination = pathlib.Path(arguments[index + 1])\n"
+                "        index += 2\n"
+                "        continue\n"
+                '    if argument == \"-H\":\n'
+                "        index += 2\n"
+                "        continue\n"
+                '    if argument.startswith(\"-\"):\n'
+                "        index += 1\n"
+                "        continue\n"
+                "    url = argument\n"
+                "    index += 1\n"
+                "if destination is None or not url:\n"
+                "    sys.exit(98)\n"
+                'with open(os.environ[\"TEST_DOWNLOAD_LOG\"], \"a\") as log:\n'
+                '    log.write(url + \"\\\\n\")\n'
+                'if url.endswith(\"/workstation.sh\"):\n'
+                '    if os.environ.get(\"TEST_DOWNLOAD_FAILURE\") == \"1\":\n'
+                "        sys.exit(22)\n"
+                '    if os.environ.get(\"TEST_INVALID_SOURCE\") == \"1\":\n'
+                '        destination.write_text(\"run_ansible_pull() {\\\\nunterminated=\\\\\"\\\\n\")\n'
+                "    else:\n"
+                '        shutil.copyfile(os.environ[\"TEST_ENTRYPOINT_FILE\"], destination)\n'
+                'elif url.endswith(\"/ansible/collections/requirements.yml\"):\n'
+                '    destination.write_text(\"collections: []\\\\n\")\n'
+                "else:\n"
+                "    sys.exit(99)\n"
+            ),
             "ansible-pull": (
                 f"#!{sys.executable}\n"
                 "import json, os, sys\n"
