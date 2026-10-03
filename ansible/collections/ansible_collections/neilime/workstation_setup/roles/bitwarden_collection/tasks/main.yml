@@ -275,5 +275,6 @@
           bw_session=bitwarden_collection_session
         )
         | first
+        | default([], true)
       }}
   no_log: true

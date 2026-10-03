@@ -19,6 +19,15 @@ RECOVERY_WORDS = "synthetic recovery words must stay private"
 AVATAR = b"synthetic avatar attachment"
 
 
+def ansible_collections_path() -> str:
+    """Return the collection search path inherited from the host-test runner."""
+
+    collections_path = os.environ.get("ANSIBLE_COLLECTIONS_PATH")
+    if not collections_path:
+        raise AssertionError("ANSIBLE_COLLECTIONS_PATH must be set for browser profile host tests")
+    return f"{WORKSPACE / 'ansible/collections'}:{collections_path}"
+
+
 class BrowserProfileCollectionRoleTests(unittest.TestCase):
     """Use real collection parsing and profile inspection with an isolated Bitwarden CLI."""
 
@@ -149,8 +158,7 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 "HOME": str(self.fixture),
                 "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
                 "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-                "ANSIBLE_COLLECTIONS_PATH": f"{WORKSPACE / 'ansible/collections'}:"
-                + os.environ.get("ANSIBLE_COLLECTIONS_PATH", "/opt/ansible/collections:/usr/share/ansible/collections"),
+                "ANSIBLE_COLLECTIONS_PATH": ansible_collections_path(),
                 "BITWARDEN_PASSWORD": "fixture-password",
             },
             cwd=self.fixture,

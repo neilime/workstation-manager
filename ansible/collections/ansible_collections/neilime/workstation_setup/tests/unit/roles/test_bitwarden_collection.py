@@ -29,6 +29,7 @@ def test_collection_role_reads_items_with_lookup_plugin() -> None:
     assert "query(" in expression
     assert "community.general.bitwarden" in expression
     assert "''," in expression
+    assert "default([], true)" in expression
     assert "collection_id=bitwarden_collection_id" in expression
     assert "bw_session=bitwarden_collection_session" in expression
 
