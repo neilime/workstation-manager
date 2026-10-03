@@ -111,10 +111,15 @@ eval "$(deja init zsh)"
 ```
 
 Do not enable `zsh-autosuggestions` at the same time; Déjà replaces it. For a
-pinned Oh My Zsh installation, add
-`zstyle ':omz:update' mode disabled` before sourcing `~/.oh-my-zsh/oh-my-zsh.sh`;
-setup then owns framework updates. Setup leaves `.zshrc` ownership to Chezmoi and
-does not change the account's login shell.
+pinned Oh My Zsh installation, add this before sourcing
+`~/.oh-my-zsh/oh-my-zsh.sh`:
+
+```zsh
+zstyle ':omz:update' mode disabled
+```
+
+Setup then owns framework updates. Setup leaves `.zshrc` ownership to Chezmoi
+and does not change the account's login shell.
 
 Maintain dotfiles in that source repository. Before backup, review local changes;
 the [backup workflow](backup-and-restore.md) offers to capture or reapply managed
