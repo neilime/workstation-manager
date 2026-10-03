@@ -19,6 +19,15 @@ RECOVERY_WORDS = "synthetic recovery words must stay private"
 AVATAR = b"synthetic avatar attachment"
 
 
+def ansible_collections_path() -> str:
+    """Return the collection search path inherited from the host-test runner."""
+
+    collections_path = os.environ.get("ANSIBLE_COLLECTIONS_PATH")
+    if not collections_path:
+        raise AssertionError("ANSIBLE_COLLECTIONS_PATH must be set for browser profile host tests")
+    return f"{WORKSPACE / 'ansible/collections'}:{collections_path}"
+
+
 class BrowserProfileCollectionRoleTests(unittest.TestCase):
     """Use real collection parsing and profile inspection with an isolated Bitwarden CLI."""
 
@@ -52,12 +61,16 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "import json, os, pathlib, sys\n"
             "root = pathlib.Path(os.environ['HOME'])\n"
             "command = sys.argv[1:]\n"
+            "has_session = len(command) >= 2 and command[-2] == '--session'\n"
+            "if has_session:\n"
+            "    command = command[:-2]\n"
             "with (root / 'calls').open('a') as log:\n"
             "    log.write(json.dumps(command) + '\\n')\n"
             "if command == ['--version']:\n"
             "    print('fixture')\n"
             "elif command == ['status']:\n"
-            "    print(json.dumps({'status': 'locked', 'serverUrl': 'https://vault.example.invalid'}))\n"
+            "    status = 'unlocked' if has_session else 'locked'\n"
+            "    print(json.dumps({'status': status, 'serverUrl': 'https://vault.example.invalid'}))\n"
             "elif command[0] == 'unlock':\n"
             "    if (root / 'unlock-rejected').exists():\n"
             "        sys.exit(1)\n"
@@ -65,6 +78,8 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "elif command == ['sync']:\n"
             "    pass\n"
             "elif command[:2] == ['list', 'items']:\n"
+            "    if '--search' in command:\n"
+            "        sys.exit(98)\n"
             "    print((root / 'items.json').read_text())\n"
             "elif command[:2] == ['get', 'attachment']:\n"
             "    if (root / 'attachment-unavailable').exists():\n"
@@ -143,7 +158,7 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 "HOME": str(self.fixture),
                 "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
                 "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-                "ANSIBLE_COLLECTIONS_PATH": str(WORKSPACE / "ansible/collections"),
+                "ANSIBLE_COLLECTIONS_PATH": ansible_collections_path(),
                 "BITWARDEN_PASSWORD": "fixture-password",
             },
             cwd=self.fixture,
