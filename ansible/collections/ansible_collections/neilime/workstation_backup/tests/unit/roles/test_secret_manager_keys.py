@@ -1,5 +1,6 @@
 """Parse dynamic key-sync tasks without contacting a secret manager."""
 
+import base64
 import json
 from pathlib import Path
 
@@ -42,8 +43,11 @@ def test_missing_public_key_reports_misnamed_private_key(filename: str, public_i
         assert f"without its public key /home/fixture/.ssh/{filename}.pub" in message
 
 
-def test_dynamic_key_actions_parse_and_pass_payload_to_encoder() -> None:
-    """Dynamic includes must parse and send the item payload on command stdin."""
+@pytest.mark.parametrize(
+    "action, command", [("add", ["bw", "create", "item"]), ("update", ["bw", "edit", "item", "fixture-id"])]
+)
+def test_key_writes_receive_base64_json_on_stdin(action: str, command: list[str]) -> None:
+    """Create and update preserve multiline and Unicode payloads without exposing argv secrets."""
 
     if AnsibleCollectionConfig.collection_finder is None:
         init_plugin_loader()
@@ -51,8 +55,17 @@ def test_dynamic_key_actions_parse_and_pass_payload_to_encoder() -> None:
     loader = DataLoader()
     tasks = [Task.load(task, loader=loader) for task in loader.load_from_file(str(task_file), trusted_as_template=True)]
 
-    encode_task = next(task for task in tasks if task.args.get("argv") == ["bw", "encode"])
-    assert "workstation_backup_secret_manager_item_payload" in encode_task.args["stdin"]
+    save_task = next(task for task in tasks if task.name == "Save the synchronized Bitwarden key item")
+    payload = {"name": "fixture-é", "fields": [{"name": "private_key", "value": "synthetic\nkey material"}]}
+    templar = Templar(
+        loader=loader,
+        variables={
+            "item": {"action": action, "bitwarden_item_id": "fixture-id"},
+            "workstation_backup_secret_manager_item_payload": payload,
+        },
+    )
+    assert templar.template(save_task.args["argv"]) == command
+    assert json.loads(base64.b64decode(templar.template(save_task.args["stdin"]))) == payload
 
 
 @pytest.mark.parametrize(
@@ -83,12 +96,8 @@ def test_saved_key_readback_must_match_content_and_collection(
     variables = {
         "item": {"collection_id": "ssh-collection", "fields": [{"name": "private_key", "value": "fixture-private"}]},
         "workstation_backup_secret_manager_verified_item": {
-            "stdout": json.dumps(
-                {
-                    "fields": [{"name": "private_key", "value": stored_value}],
-                    "collectionIds": collections,
-                }
-            )
+            "fields": [{"name": "private_key", "value": stored_value}],
+            "collectionIds": collections,
         },
     }
     templar = Templar(loader=loader, variables=variables)

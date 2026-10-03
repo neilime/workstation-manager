@@ -3,17 +3,26 @@
   ansible.builtin.include_tasks: session.yml
 
 - name: Read the current Bitwarden item before updating it
-  ansible.builtin.command:
-    argv:
-      - bw
-      - get
-      - item
-      - "{{ item.bitwarden_item_id }}"
-  environment:
-    BW_SESSION: "{{ bitwarden_collection_session }}"
-    BW_NOINTERACTION: "true"
-  register: workstation_backup_secret_manager_existing_item
-  changed_when: false
+  ansible.builtin.set_fact:
+    workstation_backup_secret_manager_existing_item: >-
+      {{
+        query(
+          'neilime.workstation_setup.bitwarden',
+          item.bitwarden_item_id,
+          appdata_dir=bitwarden_collection_appdata_dir,
+          search='id',
+          result_count=1,
+          bw_session=bitwarden_collection_session
+        ) | first | first
+      }}
+  when: item.action == 'update'
+  no_log: true
+
+- name: Require the existing key to remain in its recovery collection
+  ansible.builtin.assert:
+    that:
+      - item.collection_id in workstation_backup_secret_manager_existing_item.collectionIds
+    fail_msg: "The Bitwarden key left its recovery collection; retry backup before updating it."
   when: item.action == 'update'
   no_log: true
 
@@ -21,7 +30,7 @@
   ansible.builtin.set_fact:
     workstation_backup_secret_manager_item_payload: >-
       {{
-        (workstation_backup_secret_manager_existing_item.stdout | from_json)
+        workstation_backup_secret_manager_existing_item
         | combine({'name': item.name, 'fields': item.fields}, recursive=True, list_merge='replace')
       }}
   when: item.action == 'update'
@@ -44,16 +53,6 @@
   when: item.action == 'add'
   no_log: true
 
-- name: Encode the Bitwarden item payload
-  ansible.builtin.command:
-    argv:
-      - bw
-      - encode
-    stdin: "{{ workstation_backup_secret_manager_item_payload | to_json }}"
-  register: workstation_backup_secret_manager_encoded_payload
-  changed_when: false
-  no_log: true
-
 - name: Save the synchronized Bitwarden key item
   ansible.builtin.command:
     argv: >-
@@ -61,7 +60,7 @@
         ['bw']
         + (['create', 'item'] if item.action == 'add' else ['edit', 'item', item.bitwarden_item_id])
       }}
-    stdin: "{{ workstation_backup_secret_manager_encoded_payload.stdout }}"
+    stdin: "{{ workstation_backup_secret_manager_item_payload | to_json | b64encode }}"
   environment:
     BW_SESSION: "{{ bitwarden_collection_session }}"
     BW_NOINTERACTION: "true"
@@ -81,26 +80,27 @@
   no_log: true
 
 - name: Read back the saved Bitwarden key item
-  ansible.builtin.command:
-    argv:
-      - bw
-      - get
-      - item
-      - "{{ (workstation_backup_secret_manager_saved_item.stdout | from_json).id }}"
-  environment:
-    BW_SESSION: "{{ bitwarden_collection_session }}"
-    BW_NOINTERACTION: "true"
-  register: workstation_backup_secret_manager_verified_item
-  changed_when: false
+  ansible.builtin.set_fact:
+    workstation_backup_secret_manager_verified_item: >-
+      {{
+        query(
+          'neilime.workstation_setup.bitwarden',
+          (workstation_backup_secret_manager_saved_item.stdout | from_json).id,
+          appdata_dir=bitwarden_collection_appdata_dir,
+          search='id',
+          result_count=1,
+          bw_session=bitwarden_collection_session
+        ) | first | first
+      }}
   no_log: true
 
 - name: Require the saved key to match before backup continues
   ansible.builtin.assert:
     that:
       - >-
-        ((workstation_backup_secret_manager_verified_item.stdout | from_json).fields
+        (workstation_backup_secret_manager_verified_item.fields
         | items2dict(key_name='name', value_name='value'))
         == (item.fields | items2dict(key_name='name', value_name='value'))
-      - item.collection_id in (workstation_backup_secret_manager_verified_item.stdout | from_json).collectionIds
+      - item.collection_id in workstation_backup_secret_manager_verified_item.collectionIds
     fail_msg: "Bitwarden did not retain the expected key content and collection; backup stopped."
   no_log: true

@@ -19,7 +19,8 @@ RUN apt-get update && \
     bash \
     git \
     locales \
-    openssh-client && \
+    openssh-client \
+    procps && \
     sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen && \
     rm -rf /var/lib/apt/lists/*

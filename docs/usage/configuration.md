@@ -47,6 +47,11 @@ curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/wo
 
 ## Prepare Bitwarden collections
 
+Setup, backup, and cleanup share the managed user's Bitwarden CLI cache at
+`~/.config/Bitwarden CLI`, including when launched through sudo. Authentication
+and vault synchronization happen before collection reads; a failed read stops
+the action.
+
 Choose the server that hosts your vault; the default is
 `https://vault.bitwarden.eu`. Setup requires nonempty SSH and GPG collections.
 Your account must be able to read them. Backup also needs write access when you

@@ -308,21 +308,26 @@ class BackupRecoverySkipTests(unittest.TestCase):
         """Use a fake CLI that logs operations and enforces post-write verification."""
 
         self.variables["bitwarden_collection_session"] = "synthetic-current-session"
+        self.variables["bitwarden_collection_appdata_dir"] = str(self.fixture / ".config/Bitwarden CLI")
         cli = self.fixture / "bin/bw"
         cli.write_text(
             f"#!{sys.executable}\n"
             "import base64\nimport json\nimport os\nimport pathlib\nimport sys\n"
             "root = pathlib.Path(os.environ['HOME'])\n"
             "command = sys.argv[1:]\n"
+            "session = os.environ.get('BW_SESSION')\n"
+            "lookup_call = len(command) >= 2 and command[-2] == '--session'\n"
+            "if lookup_call: session, command = command[-1], command[:-2]\n"
             "with (root / 'bw-calls').open('a') as log: log.write(command[0] + '\\n')\n"
             "store = root / 'saved-item.json'\n"
-            "unlocked = os.environ.get('BW_SESSION') == 'synthetic-current-session'\n"
+            "unlocked = session == 'synthetic-current-session'\n"
             "if command == ['status']:\n"
             "    print(json.dumps({'status': 'unlocked' if unlocked else 'locked'})); sys.exit(0)\n"
-            "if command != ['encode'] and not unlocked: sys.exit(1)\n"
-            "if command != ['encode'] and os.environ.get('BW_NOINTERACTION') != 'true': sys.exit(3)\n"
-            "if command == ['encode']: print(base64.b64encode(sys.stdin.buffer.read()).decode())\n"
-            "elif command[0] in ('create', 'edit'):\n"
+            "if command == ['encode']:\n"
+            "    print(base64.b64encode(sys.stdin.buffer.read()).decode()); sys.exit(0)\n"
+            "if not unlocked: sys.exit(1)\n"
+            "if not lookup_call and os.environ.get('BW_NOINTERACTION') != 'true': sys.exit(3)\n"
+            "if command[0] in ('create', 'edit'):\n"
             "    item = json.loads(base64.b64decode(sys.stdin.read())); item.setdefault('id', 'fixture-id')\n"
             "    if (root / 'save-fails').exists():\n"
             "        print(json.dumps(item), os.environ['BW_SESSION'], file=sys.stderr); sys.exit(2)\n"
@@ -330,7 +335,9 @@ class BackupRecoverySkipTests(unittest.TestCase):
             "elif command == ['sync']: pass\n"
             "elif command[:2] == ['get', 'item']:\n"
             "    item = (json.loads(store.read_text()) if store.exists()\n"
-            "            else {'collectionIds': ['fixture-collection']})\n"
+            "            else {'id': 'fixture-id', 'collectionIds': ['fixture-collection']})\n"
+            "    if (root / 'missing-item').exists(): print('Not found.', file=sys.stderr); sys.exit(1)\n"
+            "    if (root / 'wrong-collection').exists(): item['collectionIds'] = ['another-collection']\n"
             "    if (root / 'bad-readback').exists(): item['fields'] = []\n"
             "    print(json.dumps(item))\n"
             "else: sys.exit(99)\n"
@@ -638,7 +645,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual(
             (self.fixture / "bw-calls").read_text().splitlines(),
-            ["status", "get", "encode", "edit", "sync", "get"],
+            ["status", "status", "get", "edit", "sync", "status", "get"],
         )
         self.assert_archive(["ssh-keys"])
 
@@ -667,11 +674,31 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual(
             (self.fixture / "bw-calls").read_text().splitlines(),
-            ["status", "encode", "create", "sync", "get", "status", "get", "encode", "edit", "sync", "get"],
+            ["status", "create", "sync", "status", "get", "status", "status", "get", "edit", "sync", "status", "get"],
         )
         for sensitive in ("synthetic-private-key", "synthetic-current-session", "synthetic-stale-session"):
             self.assertNotIn(sensitive, output)
         self.assert_archive([])
+
+    def test_missing_saved_item_stops_backup(self) -> None:
+        """An empty lookup result cannot count as successful post-write verification."""
+
+        (self.fixture / "missing-item").touch()
+        code, output = self.run_backup(self.prepare_keys(), (("[save/skip/abort]", "save"),))
+        self.assertNotEqual(code, 0, output)
+        self.assertFalse((self.fixture / "backup.tar.gz").exists())
+        self.assertNotIn("synthetic-current-session", output)
+
+    def test_existing_key_outside_collection_is_not_updated(self) -> None:
+        """Revalidate collection membership before an approved update writes anything."""
+
+        (self.fixture / "wrong-collection").touch()
+        code, output = self.run_backup(
+            self.prepare_keys(), (("[save/skip/abort]", "skip"), ("[save/skip/abort]", "save"))
+        )
+        self.assertNotEqual(code, 0, output)
+        self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status", "status", "get"])
+        self.assertFalse((self.fixture / "backup.tar.gz").exists())
 
     def test_expired_session_stops_before_saving_with_a_safe_error(self) -> None:
         """An invalidated session must fail clearly without exposing keys or tokens."""
@@ -692,7 +719,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         (self.fixture / "save-fails").touch()
         code, output = self.run_backup(self.prepare_keys(), (("[save/skip/abort]", "save"),))
         self.assertNotEqual(code, 0, output)
-        self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status", "encode", "create"])
+        self.assertEqual((self.fixture / "bw-calls").read_text().splitlines(), ["status", "create"])
         self.assertIn("changed=0", output)
         self.assertFalse((self.fixture / "backup.tar.gz").exists())
         self.assertNotIn("synthetic-private-key", output)

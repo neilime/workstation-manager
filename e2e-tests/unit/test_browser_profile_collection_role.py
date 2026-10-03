@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import pathlib
+import pwd
 import subprocess
 import sys
 import tempfile
@@ -52,12 +53,16 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "import json, os, pathlib, sys\n"
             "root = pathlib.Path(os.environ['HOME'])\n"
             "command = sys.argv[1:]\n"
+            "has_session = len(command) >= 2 and command[-2] == '--session'\n"
+            "if has_session:\n"
+            "    command = command[:-2]\n"
             "with (root / 'calls').open('a') as log:\n"
             "    log.write(json.dumps(command) + '\\n')\n"
             "if command == ['--version']:\n"
             "    print('fixture')\n"
             "elif command == ['status']:\n"
-            "    print(json.dumps({'status': 'locked', 'serverUrl': 'https://vault.example.invalid'}))\n"
+            "    status = 'unlocked' if has_session else 'locked'\n"
+            "    print(json.dumps({'status': status, 'serverUrl': 'https://vault.example.invalid'}))\n"
             "elif command[0] == 'unlock':\n"
             "    if (root / 'unlock-rejected').exists():\n"
             "        sys.exit(1)\n"
@@ -65,6 +70,8 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "elif command == ['sync']:\n"
             "    pass\n"
             "elif command[:2] == ['list', 'items']:\n"
+            "    if '--search' in command:\n"
+            "        sys.exit(98)\n"
             "    print((root / 'items.json').read_text())\n"
             "elif command[:2] == ['get', 'attachment']:\n"
             "    if (root / 'attachment-unavailable').exists():\n"
@@ -112,7 +119,7 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "ansible_python_interpreter": sys.executable,
             "workstation_manager_use_become": False,
             "workstation_manager_resolved": {
-                "user": {"home": str(self.fixture)},
+                "user": {"name": pwd.getpwuid(os.getuid()).pw_name, "home": str(self.fixture)},
                 "secrets": {
                     "bitwarden": {
                         "server": "https://vault.example.invalid",
@@ -143,7 +150,9 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 "HOME": str(self.fixture),
                 "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
                 "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-                "ANSIBLE_COLLECTIONS_PATH": str(WORKSPACE / "ansible/collections"),
+                "ANSIBLE_COLLECTIONS_PATH": ":".join(
+                    [str(WORKSPACE / "ansible/collections"), os.environ["ANSIBLE_COLLECTIONS_PATH"]]
+                ),
                 "BITWARDEN_PASSWORD": "fixture-password",
             },
             cwd=self.fixture,

@@ -30,6 +30,7 @@
       become_user: "{{ workstation_manager_resolved.user.name }}"
       environment:
         HOME: "{{ workstation_manager_resolved.user.home }}"
+        BITWARDENCLI_APPDATA_DIR: "{{ workstation_manager_resolved.user.home }}/.config/Bitwarden CLI"
         SSH_AUTH_SOCK: "{{ lookup('ansible.builtin.env', 'SSH_AUTH_SOCK') }}"
         GPG_TTY: "{{ lookup('ansible.builtin.env', 'GPG_TTY') }}"
         DISPLAY: "{{ lookup('ansible.builtin.env', 'DISPLAY') }}"
