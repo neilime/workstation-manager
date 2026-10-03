@@ -152,7 +152,7 @@
     BW_CLIENTSECRET: "{{ bitwarden_collection_client_secret }}"
     BW_SESSION: ""
   register: bitwarden_collection_api_key_login
-  changed_when: false
+  changed_when: bitwarden_collection_api_key_login.rc == 0
   failed_when: false
   no_log: true
   when:
@@ -197,7 +197,7 @@
     BW_CLIENTSECRET: "{{ bitwarden_collection_client_secret }}"
     BW_SESSION: ""
   register: bitwarden_collection_api_key_login_fallback
-  changed_when: false
+  changed_when: bitwarden_collection_api_key_login_fallback.rc == 0
   failed_when: false
   no_log: true
   when:
