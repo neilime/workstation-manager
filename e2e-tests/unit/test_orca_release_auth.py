@@ -75,13 +75,20 @@ class OrcaReleaseAuthTests(unittest.TestCase):
     def fetch(self, *, token: str | None, path: str = "/auth", check: bool = False) -> subprocess.CompletedProcess[str]:
         """Execute the production release lookup and asset checks against the local fixture."""
         tasks = DataLoader().load_from_file(str(TASK_FILE))
-        start = next(index for index, task in enumerate(tasks) if "ansible.builtin.uri" in task)
+        uri_task = next(task for task in tasks if "ansible.builtin.uri" in task)
         end = next(index for index, task in enumerate(tasks) if "ansible.builtin.package_facts" in task)
-        tasks = tasks[start:end]
-        tasks[0]["ansible.builtin.uri"]["url"] = f"http://127.0.0.1:{self.server.server_port}{path}"
+        tasks = tasks[:end]
+        uri_task["ansible.builtin.uri"]["url"] = f"http://127.0.0.1:{self.server.server_port}{path}"
         variables = {
             "ansible_python_interpreter": sys.executable,
-            "workstation_manager_orca_architecture": "amd64",
+            "ansible_facts": {"architecture": "x86_64"},
+            "workstation_manager": {"development": {"orca": {"settings": {}}}},
+            "workstation_manager_resolved": {
+                "user": {
+                    "projects_directory": "/home/fixture/Documents/dev-projects",
+                    "home": "/home/fixture",
+                }
+            },
         }
         playbook = self.fixture / "playbook.json"
         play = {
