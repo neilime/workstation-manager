@@ -27,8 +27,8 @@ def assert_mise_tool_is_declared(config_file, tool_name: str) -> None:
     assert config_file.contains(rf'^"{tool_name}" = "[^"][^"]*"$')
 
 
-def assert_mise_tool_uses_version_selector(config_file, tool_name: str) -> None:
-    """Assert that the global mise config pins the tool to a concrete version."""
+def assert_mise_tool_uses_pinned_version(config_file, tool_name: str) -> None:
+    """Assert that the global mise config pins the tool to one concrete version."""
 
     assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9.]*"$')
 
@@ -80,9 +80,9 @@ def test_mise_global_config_and_activation_are_managed(host) -> None:
     # Assert
     assert config_file.exists
     assert config_file.contains('"node" = "lts"')
-    assert_mise_tool_uses_version_selector(config_file, "php")
+    assert_mise_tool_uses_pinned_version(config_file, "php")
     assert_mise_tool_is_declared(config_file, "aqua:cli/cli")
-    assert_mise_tool_uses_version_selector(config_file, "github:Giammarco-Ferranti/deja")
+    assert_mise_tool_uses_pinned_version(config_file, "github:Giammarco-Ferranti/deja")
     assert_mise_tool_is_declared(config_file, "aqua:docker/cli")
     assert_mise_tool_is_declared(config_file, "aqua:docker/compose")
     assert_mise_tool_uses_major_track(config_file, "aqua:helm/helm")
