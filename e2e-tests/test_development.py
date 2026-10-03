@@ -28,7 +28,7 @@ def assert_mise_tool_is_declared(config_file, tool_name: str) -> None:
 
 
 def assert_mise_tool_uses_pinned_version(config_file, tool_name: str) -> None:
-    """Assert that the global mise config pins the tool to one concrete version."""
+    """Assert that the global mise config pins the tool to a dotted release string."""
 
     assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9.]*"$')
 
