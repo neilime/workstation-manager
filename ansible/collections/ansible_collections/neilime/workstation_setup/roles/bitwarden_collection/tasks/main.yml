@@ -265,21 +265,15 @@
   no_log: true
 
 - name: Read Bitwarden collection items
-  ansible.builtin.command:
-    argv:
-      - bw
-      - list
-      - items
-      - --collectionid
-      - "{{ bitwarden_collection_id }}"
-  environment:
-    BW_SESSION: "{{ bitwarden_collection_session }}"
-  register: bitwarden_collection_items_command
-  changed_when: false
-  check_mode: false
-  no_log: true
-
-- name: Collect the Bitwarden collection records
   ansible.builtin.set_fact:
-    bitwarden_collection_items: "{{ bitwarden_collection_items_command.stdout | from_json }}"
+    bitwarden_collection_items: >-
+      {{
+        query(
+          'community.general.bitwarden',
+          None,
+          collection_id=bitwarden_collection_id,
+          bw_session=bitwarden_collection_session
+        )
+        | first
+      }}
   no_log: true
