@@ -27,8 +27,8 @@ def assert_mise_tool_is_declared(config_file, tool_name: str) -> None:
     assert config_file.contains(rf'^"{tool_name}" = "[^"][^"]*"$')
 
 
-def assert_mise_tool_uses_version_selector(config_file, tool_name: str) -> None:
-    """Assert that the global mise config pins the tool to a concrete version."""
+def assert_mise_tool_uses_pinned_version(config_file, tool_name: str) -> None:
+    """Assert that the global mise config pins the tool to a dotted release string."""
 
     assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9.]*"$')
 
@@ -50,6 +50,7 @@ def test_declared_development_tools_are_available(host) -> None:
     docker_compose_result = run_with_mise_activation(host, "docker compose version")
     mise_result = resolve_mise_command(host, "mise")
     mise_github_cli_result = resolve_mise_command(host, "gh")
+    mise_deja_result = resolve_mise_command(host, "deja")
     mise_node_result = resolve_mise_command(host, "node")
     mise_php_result = resolve_mise_command(host, "php")
     mise_helm_result = resolve_mise_command(host, "helm")
@@ -62,6 +63,7 @@ def test_declared_development_tools_are_available(host) -> None:
     assert docker_compose_result.succeeded
     assert mise_result.succeeded
     assert mise_github_cli_result.succeeded
+    assert mise_deja_result.succeeded
     assert mise_node_result.succeeded
     assert mise_php_result.succeeded
     assert mise_helm_result.succeeded
@@ -78,8 +80,9 @@ def test_mise_global_config_and_activation_are_managed(host) -> None:
     # Assert
     assert config_file.exists
     assert config_file.contains('"node" = "lts"')
-    assert_mise_tool_uses_version_selector(config_file, "php")
+    assert_mise_tool_uses_pinned_version(config_file, "php")
     assert_mise_tool_is_declared(config_file, "aqua:cli/cli")
+    assert_mise_tool_uses_pinned_version(config_file, "github:Giammarco-Ferranti/deja")
     assert_mise_tool_is_declared(config_file, "aqua:docker/cli")
     assert_mise_tool_is_declared(config_file, "aqua:docker/compose")
     assert_mise_tool_uses_major_track(config_file, "aqua:helm/helm")
