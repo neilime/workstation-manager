@@ -502,7 +502,7 @@ class RepositorySourceTests(unittest.TestCase):
                     "/bin/sh",
                     "-c",
                     '. "$1"\n'
-                    'has_interactive_terminal() { return 0; }\n'
+                    'interactive_terminal_flag() { printf "%s\\n" "1"; }\n'
                     'interactive_terminal_path() { printf "%s\\n" "/dev/pts/fake"; }\n'
                     'REPOSITORY_URL="$2"\n'
                     'REPOSITORY_BRANCH="feature/local-fix"\n'

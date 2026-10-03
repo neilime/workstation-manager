@@ -1,5 +1,9 @@
 """Exercise Bitwarden collection authentication fallbacks with a local CLI fixture."""
 
+# This fixture intentionally mirrors the Bitwarden CLI prompt flows exercised in
+# lower-level auth tests so the production role can be verified end-to-end.
+# pylint: disable=duplicate-code
+
 from __future__ import annotations
 
 import json
