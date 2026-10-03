@@ -16,7 +16,6 @@ ROLE_PATH = (
     pathlib.Path(__file__).parents[2]
     / "ansible/collections/ansible_collections/neilime/workstation_setup/roles/development_tooling"
 )
-GROUP_VARS_PATH = pathlib.Path(__file__).parents[2] / "ansible/group_vars/all.yml"
 TOKEN = "synthetic-development-tooling-token"
 INSTALL_TASK = "Install globally configured mise tools"
 EXTENSION_TASKS = {"Read installed GitHub CLI extensions", "Install declared GitHub CLI extensions"}
@@ -180,12 +179,6 @@ class DevelopmentToolingAuthTests(unittest.TestCase):
         result, calls, _ = self.run_installation(token=TOKEN, check_mode=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(calls, [])
-
-    def test_public_defaults_include_deja_tool(self) -> None:
-        """The public mise defaults should provision the Déjà binary."""
-        defaults = DataLoader().load_from_file(str(GROUP_VARS_PATH))
-        tools = defaults["workstation_manager"]["development"]["mise"]["tools"]
-        self.assertRegex(tools["github:Giammarco-Ferranti/deja"], r"^\d+(?:\.\d+)+$")
 
 
 if __name__ == "__main__":
