@@ -86,7 +86,7 @@ def main() -> None:
         )
     except (OSError, ValueError) as error:
         module.fail_json(msg=str(error))
-    module.exit_json(changed=False, failure_reason=result.failure_reason, session=result.session)
+    module.exit_json(changed=bool(result.session), failure_reason=result.failure_reason, session=result.session)
 
 
 if __name__ == "__main__":
