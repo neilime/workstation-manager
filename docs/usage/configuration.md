@@ -105,11 +105,12 @@ its bootstrap form so each shell refreshes the cached init script against the
 current binary:
 
 ```zsh
+source "$HOME/.config/workstation-manager/mise.sh"
 eval "$(deja init zsh)"
 ```
 
 Do not enable `zsh-autosuggestions` at the same time; Déjà replaces it. For a
-pinned installation, put
+pinned Oh My Zsh installation, add
 `zstyle ':omz:update' mode disabled` before sourcing `~/.oh-my-zsh/oh-my-zsh.sh`;
 setup then owns framework updates. Setup leaves `.zshrc` ownership to Chezmoi and
 does not change the account's login shell.
