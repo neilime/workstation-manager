@@ -229,14 +229,7 @@
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
     - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
-    - >-
-      (bitwarden_collection_client_id | length == 0)
-      or (bitwarden_collection_client_secret | length == 0)
-      or (
-        (bitwarden_collection_api_key_login_fallback is defined)
-        and
-        (bitwarden_collection_api_key_login_fallback.skipped | default(false))
-      )
+    - (bitwarden_collection_client_id | length == 0) or (bitwarden_collection_client_secret | length == 0)
 
 - name: Fail when the supplied Bitwarden email or password is rejected
   ansible.builtin.fail:
