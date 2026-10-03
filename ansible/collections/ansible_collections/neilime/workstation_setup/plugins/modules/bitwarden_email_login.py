@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import os
+
 DOCUMENTATION = r"""
 ---
 module: bitwarden_email_login
@@ -85,11 +87,12 @@ def main() -> None:
         supports_check_mode=False,
     )
     try:
+        if module.params["tty_path"]:
+            os.environ["WORKSTATION_MANAGER_TTY"] = module.params["tty_path"]
         result = bitwarden_auth.login_with_email_password(
             module.params["email"],
             module.params["password"],
             interactive=module.params["interactive"],
-            tty_path=module.params["tty_path"] or None,
         )
     except (OSError, ValueError) as error:
         module.fail_json(msg=str(error))
