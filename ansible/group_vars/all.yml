@@ -122,6 +122,7 @@ workstation_manager:
         php: "8.5.11"
         "aqua:starship/starship": latest
         "aqua:cli/cli": latest
+        "github:Giammarco-Ferranti/deja": latest
         "aqua:docker/cli": latest
         "aqua:docker/compose": latest
         "aqua:helm/helm": "4"
