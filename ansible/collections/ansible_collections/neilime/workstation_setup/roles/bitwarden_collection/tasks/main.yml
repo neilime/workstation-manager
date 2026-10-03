@@ -270,7 +270,7 @@
       {{
         query(
           'community.general.bitwarden',
-          None,
+          '',
           collection_id=bitwarden_collection_id,
           bw_session=bitwarden_collection_session
         )
