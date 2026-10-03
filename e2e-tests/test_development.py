@@ -82,7 +82,7 @@ def test_mise_global_config_and_activation_are_managed(host) -> None:
     assert config_file.contains('"node" = "lts"')
     assert_mise_tool_uses_version_selector(config_file, "php")
     assert_mise_tool_is_declared(config_file, "aqua:cli/cli")
-    assert_mise_tool_is_declared(config_file, "github:Giammarco-Ferranti/deja")
+    assert_mise_tool_uses_version_selector(config_file, "github:Giammarco-Ferranti/deja")
     assert_mise_tool_is_declared(config_file, "aqua:docker/cli")
     assert_mise_tool_is_declared(config_file, "aqua:docker/compose")
     assert_mise_tool_uses_major_track(config_file, "aqua:helm/helm")

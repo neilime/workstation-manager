@@ -68,5 +68,17 @@
       datasourceTemplate: "github-releases",
       versioningTemplate: "semver-partial",
     },
+    {
+      customType: "regex",
+      description: "Update the pinned Déjà version in mise defaults",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: [
+        '"github:Giammarco-Ferranti/deja": "(?<currentValue>[^"]+)"',
+      ],
+      depNameTemplate: "Giammarco-Ferranti/deja",
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^v?(?<version>.+)$",
+      versioningTemplate: "semver",
+    },
   ],
 }
