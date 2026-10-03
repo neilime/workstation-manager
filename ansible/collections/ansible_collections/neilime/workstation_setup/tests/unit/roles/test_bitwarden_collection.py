@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 from ansible.parsing.dataloader import DataLoader
 
+TaskDefinition = dict[str, Any]
 
-def _load_tasks() -> list[dict[str, object]]:
+
+def _load_tasks() -> list[TaskDefinition]:
     """Load the Bitwarden collection role task file."""
 
     task_file = Path(__file__).resolve().parents[3] / "roles/bitwarden_collection/tasks/main.yml"
     loader = DataLoader()
-    return loader.load_from_file(str(task_file), trusted_as_template=True)
+    return cast(list[TaskDefinition], loader.load_from_file(str(task_file), trusted_as_template=True))
 
 
 def test_collection_role_reads_items_with_lookup_plugin() -> None:
@@ -22,7 +25,7 @@ def test_collection_role_reads_items_with_lookup_plugin() -> None:
     read_task = next(task for task in tasks if task["name"] == "Read Bitwarden collection items")
 
     assert "ansible.builtin.set_fact" in read_task
-    expression = read_task["ansible.builtin.set_fact"]["bitwarden_collection_items"]
+    expression = cast(str, read_task["ansible.builtin.set_fact"]["bitwarden_collection_items"])
     assert "query(" in expression
     assert "community.general.bitwarden" in expression
     assert "collection_id=bitwarden_collection_id" in expression

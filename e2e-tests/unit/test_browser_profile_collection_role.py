@@ -52,12 +52,16 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "import json, os, pathlib, sys\n"
             "root = pathlib.Path(os.environ['HOME'])\n"
             "command = sys.argv[1:]\n"
+            "has_session = len(command) >= 2 and command[-2] == '--session'\n"
+            "if has_session:\n"
+            "    command = command[:-2]\n"
             "with (root / 'calls').open('a') as log:\n"
             "    log.write(json.dumps(command) + '\\n')\n"
             "if command == ['--version']:\n"
             "    print('fixture')\n"
             "elif command == ['status']:\n"
-            "    print(json.dumps({'status': 'locked', 'serverUrl': 'https://vault.example.invalid'}))\n"
+            "    status = 'unlocked' if has_session else 'locked'\n"
+            "    print(json.dumps({'status': status, 'serverUrl': 'https://vault.example.invalid'}))\n"
             "elif command[0] == 'unlock':\n"
             "    if (root / 'unlock-rejected').exists():\n"
             "        sys.exit(1)\n"
@@ -143,7 +147,8 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 "HOME": str(self.fixture),
                 "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
                 "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-                "ANSIBLE_COLLECTIONS_PATH": str(WORKSPACE / "ansible/collections"),
+                "ANSIBLE_COLLECTIONS_PATH": f"{WORKSPACE / 'ansible/collections'}:"
+                + os.environ.get("ANSIBLE_COLLECTIONS_PATH", "/opt/ansible/collections:/usr/share/ansible/collections"),
                 "BITWARDEN_PASSWORD": "fixture-password",
             },
             cwd=self.fixture,
