@@ -27,6 +27,8 @@ class ProjectArchiveWriter:
         self.run_command = run_command
         self.ignored_paths: dict[Path, set[Path]] = {}
 
+    # These arguments mirror the module options; root and check mode stay keyword-only.
+    # pylint: disable-next=too-many-arguments
     def create(
         self,
         paths: list[str],

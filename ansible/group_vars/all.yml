@@ -20,6 +20,7 @@ workstation_manager:
         - python3-debian
       # Ubuntu repository packages and vendor-managed APT packages.
       apt:
+        - bleachbit
         - htop
         - xdg-utils
       # Refresh APT metadata when the cache is older than this many seconds.

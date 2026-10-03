@@ -24,7 +24,7 @@ class ArchiveRestorePlanner:
             names = {PurePosixPath(member.name) for member in archive.getmembers() if PurePosixPath(member.name).parts}
         prefix = PurePosixPath(".")
         if manifest_path is not None:
-            prefix = self._manifest_prefix(names, Path(manifest_path).read_text())
+            prefix = self._manifest_prefix(names, Path(manifest_path).read_text(encoding="utf-8"))
         else:
             # Without a sidecar, only the two default single-source
             # layouts are recognized; general archives stay relative to home.

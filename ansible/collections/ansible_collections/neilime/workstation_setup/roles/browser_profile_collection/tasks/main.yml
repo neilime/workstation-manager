@@ -2,32 +2,44 @@
 - name: Load browser profile metadata
   ansible.builtin.import_tasks: metadata.yml
 
-- name: Read encrypted browser avatar attachments into memory
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - python3
-      - -c
-      - >-
-        import base64, subprocess, sys;
-        print(base64.b64encode(subprocess.check_output(sys.argv[1:], timeout=120)).decode('ascii'))
-      - bw
-      - get
-      - attachment
-      - "{{ item.avatar_attachment_id }}"
-      - --itemid
-      - "{{ item.item_id }}"
-      - --raw
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-    BW_SESSION: "{{ bitwarden_collection_session }}"
-  loop: "{{ workstation_manager_browser_profiles | selectattr('avatar_attachment_id', 'defined') | list }}"
-  register: browser_profile_collection_avatars
-  check_mode: false
-  changed_when: false
-  no_log: true
+- name: Recover browser avatar attachments
+  block:
+    - name: Read encrypted browser avatar attachments into memory
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            import base64, subprocess, sys;
+            print(base64.b64encode(subprocess.check_output(sys.argv[1:], timeout=120)).decode('ascii'))
+          - bw
+          - get
+          - attachment
+          - "{{ item.avatar_attachment_id }}"
+          - --itemid
+          - "{{ item.item_id }}"
+          - --raw
+      environment:
+        HOME: "{{ workstation_manager_resolved.user.home }}"
+        XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+        BW_SESSION: "{{ bitwarden_collection_session }}"
+      loop: "{{ workstation_manager_browser_profiles | selectattr('avatar_attachment_id', 'defined') | list }}"
+      register: browser_profile_collection_avatars
+      until: browser_profile_collection_avatars.rc == 0
+      retries: 3
+      delay: 5
+      check_mode: false
+      changed_when: false
+      no_log: true
+  rescue:
+    - name: Stop when browser avatar recovery remains incomplete
+      ansible.builtin.fail:
+        msg: >-
+          Browser avatar recovery failed after retrying the Bitwarden attachment download.
+          Check network access and that the configured browser profiles' avatar.png
+          attachments can be downloaded from Bitwarden, then rerun the command.
 
 - name: Attach browser avatar data to its profile # noqa: var-naming[no-role-prefix]
   ansible.builtin.set_fact:

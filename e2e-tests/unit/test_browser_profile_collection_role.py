@@ -18,6 +18,7 @@ WORKSPACE = pathlib.Path(__file__).parents[2]
 COLLECTION_ROLE = "neilime.workstation_setup.browser_profile_collection"
 RECOVERY_WORDS = "synthetic recovery words must stay private"
 AVATAR = b"synthetic avatar attachment"
+ATTACHMENT_ERROR = "synthetic private attachment error"
 
 
 class BrowserProfileCollectionRoleTests(unittest.TestCase):
@@ -74,7 +75,13 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "        sys.exit(98)\n"
             "    print((root / 'items.json').read_text())\n"
             "elif command[:2] == ['get', 'attachment']:\n"
+            "    failures = root / 'attachment-failures'\n"
+            "    if failures.exists() and int(failures.read_text()) > 0:\n"
+            "        failures.write_text(str(int(failures.read_text()) - 1))\n"
+            f"        print({ATTACHMENT_ERROR!r}, file=sys.stderr)\n"
+            "        sys.exit(1)\n"
             "    if (root / 'attachment-unavailable').exists():\n"
+            f"        print({ATTACHMENT_ERROR!r}, file=sys.stderr)\n"
             "        sys.exit(1)\n"
             "    sys.stdout.buffer.write((root / 'avatar').read_bytes())\n"
             "else:\n"
@@ -163,6 +170,8 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             check=False,
         )
         self.assertNotIn(RECOVERY_WORDS, result.stdout)
+        self.assertNotIn(ATTACHMENT_ERROR, result.stdout)
+        self.assertNotIn(base64.b64encode(AVATAR).decode(), result.stdout)
         return result
 
     def test_cleanup_reports_drift_without_downloading_avatars(self) -> None:
@@ -207,7 +216,26 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
         (self.fixture / "attachment-unavailable").touch()
         result = self.run_loader(cleanup=False)
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Browser avatar recovery failed after retrying", result.stdout)
+        calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
+        self.assertEqual(sum(call[:2] == ["get", "attachment"] for call in calls), 5)
         self.assertFalse((self.fixture / "result.json").exists())
+
+    def test_avatar_download_recovers_from_a_temporary_failure(self) -> None:
+        """Apply and preview retry a failed read without publishing partial avatar data."""
+
+        for check in (False, True):
+            with self.subTest(check=check):
+                (self.fixture / "attachment-failures").write_text("1")
+                (self.fixture / "calls").write_text("")
+
+                result = self.run_loader(cleanup=False, check=check)
+
+                self.assertEqual(result.returncode, 0, result.stdout)
+                inventory = json.loads((self.fixture / "result.json").read_text())
+                self.assertEqual(base64.b64decode(inventory["profiles"][0]["avatar_png"]), AVATAR)
+                calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
+                self.assertEqual(sum(call[:2] == ["get", "attachment"] for call in calls), 2)
 
     def test_unlock_rejection_surfaces_a_retryable_marker(self) -> None:
         """A rejected vault password must fail without exposing secrets and leave a retry marker."""

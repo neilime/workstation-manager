@@ -90,6 +90,8 @@ from ansible_collections.neilime.workstation_backup.plugins.module_utils.project
 def main() -> None:
     """Create the archive without changing execution user or privilege escalation."""
 
+    # The action and module must validate the same archive options independently.
+    # pylint: disable=duplicate-code
     module = AnsibleModule(
         argument_spec={
             "path": {"type": "list", "elements": "path", "required": True},
@@ -99,6 +101,7 @@ def main() -> None:
         },
         supports_check_mode=True,
     )
+    # pylint: enable=duplicate-code
     module.get_bin_path("git", required=True)
     module.get_bin_path("tar", required=True)
     module.get_bin_path("gzip", required=True)

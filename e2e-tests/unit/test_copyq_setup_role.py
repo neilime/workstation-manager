@@ -23,6 +23,8 @@ TASK_DIRECTORY = (
 def fixture_copyq_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str, str]]:
     """Provide an isolated user home, process probe, and Flatpak command."""
 
+    # Isolated role fixtures repeat Ansible play and environment declarations.
+    # pylint: disable=duplicate-code
     home = tmp_path / "home"
     home.mkdir()
     binaries = tmp_path / "bin"
@@ -133,6 +135,7 @@ def fixture_copyq_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str,
     if "ANSIBLE_COLLECTIONS_PATH" in os.environ:
         environment["ANSIBLE_COLLECTIONS_PATH"] = os.environ["ANSIBLE_COLLECTIONS_PATH"]
     return tmp_path, environment
+    # pylint: enable=duplicate-code
 
 
 def run_setup(fixture: tuple[pathlib.Path, dict[str, str]], *options: str) -> subprocess.CompletedProcess[str]:
