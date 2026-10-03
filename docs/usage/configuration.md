@@ -99,14 +99,13 @@ Enable Oh My Zsh and select plugins in your Chezmoi-managed `.zshrc`. The framew
 supplies aliases and completion; Starship can supply the prompt and mise can
 manage runtimes alongside it. Setup also installs Déjà through mise; enable it
 after the managed mise activation snippet in your Chezmoi-managed `.zshrc`, then
-run `deja import` once to seed it from your existing shell history:
+run `deja import` once to seed it from your existing shell history. Because mise
+upgrades move Déjà between versioned install directories, keep the activation in
+its bootstrap form so each shell refreshes the cached init script against the
+current binary:
 
 ```zsh
-if [[ -r "$HOME/.local/share/deja/init.zsh" ]]; then
-  source "$HOME/.local/share/deja/init.zsh"
-else
-  eval "$(deja init zsh)"
-fi
+eval "$(deja init zsh)"
 ```
 
 Do not enable `zsh-autosuggestions` at the same time; Déjà replaces it. For a
