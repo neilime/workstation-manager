@@ -30,6 +30,10 @@ options:
     description: Whether the current run can prompt on the controlling terminal for emailed verification codes.
     type: bool
     default: false
+  tty_path:
+    description: Explicit terminal device path to use when reopening the interactive prompt.
+    type: str
+    default: ''
 attributes:
   check_mode:
     description: Authentication always executes even in check mode because later recovery checks need a live session.
@@ -42,6 +46,7 @@ EXAMPLES = r"""
     email: "{{ bitwarden_collection_email }}"
     password: "{{ bitwarden_collection_password }}"
     interactive: "{{ bitwarden_collection_interactive }}"
+    tty_path: "{{ bitwarden_collection_tty_path }}"
   register: bitwarden_collection_email_password_login
   no_log: true
 """
@@ -75,6 +80,7 @@ def main() -> None:
             "email": {"type": "str", "required": True},
             "password": {"type": "str", "required": True, "no_log": True},
             "interactive": {"type": "bool", "default": False},
+            "tty_path": {"type": "str", "default": ""},
         },
         supports_check_mode=False,
     )
@@ -83,6 +89,7 @@ def main() -> None:
             module.params["email"],
             module.params["password"],
             interactive=module.params["interactive"],
+            tty_path=module.params["tty_path"] or None,
         )
     except (OSError, ValueError) as error:
         module.fail_json(msg=str(error))
