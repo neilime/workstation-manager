@@ -185,6 +185,41 @@
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
 
+- name: Fall back to the configured Bitwarden API key after a noninteractive email-login code challenge
+  check_mode: false
+  ansible.builtin.command:
+    argv:
+      - bw
+      - login
+      - --apikey
+  environment:
+    BW_CLIENTID: "{{ bitwarden_collection_client_id }}"
+    BW_CLIENTSECRET: "{{ bitwarden_collection_client_secret }}"
+    BW_SESSION: ""
+  register: bitwarden_collection_api_key_login_fallback
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when:
+    - bitwarden_collection_status.status == 'unauthenticated'
+    - bitwarden_collection_email | length > 0
+    - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
+    - bitwarden_collection_client_id | length > 0
+    - bitwarden_collection_client_secret | length > 0
+
+- name: Fail when the fallback Bitwarden API key is rejected
+  ansible.builtin.fail:
+    msg: >-
+      {{ bitwarden_collection_purpose }} could not authenticate Bitwarden with
+      the configured API key.
+  when:
+    - bitwarden_collection_status.status == 'unauthenticated'
+    - bitwarden_collection_email | length > 0
+    - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
+    - bitwarden_collection_client_id | length > 0
+    - bitwarden_collection_client_secret | length > 0
+    - bitwarden_collection_api_key_login_fallback.rc != 0
+
 - name: Fail when Bitwarden requires an interactive verification code
   ansible.builtin.fail:
     msg: >-
@@ -194,6 +229,18 @@
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
     - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
+    - >-
+      (
+        bitwarden_collection_client_id | length == 0
+      )
+      or
+      (
+        bitwarden_collection_client_secret | length == 0
+      )
+      or
+      (
+        bitwarden_collection_api_key_login_fallback.rc | default(1)
+      ) != 0
 
 - name: Fail when the supplied Bitwarden email or password is rejected
   ansible.builtin.fail:
