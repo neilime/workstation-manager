@@ -10,6 +10,7 @@ import subprocess
 import termios
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Final
 
@@ -21,8 +22,14 @@ _CODE_PROMPTS: Final[tuple[tuple[str, str], ...]] = (
         "Bitwarden emailed a new-device verification code: ",
     ),
 )
-_CODE_REQUIRED_MESSAGES: Final[tuple[str, ...]] = ("Code is required.", "Verification code is required.")
-_CODE_REJECTED_MESSAGES: Final[tuple[str, ...]] = ("Invalid verification code.", "Invalid email or verification code")
+_CODE_REQUIRED_MESSAGES: Final[tuple[str, ...]] = (
+    "Code is required.",
+    "Verification code is required.",
+)
+_CODE_REJECTED_MESSAGES: Final[tuple[str, ...]] = (
+    "Invalid verification code.",
+    "Invalid email or verification code",
+)
 _EMAIL_PASSWORD_REJECTED_MESSAGES: Final[tuple[str, ...]] = (
     "Invalid master password.",
     "Username or password is incorrect. Try again.",
@@ -55,18 +62,33 @@ class BitwardenLoginResult:
     failure_reason: str = ""
 
 
+#
+# tty_path and the injected prompt callbacks are separate inputs so production
+# calls can target an explicit terminal device while tests still override the
+# prompt behavior directly.
+# pylint: disable=too-many-arguments
 def login_with_email_password(
     email: str,
     password: str,
     *,
     interactive: bool,
+    tty_path: str | None = None,
     prompt_for_code: Callable[[str], str] | None = None,
     notice: Callable[[str], None] | None = None,
 ) -> BitwardenLoginResult:
     """Log in with email/password and hide any emailed verification code entry."""
 
-    prompt_callback = prompt_for_code if prompt_for_code is not None else _prompt_for_hidden_code
-    notice_callback = notice if notice is not None else _write_notice
+    prompt_callback: Callable[[str], str]
+    if prompt_for_code is None:
+        prompt_callback = partial(_prompt_for_hidden_code, tty_path=tty_path)
+    else:
+        prompt_callback = prompt_for_code
+
+    notice_callback: Callable[[str], None]
+    if notice is None:
+        notice_callback = partial(_write_notice, tty_path=tty_path)
+    else:
+        notice_callback = notice
 
     while True:
         result = _run_login_attempt(
@@ -242,27 +264,31 @@ def _normalize_output(raw_output: bytes) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
-def _prompt_for_hidden_code(prompt: str) -> str:
+def _prompt_for_hidden_code(prompt: str, *, tty_path: str | None = None) -> str:
     """Read a non-empty verification code from the controlling terminal without echo."""
 
     try:
-        with Path("/dev/tty").open("r+", encoding="utf-8", buffering=1) as tty:
+        tty_device = Path(tty_path or os.environ.get("WORKSTATION_MANAGER_TTY") or "/dev/tty")
+        with (
+            tty_device.open("r", encoding="utf-8", buffering=1) as tty_reader,
+            tty_device.open("w", encoding="utf-8", buffering=1) as tty_writer,
+        ):
             while True:
-                tty.write(prompt)
-                tty.flush()
-                tty_fd = tty.fileno()
+                tty_writer.write(prompt)
+                tty_writer.flush()
+                tty_fd = tty_reader.fileno()
                 original = termios.tcgetattr(tty_fd)
                 hidden = termios.tcgetattr(tty_fd)
                 hidden[3] &= ~termios.ECHO
                 termios.tcsetattr(tty_fd, termios.TCSANOW, hidden)
                 try:
-                    value = tty.readline()
+                    value = tty_reader.readline()
                 except KeyboardInterrupt as error:
                     raise BitwardenPromptCancelledError("Bitwarden verification code entry was cancelled.") from error
                 finally:
                     termios.tcsetattr(tty_fd, termios.TCSANOW, original)
-                    tty.write("\n")
-                    tty.flush()
+                    tty_writer.write("\n")
+                    tty_writer.flush()
                 if value == "":
                     raise BitwardenPromptCancelledError("Bitwarden verification code entry reached EOF.")
                 value = value.strip()
@@ -272,11 +298,12 @@ def _prompt_for_hidden_code(prompt: str) -> str:
         raise BitwardenPromptUnavailableError("Interactive Bitwarden verification needs a terminal.") from error
 
 
-def _write_notice(message: str) -> None:
+def _write_notice(message: str, *, tty_path: str | None = None) -> None:
     """Best-effort safe notice for retryable verification failures."""
 
     try:
-        with Path("/dev/tty").open("w", encoding="utf-8", buffering=1) as tty:
+        tty_device = Path(tty_path or os.environ.get("WORKSTATION_MANAGER_TTY") or "/dev/tty")
+        with tty_device.open("w", encoding="utf-8", buffering=1) as tty:
             tty.write(message)
     except OSError:
         pass

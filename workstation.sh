@@ -109,6 +109,11 @@ interactive_terminal_flag() {
 	printf '0\n'
 }
 
+interactive_terminal_path() {
+	has_interactive_terminal || return 1
+	tty </dev/tty 2>/dev/null
+}
+
 shell_quote() {
 	printf '%s' "'"
 	printf '%s' "$1" | sed "s/'/'\\\\''/g"
@@ -514,6 +519,10 @@ run_ansible_pull() {
 
 	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
 		set -- "WORKSTATION_MANAGER_GITHUB_TOKEN=$GITHUB_TOKEN_VALUE" "$@"
+	fi
+
+	if interactive_tty_path="$(interactive_terminal_path)"; then
+		set -- "WORKSTATION_MANAGER_TTY=$interactive_tty_path" "$@"
 	fi
 
 	# Preserve the target desktop session for GPG and interactive application setup.

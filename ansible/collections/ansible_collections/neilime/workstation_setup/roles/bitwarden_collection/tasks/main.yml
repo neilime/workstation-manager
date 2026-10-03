@@ -25,6 +25,8 @@
       {{ lookup('ansible.builtin.env', 'BITWARDEN_PASSWORD') | default('', true) }}
     bitwarden_collection_interactive: >-
       {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) == '1' }}
+    bitwarden_collection_tty_path: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY') | default('', true) }}
     bitwarden_collection_session: ""
   no_log: true
 
@@ -179,6 +181,7 @@
     email: "{{ bitwarden_collection_email }}"
     password: "{{ bitwarden_collection_password }}"
     interactive: "{{ bitwarden_collection_interactive }}"
+    tty_path: "{{ bitwarden_collection_tty_path }}"
   register: bitwarden_collection_email_password_login
   no_log: true
   when:
