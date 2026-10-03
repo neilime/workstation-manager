@@ -109,6 +109,11 @@ interactive_terminal_flag() {
 	printf '0\n'
 }
 
+interactive_terminal_path() {
+	has_interactive_terminal || return 1
+	tty </dev/tty 2>/dev/null
+}
+
 shell_quote() {
 	printf '%s' "'"
 	printf '%s' "$1" | sed "s/'/'\\\\''/g"
@@ -528,6 +533,10 @@ run_ansible_pull() {
 		"WORKSTATION_MANAGER_USER_HOME=$TARGET_USER_HOME" \
 		"WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=$PRIVATE_OVERRIDE_LOCAL_FILE" \
 		"WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
+
+	if interactive_tty_path="$(interactive_terminal_path)"; then
+		set -- "WORKSTATION_MANAGER_TTY=$interactive_tty_path" "$@"
+	fi
 
 	# ansible-pull relays playbook output; flush prompts before waiting for input.
 	if [ "${WORKSTATION_MANAGER_SKIP_SUDO:-0}" = "1" ]; then

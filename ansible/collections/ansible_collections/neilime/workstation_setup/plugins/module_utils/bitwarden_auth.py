@@ -60,13 +60,23 @@ def login_with_email_password(
     password: str,
     *,
     interactive: bool,
+    tty_path: str | None = None,
     prompt_for_code: Callable[[str], str] | None = None,
     notice: Callable[[str], None] | None = None,
 ) -> BitwardenLoginResult:
     """Log in with email/password and hide any emailed verification code entry."""
 
-    prompt_callback = prompt_for_code if prompt_for_code is not None else _prompt_for_hidden_code
-    notice_callback = notice if notice is not None else _write_notice
+    if prompt_for_code is None:
+        def prompt_callback(prompt: str) -> str:
+            return _prompt_for_hidden_code(prompt, tty_path=tty_path)
+    else:
+        prompt_callback = prompt_for_code
+
+    if notice is None:
+        def notice_callback(message: str) -> None:
+            _write_notice(message, tty_path=tty_path)
+    else:
+        notice_callback = notice
 
     while True:
         result = _run_login_attempt(
@@ -242,11 +252,11 @@ def _normalize_output(raw_output: bytes) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
-def _prompt_for_hidden_code(prompt: str) -> str:
+def _prompt_for_hidden_code(prompt: str, *, tty_path: str | None = None) -> str:
     """Read a non-empty verification code from the controlling terminal without echo."""
 
     try:
-        with Path("/dev/tty").open("r+", encoding="utf-8", buffering=1) as tty:
+        with Path(tty_path or "/dev/tty").open("r+", encoding="utf-8", buffering=1) as tty:
             while True:
                 tty.write(prompt)
                 tty.flush()
@@ -272,11 +282,11 @@ def _prompt_for_hidden_code(prompt: str) -> str:
         raise BitwardenPromptUnavailableError("Interactive Bitwarden verification needs a terminal.") from error
 
 
-def _write_notice(message: str) -> None:
+def _write_notice(message: str, *, tty_path: str | None = None) -> None:
     """Best-effort safe notice for retryable verification failures."""
 
     try:
-        with Path("/dev/tty").open("w", encoding="utf-8", buffering=1) as tty:
+        with Path(tty_path or "/dev/tty").open("w", encoding="utf-8", buffering=1) as tty:
             tty.write(message)
     except OSError:
         pass

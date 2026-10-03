@@ -465,6 +465,67 @@ class RepositorySourceTests(unittest.TestCase):
             self.assertEqual(invocation["cwd"], str(repository))
             self.assertIn(str(repository / "ansible/backup.yml"), invocation["args"])
 
+    def test_run_ansible_pull_exports_interactive_tty_path(self) -> None:
+        """Interactive runs should forward the resolved TTY path to Ansible."""
+
+        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        self.assertEqual(definitions.pop(), 'main "$@"')
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            repository = fixture / "repository"
+            (repository / "ansible").mkdir(parents=True)
+            (repository / "ansible/backup.yml").write_text("[]\n")
+            wrapper = fixture / "wrapper-definitions.sh"
+            wrapper.write_text("\n".join(definitions) + "\n")
+            commands = {
+                "id": '#!/bin/sh\nprintf "%s\n" "$TEST_PROCESS_USER"\n',
+                "getent": ('#!/bin/sh\nprintf "runner:x:1000:1000::%s:/bin/sh\n" "$TEST_TARGET_HOME"\n'),
+                "sudo": sudo_passthrough_script("export TEST_CONTROLLER_PRIVILEGED=1\n"),
+                "ansible-playbook": (
+                    f"#!{sys.executable}\n"
+                    "import json, os, sys\n"
+                    "print(json.dumps({\n"
+                    '    "cwd": os.getcwd(),\n'
+                    '    "args": sys.argv[1:],\n'
+                    '    "tty": os.environ.get("WORKSTATION_MANAGER_TTY", ""),\n'
+                    "}))\n"
+                ),
+                "ansible-pull": "#!/bin/sh\nexit 99\n",
+            }
+            for name, content in commands.items():
+                command = fixture / name
+                command.write_text(content)
+                command.chmod(0o700)
+
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$1"\n'
+                    'has_interactive_terminal() { return 0; }\n'
+                    'interactive_terminal_path() { printf "%s\\n" "/dev/pts/fake"; }\n'
+                    'REPOSITORY_URL="$2"\n'
+                    'REPOSITORY_BRANCH="feature/local-fix"\n'
+                    "run_ansible_pull ansible/backup.yml 0\n",
+                    "entrypoint-test",
+                    str(wrapper),
+                    str(repository),
+                ],
+                env={
+                    "PATH": f"{fixture}:/usr/bin:/bin",
+                    "HOME": temporary_dir,
+                    "USER": "runner",
+                    "TEST_PROCESS_USER": "runner",
+                    "TEST_TARGET_HOME": "/home/runner",
+                },
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            invocation = json.loads(result.stdout.splitlines()[-1])
+            self.assertEqual(invocation["tty"], "/dev/pts/fake")
+
 
 class BitwardenRetryTests(unittest.TestCase):
     """Retry interactive Bitwarden auth without leaking credentials."""

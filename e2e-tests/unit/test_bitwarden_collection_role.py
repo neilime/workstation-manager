@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,7 +21,9 @@ TASK_FILE = (
 )
 
 
-def prepare_fixture(fixture: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+def prepare_fixture(
+    fixture: pathlib.Path, *, email_login_scenario: str = "code-required"
+) -> tuple[pathlib.Path, pathlib.Path]:
     """Create a fake Bitwarden CLI and a playbook for the production role tasks."""
 
     audit_path = fixture / "commands.jsonl"
@@ -42,6 +46,7 @@ state_path = pathlib.Path({str(state_path)!r})
 state = {{"authenticated": False, "unlocked": False}}
 if state_path.exists():
     state.update(json.loads(state_path.read_text(encoding="utf-8")))
+email_login_scenario = {email_login_scenario!r}
 
 def save_state() -> None:
     state_path.write_text(json.dumps(state), encoding="utf-8")
@@ -65,8 +70,24 @@ if args == ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD
     if os.environ["BITWARDEN_PASSWORD"] != "fixture-password":
         print("Invalid master password.", file=sys.stderr)
         sys.exit(1)
-    print("Code is required.")
-    sys.exit(1)
+    if email_login_scenario == "code-required":
+        print("Code is required.")
+        sys.exit(1)
+    if email_login_scenario == "interactive-code":
+        if not sys.stdin.isatty():
+            print("Code is required.")
+            sys.exit(1)
+        print("Two-step login code:", end="", flush=True)
+        code = sys.stdin.readline().strip()
+        if code != "123456":
+            print("\\nInvalid verification code.")
+            sys.exit(1)
+        state["authenticated"] = True
+        save_state()
+        print("\\nfixture-login-session")
+        sys.exit(0)
+    print("unexpected login scenario", email_login_scenario, file=sys.stderr)
+    sys.exit(98)
 
 if args == ["login", "--apikey"]:
     if os.environ.get("BW_CLIENTID") != "fixture-client" or os.environ.get("BW_CLIENTSECRET") != "fixture-secret":
@@ -137,14 +158,23 @@ sys.exit(99)
 
 
 class BitwardenCollectionRoleTests(unittest.TestCase):
-    """Setup should reuse API-key authentication when email login needs a hidden code."""
+    """Setup should authenticate Bitwarden collection access for setup roles."""
 
-    def run_role(self) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+    def run_role(
+        self,
+        *,
+        interactive: bool = False,
+        include_api_key: bool = True,
+        email_login_scenario: str = "code-required",
+    ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
         """Run the production role tasks against the fake Bitwarden CLI."""
 
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            audit_path, playbook = prepare_fixture(fixture)
+            audit_path, playbook = prepare_fixture(
+                fixture,
+                email_login_scenario=email_login_scenario,
+            )
             config = fixture / "ansible.cfg"
             config.write_text("[defaults]\n", encoding="utf-8")
             environment = {
@@ -158,20 +188,52 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 "EXPECTED_SERVER": "https://vault.example.invalid",
                 "EXPECTED_COLLECTION_ID": "fixture-collection",
                 "BITWARDEN_EMAIL": "fixture@example.com",
-                "BITWARDEN_CLIENT_ID": "fixture-client",
-                "BITWARDEN_CLIENT_SECRET": "fixture-secret",
                 "BITWARDEN_PASSWORD": "fixture-password",
-                "WORKSTATION_MANAGER_INTERACTIVE": "0",
+                "WORKSTATION_MANAGER_INTERACTIVE": "1" if interactive else "0",
             }
-            result = subprocess.run(
-                ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
-                cwd=fixture,
-                env=environment,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            if include_api_key:
+                environment["BITWARDEN_CLIENT_ID"] = "fixture-client"
+                environment["BITWARDEN_CLIENT_SECRET"] = "fixture-secret"
+
+            if interactive:
+                command = shlex.join(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        (
+                            'WORKSTATION_MANAGER_TTY="$(tty)"\n'
+                            "export WORKSTATION_MANAGER_TTY\n"
+                            f"exec ansible-playbook -i localhost, -c local {shlex.quote(str(playbook))}\n"
+                        ),
+                    ]
+                )
+                result = subprocess.run(
+                    [
+                        shutil.which("script") or "script",
+                        "--quiet",
+                        "--return",
+                        "--command",
+                        command,
+                        os.devnull,
+                    ],
+                    cwd=fixture,
+                    env=environment,
+                    input="123456\n",
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            else:
+                result = subprocess.run(
+                    ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+                    cwd=fixture,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
             calls = (
                 [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
                 if audit_path.exists()
@@ -194,6 +256,31 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 ["status"],
                 ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD", "--method", "1", "--raw"],
                 ["login", "--apikey"],
+                ["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"],
+                ["sync"],
+                ["list", "items", "--collectionid", "fixture-collection"],
+            ],
+        )
+        self.assertNotIn("interactive Bitwarden verification code prompt", output)
+
+    def test_interactive_email_code_challenge_uses_exported_tty_path(self) -> None:
+        """Interactive setup should relay emailed verification codes through the exported TTY path."""
+
+        result, calls = self.run_role(
+            interactive=True,
+            include_api_key=False,
+            email_login_scenario="interactive-code",
+        )
+        output = result.stdout + result.stderr
+
+        self.assertEqual(result.returncode, 0, output)
+        self.assertEqual(
+            calls,
+            [
+                ["--version"],
+                ["--version"],
+                ["status"],
+                ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD", "--method", "1", "--raw"],
                 ["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"],
                 ["sync"],
                 ["list", "items", "--collectionid", "fixture-collection"],
