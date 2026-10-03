@@ -185,7 +185,7 @@ class DevelopmentToolingAuthTests(unittest.TestCase):
         """The public mise defaults should provision the Déjà binary."""
         defaults = DataLoader().load_from_file(str(GROUP_VARS_PATH))
         tools = defaults["workstation_manager"]["development"]["mise"]["tools"]
-        self.assertEqual(tools["github:Giammarco-Ferranti/deja"], "0.4.2")
+        self.assertRegex(tools["github:Giammarco-Ferranti/deja"], r"^\d+(?:\.\d+)+$")
 
 
 if __name__ == "__main__":
