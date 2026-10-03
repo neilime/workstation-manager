@@ -98,11 +98,12 @@ directory or manage them through Chezmoi.
 Enable Oh My Zsh and select plugins in your Chezmoi-managed `.zshrc`. The framework
 supplies aliases and completion; Starship can supply the prompt and mise can
 manage runtimes alongside it. Setup also installs Déjà through mise; enable it
-after the managed mise activation snippet in your Chezmoi-managed `.zshrc`, then
-run `deja import` once to seed it from your existing shell history. Because mise
-upgrades move Déjà between versioned install directories, keep the activation in
-its bootstrap form so each shell refreshes the cached init script against the
-current binary:
+immediately after sourcing the managed `~/.config/workstation-manager/mise.sh`
+helper in your Chezmoi-managed `.zshrc`. That helper runs `mise activate zsh`,
+which puts `deja` on `PATH`. Run `deja import` once to seed it from your
+existing shell history. Because mise upgrades move Déjà between versioned
+install directories, keep the activation in its bootstrap form so each shell
+refreshes the cached init script against the current binary:
 
 ```zsh
 source "$HOME/.config/workstation-manager/mise.sh"
