@@ -102,8 +102,9 @@ immediately after sourcing the managed `~/.config/workstation-manager/mise.sh`
 helper in your Chezmoi-managed `.zshrc`. That helper runs `mise activate zsh`,
 which puts `deja` on `PATH`. Run `deja import` once to seed it from your
 existing shell history. Because mise upgrades move Déjà between versioned
-install directories, keep the activation in its bootstrap form so each shell
-refreshes the cached init script against the current binary:
+install directories, keep the `eval "$(deja init zsh)"` line in your `.zshrc`
+instead of caching its output so each shell refreshes the init script against
+the current binary:
 
 ```zsh
 source "$HOME/.config/workstation-manager/mise.sh"
