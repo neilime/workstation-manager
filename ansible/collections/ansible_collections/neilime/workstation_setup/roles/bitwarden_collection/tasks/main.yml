@@ -274,6 +274,7 @@
           collection_id=bitwarden_collection_id,
           bw_session=bitwarden_collection_session
         )
+        | default([[]])
         | first
         | default([], true)
       }}
