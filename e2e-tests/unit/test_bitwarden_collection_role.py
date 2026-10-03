@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from typing import Any
 
 from ansible.parsing.dataloader import DataLoader
 
@@ -48,10 +49,16 @@ import sys
 
 audit_path = pathlib.Path(os.environ["AUDIT_PATH"])
 audit_path.parent.mkdir(parents=True, exist_ok=True)
+args = sys.argv[1:]
+session = os.environ.get("BW_SESSION", "")
+if len(args) >= 2 and args[-2] == "--session":
+    session = args[-1]
+    args = args[:-2]
 with audit_path.open("a", encoding="utf-8") as audit:
-    audit.write(json.dumps(sys.argv[1:]) + "\\n")
+    audit.write(json.dumps(args) + "\\n")
 
-state_path = pathlib.Path(os.environ.get("XDG_CONFIG_HOME", os.environ["HOME"])) / "state.json"
+config_home = pathlib.Path(os.environ.get("XDG_CONFIG_HOME", str(pathlib.Path(os.environ["HOME"]) / ".config")))
+state_path = pathlib.Path(os.environ.get("BITWARDENCLI_APPDATA_DIR", str(config_home / "Bitwarden CLI"))) / "state.json"
 state_path.parent.mkdir(parents=True, exist_ok=True)
 items = json.loads({json.dumps(collection_items or [])!r})
 state = {{"authenticated": False, "unlocked": False, "sync_attempts": 0, "server": os.environ["EXPECTED_SERVER"]}}
@@ -64,7 +71,6 @@ sync_failures_before_success = {sync_failures_before_success!r}
 def save_state() -> None:
     state_path.write_text(json.dumps(state), encoding="utf-8")
 
-args = sys.argv[1:]
 expected_server = os.environ["EXPECTED_SERVER"]
 expected_collection_id = os.environ["EXPECTED_COLLECTION_ID"]
 
@@ -74,6 +80,8 @@ if args == ["--version"]:
 
 if args == ["status"]:
     status = "locked" if state["authenticated"] else "unauthenticated"
+    if state["unlocked"] and session == "fixture-session":
+        status = "unlocked"
     print(json.dumps({{"status": status, "serverUrl": state["server"]}}))
     sys.exit(0)
 
@@ -138,7 +146,7 @@ if args == ["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"]:
     sys.exit(0)
 
 if args == ["sync"]:
-    if not state["unlocked"]:
+    if not state["unlocked"] or session != "fixture-session":
         print("Vault is locked.", file=sys.stderr)
         sys.exit(1)
     state["sync_attempts"] += 1
@@ -149,14 +157,20 @@ if args == ["sync"]:
     sys.exit(0)
 
 if args == ["list", "items", "--collectionid", expected_collection_id]:
-    if not state["unlocked"]:
+    if not state["unlocked"] or session != "fixture-session":
         print("Vault is locked.", file=sys.stderr)
         sys.exit(1)
-    print(json.dumps(items))
+    if state.get("read_failed"):
+        print("synthetic-read-secret", file=sys.stderr)
+        sys.exit(1)
+    if state.get("malformed_items"):
+        print("not valid json: synthetic-read-secret")
+    else:
+        print(json.dumps(items))
     sys.exit(0)
 
 if args[:2] == ["get", "item"]:
-    if not state["unlocked"] or os.environ.get("BW_SESSION") != "fixture-session":
+    if not state["unlocked"] or session != "fixture-session":
         print("Vault is locked.", file=sys.stderr)
         sys.exit(1)
     for item in items:
@@ -188,12 +202,19 @@ sys.exit(99)
                         "bitwarden_collection_id": "fixture-collection",
                         "bitwarden_collection_purpose": "Bitwarden SSH restore",
                         "workstation_manager_resolved": {
+                            "user": {"name": pwd.getpwuid(os.getuid()).pw_name, "home": str(fixture)},
                             "secrets": {"bitwarden": {"server": "https://vault.example.invalid"}},
                             "system": {"packages": {"cache_valid_time": 3600}},
                         },
                     },
                     "tasks": [
-                        {"ansible.builtin.import_role": {"name": "neilime.workstation_setup.bitwarden_collection"}}
+                        {"ansible.builtin.import_role": {"name": "neilime.workstation_setup.bitwarden_collection"}},
+                        {
+                            "name": "Verify collection results without printing secrets",
+                            "ansible.builtin.assert": {"that": "bitwarden_collection_items == fixture_expected_items"},
+                            "vars": {"fixture_expected_items": collection_items or []},
+                            "no_log": True,
+                        },
                     ],
                 }
             ]
@@ -211,30 +232,23 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
         *,
         interactive: bool = False,
         include_api_key: bool = True,
-        email_login_scenario: str = "code-required",
-        sync_failures_before_success: int = 0,
-        initial_state: dict | None = None,
         environment_overrides: dict[str, str] | None = None,
         playbook_arguments: tuple[str, ...] = (),
+        **fixture_options: Any,
     ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
         """Run the production role tasks against the fake Bitwarden CLI."""
 
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            audit_path, playbook = prepare_fixture(
-                fixture,
-                email_login_scenario=email_login_scenario,
-                sync_failures_before_success=sync_failures_before_success,
-                initial_state=initial_state,
-            )
-            config = fixture / "ansible.cfg"
-            config.write_text("[defaults]\n", encoding="utf-8")
+            audit_path, playbook = prepare_fixture(fixture, **fixture_options)
+            (fixture / "ansible.cfg").write_text("[defaults]\n", encoding="utf-8")
             environment = {
                 "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
                 "HOME": str(fixture),
                 "LC_ALL": "C.UTF-8",
-                "ANSIBLE_CONFIG": str(config),
+                "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
                 "ANSIBLE_HOME": str(fixture / ".ansible"),
+                "ANSIBLE_LOG_PATH": str(fixture / "ansible.log"),
                 "ANSIBLE_COLLECTIONS_PATH": os.environ["ANSIBLE_COLLECTIONS_PATH"],
                 "AUDIT_PATH": str(audit_path),
                 "EXPECTED_SERVER": "https://vault.example.invalid",
@@ -293,7 +307,52 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 if audit_path.exists()
                 else []
             )
+            log = (fixture / "ansible.log").read_text(encoding="utf-8")
+            self.assertNotIn("synthetic-read-secret", log)
+            # Authentication command tracing precedes the lookup; check its error log separately.
+            self.assertNotIn("fixture-session", log.split("Read Bitwarden collection items", 1)[-1])
             return result, calls
+
+    def test_collection_lookup_preserves_empty_single_and_multiple_records(self) -> None:
+        """The real upstream lookup must return complete records with a stable list shape."""
+
+        for count in (0, 1, 2):
+            with self.subTest(count=count):
+                items = [
+                    {"id": str(index), "name": f"Key {index}", "notes": "synthetic-read-secret"}
+                    for index in range(count)
+                ]
+                result, calls = self.run_role(collection_items=items)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(calls[-2:], [["status"], ["list", "items", "--collectionid", "fixture-collection"]])
+                self.assertNotIn("synthetic-read-secret", result.stdout + result.stderr)
+
+    def test_lookup_read_failures_do_not_become_empty_collections(self) -> None:
+        """CLI errors and malformed JSON must fail without disclosing vault contents."""
+
+        for state in ({"read_failed": True}, {"malformed_items": True}):
+            with self.subTest(state=state):
+                result, _calls = self.run_role(initial_state=state, playbook_arguments=("-vvv",))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("synthetic-read-secret", result.stdout + result.stderr)
+
+    def test_lookup_reads_collections_during_dry_runs(self) -> None:
+        """Both preview modes authenticate, sync, and read without replacing records."""
+
+        for arguments in (("--check",), ("--extra-vars", '{"workstation_backup_dry_run": true}')):
+            with self.subTest(arguments=arguments):
+                result, calls = self.run_role(playbook_arguments=arguments)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(["sync"], calls)
+                self.assertEqual(calls[-1], ["list", "items", "--collectionid", "fixture-collection"])
+
+    def test_persistent_sync_failure_prevents_collection_reads(self) -> None:
+        """Exhausted retries must fail before the lookup can consume stale records."""
+
+        result, calls = self.run_role(sync_failures_before_success=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls.count(["sync"]), 4)
+        self.assertFalse(any(call[0] == "list" for call in calls))
 
     def test_browser_collection_and_live_reads_share_managed_user_cache(self) -> None:
         """Root-style bootstrap must authenticate the same cache used by browser recovery."""
@@ -362,6 +421,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 "LC_ALL": "C.UTF-8",
                 "ANSIBLE_CONFIG": str(config),
                 "ANSIBLE_HOME": str(fixture / ".ansible"),
+                "ANSIBLE_LOG_PATH": str(fixture / "ansible.log"),
                 "ANSIBLE_COLLECTIONS_PATH": os.environ["ANSIBLE_COLLECTIONS_PATH"],
                 "PYTHONPATH": str(collection_root.parents[2]),
                 "AUDIT_PATH": str(audit_path),
@@ -383,8 +443,8 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertTrue((managed_home / ".config/state.json").exists())
-            self.assertFalse((fixture / "bootstrap-config/state.json").exists())
+            self.assertTrue((managed_home / ".config/Bitwarden CLI/state.json").exists())
+            self.assertFalse((fixture / "bootstrap-config/Bitwarden CLI/state.json").exists())
 
     def test_noninteractive_email_code_challenge_falls_back_to_api_key(self) -> None:
         """CI-style runs should keep going when only the email login needs a verification code."""
@@ -403,6 +463,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 ["login", "--apikey"],
                 ["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"],
                 ["sync"],
+                ["status"],
                 ["list", "items", "--collectionid", "fixture-collection"],
             ],
         )
@@ -428,6 +489,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD", "--method", "1", "--raw"],
                 ["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"],
                 ["sync"],
+                ["status"],
                 ["list", "items", "--collectionid", "fixture-collection"],
             ],
         )
@@ -512,7 +574,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
     def test_dry_runs_do_not_logout_or_change_servers(self) -> None:
         """Both setup check mode and backup previews reject the mismatch read-only."""
 
-        for arguments in (("--check",), ("--extra-vars", "workstation_backup_dry_run=true")):
+        for arguments in (("--check",), ("--extra-vars", '{"workstation_backup_dry_run": true}')):
             with self.subTest(arguments=arguments):
                 result, calls = self.run_role(
                     initial_state={"server": "https://old-vault.example.invalid", "authenticated": True},
@@ -550,6 +612,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 ["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"],
                 ["sync"],
                 ["sync"],
+                ["status"],
                 ["list", "items", "--collectionid", "fixture-collection"],
             ],
         )

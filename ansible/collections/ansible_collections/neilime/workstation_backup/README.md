@@ -17,7 +17,10 @@ of approved changes still stop backup.
 GPG ownertrust is exported from the managed user's trust database and matched to
 each key by fingerprint; see the recovery guide for missing-record behavior.
 Deferred SSH/GPG writes use the current unlocked Bitwarden session after both
-collections have been read, and check session status before saving.
+collections have been read, and check session status before saving. Item reads and
+post-write verification use `community.general.bitwarden` with exactly one expected
+record. See the [integration guide](../../../../../docs/development/README.md#bitwarden-integration)
+for the remaining CLI operations.
 Browser actions reconcile metadata, run live Sync, and compare recovery codes
 with Bitwarden automatically. Code mismatches offer an explicit `save` direction.
 Approved operations close Brave gracefully and preserve its previous

@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import pty
+import pwd
 import select
 import shlex
 import subprocess
@@ -308,7 +309,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
         environment = {
             "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
             "HOME": str(fixture),
-            "USER": "fixture",
+            "USER": pwd.getpwuid(os.getuid()).pw_name,
             "ANSIBLE_HOME": str(fixture / ".ansible"),
             "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
             "GIT_CONFIG_GLOBAL": os.devnull,

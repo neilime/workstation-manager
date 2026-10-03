@@ -14,7 +14,7 @@ license:
   - MIT
 dependencies:
   ansible.posix: "*"
-  community.general: "*"
+  community.general: ">=10.4.0"
 repository: https://github.com/neilime/workstation-manager
 documentation: https://github.com/neilime/workstation-manager/blob/main/README.md
 homepage: https://github.com/neilime/workstation-manager

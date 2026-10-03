@@ -104,6 +104,33 @@ script has no source file on disk. Local runs reuse their entrypoint source.
 The runner validates shell syntax before execution and removes its temporary
 source and credential files afterward.
 
+## Bitwarden integration
+
+Collection enumeration and key backup item reads use
+[`community.general.bitwarden`](https://docs.ansible.com/projects/ansible/latest/collections/community/general/bitwarden_lookup.html).
+The tooling image pins the collection in its
+[requirements](../../docker/tooling/requirements.yml); the runtime requires at least
+10.4.0 for exact item-count validation. `query(...) | first` preserves an empty,
+single-item, or multi-item collection as a list. Individual item reads require
+`result_count=1`; missing records and lookup failures stop backup.
+
+Lookups execute on the controller and do not inherit task `become` or
+`environment`. The thin `neilime.workstation_setup.bitwarden` adapter selects the
+managed user's `~/.config/Bitwarden CLI` cache only while calling the community
+lookup, then restores the controller environment. It also replaces upstream
+exception text with a safe failure: CLI stderr can contain secrets, and Ansible
+can display lookup exceptions before task `no_log` takes effect. Authentication
+and cache sync run as the managed user in the same directory. The adapter does
+not implement record retrieval or suppress failed reads.
+
+Keep CLI operations for login, unlock, server selection, collection metadata,
+attachments, and vault writes: the lookup does not implement them. Sync also stays
+in managed-user tasks to preserve cache ownership and retries, rather than using
+the lookup's controller-side `sync` option. Browser modules use the CLI during
+live recovery and write verification because Ansible lookups are controller
+plugins and cannot execute inside managed-node modules. Do not replace those
+fresh reads with previously captured collection facts.
+
 ## Dependency updates
 
 The [Renovate workflow](../../.github/workflows/renovate.yml) runs every Friday
