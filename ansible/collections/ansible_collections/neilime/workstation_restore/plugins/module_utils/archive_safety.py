@@ -7,6 +7,33 @@ import tarfile
 from pathlib import Path, PurePosixPath
 
 
+def _validate_link(
+    member: tarfile.TarInfo,
+    destination: Path,
+    extraction_root: Path,
+    target: Path,
+    symlinks: set[PurePosixPath],
+) -> None:
+    """Validate relative link targets and reject unsafe hard links."""
+
+    link = PurePosixPath(member.linkname)
+    if member.issym() and link.is_absolute():
+        return
+    if link.is_absolute():
+        raise ValueError(f"absolute archive link is not supported: {member.name}")
+    hard_link = PurePosixPath(posixpath.normpath(member.linkname))
+    if member.islnk() and any(path in symlinks for path in (hard_link, *hard_link.parents)):
+        raise ValueError(f"archive hard link traverses an archived symlink: {member.name}")
+    link_base = destination.parent if member.issym() else extraction_root
+    link_path = link_base.joinpath(*link.parts)
+    # Symlink creation does not access the referent. Resolve only hard
+    # links; a relative symlink may refer to an external interpreter
+    # through another existing symlink inside the restored tree.
+    link_target = Path(posixpath.normpath(str(link_path))) if member.issym() else link_path.resolve()
+    if not link_target.is_relative_to(target):
+        raise ValueError(f"archive link escapes the target home: {member.name}")
+
+
 def validate_archive(archive_path: str, target_home: str, *, extraction_directory: str | None = None) -> int:
     """Reject traversal, unsafe links and special files before extraction."""
 
@@ -34,23 +61,7 @@ def validate_archive(archive_path: str, target_home: str, *, extraction_director
             if not checked_destination.resolve().is_relative_to(target):
                 raise ValueError(f"archive member escapes the target home: {member.name}")
             if member.issym() or member.islnk():
-                link = PurePosixPath(member.linkname)
-                if member.issym() and link.is_absolute():
-                    count += 1
-                    continue
-                if link.is_absolute():
-                    raise ValueError(f"absolute archive link is not supported: {member.name}")
-                hard_link = PurePosixPath(posixpath.normpath(member.linkname))
-                if member.islnk() and any(path in symlinks for path in (hard_link, *hard_link.parents)):
-                    raise ValueError(f"archive hard link traverses an archived symlink: {member.name}")
-                link_base = destination.parent if member.issym() else extraction_root
-                link_path = link_base.joinpath(*link.parts)
-                # Symlink creation does not access the referent. Resolve only hard
-                # links; a relative symlink may refer to an external interpreter
-                # through another existing symlink inside the restored tree.
-                link_target = Path(posixpath.normpath(str(link_path))) if member.issym() else link_path.resolve()
-                if not link_target.is_relative_to(target):
-                    raise ValueError(f"archive link escapes the target home: {member.name}")
+                _validate_link(member, destination, extraction_root, target, symlinks)
             elif not member.isfile() and not member.isdir():
                 raise ValueError(f"special archive file is not supported: {member.name}")
             count += 1

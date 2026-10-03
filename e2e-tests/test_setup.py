@@ -40,6 +40,40 @@ def test_setup_bootstrap_tools_are_available(host) -> None:
     assert git_result.succeeded
 
 
+def test_setup_manages_weekly_bleachbit_schedule(host) -> None:
+    """Setup should install the weekly BleachBit preset-clean timer assets."""
+
+    # Arrange
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    clean_command = f"{user_home}/.local/bin/workstation-manager-bleachbit-clean"
+    helper_script = host.file(f"{user_home}/.local/share/workstation-manager/bleachbit-clean.py")
+    activator_script = host.file(f"{user_home}/.local/bin/workstation-manager-bleachbit-clean-activate-timer")
+    service_unit = host.file(f"{user_home}/.config/systemd/user/workstation-manager-bleachbit-clean.service")
+    timer_unit = host.file(f"{user_home}/.config/systemd/user/workstation-manager-bleachbit-clean.timer")
+    timer_link = f"{user_home}/.config/systemd/user/timers.target.wants/workstation-manager-bleachbit-clean.timer"
+    autostart_file = host.file(f"{user_home}/.config/autostart/workstation-manager-bleachbit-clean.desktop")
+
+    # Act
+    clean_result = host.run(clean_command)
+    timer_link_result = host.run("test -L %s", timer_link)
+
+    # Assert
+    for installed_file, expected_mode in ((helper_script, 0o644), (activator_script, 0o755)):
+        assert installed_file.exists
+        assert installed_file.mode == expected_mode
+    assert service_unit.exists
+    assert service_unit.contains(r"^ExecStart=%h/\.local/bin/workstation-manager-bleachbit-clean$")
+    assert timer_unit.exists
+    assert timer_unit.contains(r"^OnCalendar=weekly$")
+    assert timer_unit.contains(r"^Persistent=true$")
+    assert timer_link_result.succeeded
+    assert autostart_file.exists
+    assert autostart_file.contains(
+        rf"^Exec={user_home}/\.local/bin/workstation-manager-bleachbit-clean-activate-timer$"
+    )
+    assert clean_result.succeeded
+
+
 def test_setup_reattaches_restored_git_project(host) -> None:
     """Setup should reattach restored Git-backed projects to their recorded remote."""
 

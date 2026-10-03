@@ -31,6 +31,11 @@
   ansible.builtin.import_role:
     name: neilime.workstation_restore.state
 
+- name: Apply BleachBit preset schedule
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.bleachbit
+  when: "'bleachbit' in workstation_manager_resolved.system.packages.apt"
+
 - name: Apply selected browser adapter
   ansible.builtin.include_role:
     name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"

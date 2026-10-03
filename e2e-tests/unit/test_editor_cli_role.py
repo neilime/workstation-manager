@@ -21,6 +21,8 @@ class EditorCliRoleTests(unittest.TestCase):
 
     def setUp(self) -> None:
         """Redirect system destinations to a temporary fixture and provide a fake Flatpak."""
+        # Isolated role fixtures repeat Ansible play and environment declarations.
+        # pylint: disable=duplicate-code
         # pylint: disable-next=consider-using-with
         self.fixture = pathlib.Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.launcher_dir = self.fixture / "bin"
@@ -58,9 +60,13 @@ class EditorCliRoleTests(unittest.TestCase):
             module_args["group"] = str(os.getgid())
         self.task_file = self.fixture / "editor_cli.json"
         self.task_file.write_text(json.dumps(tasks))
+        self.last_apply_output = ""
+        # pylint: enable=duplicate-code
 
     def apply(self, *, check: bool = False, editor_packages: list[str] | None = None) -> None:
         """Run the production task import, including its editor selection condition."""
+        # Isolated role fixtures repeat Ansible play and environment declarations.
+        # pylint: disable=duplicate-code
         import_task = next(
             task
             for task in DataLoader().load_from_file(str(ROLE_PATH / "tasks/main.yml"))
@@ -99,6 +105,7 @@ class EditorCliRoleTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.last_apply_output = result.stdout
+        # pylint: enable=duplicate-code
 
     def test_installation_exposes_code_and_is_idempotent(self) -> None:
         """Installing twice should expose an executable without reporting repeat changes."""

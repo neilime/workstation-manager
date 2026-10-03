@@ -18,6 +18,8 @@ WORKSPACE = pathlib.Path(__file__).parents[2]
 def run_role(root: pathlib.Path, role: str, variables: dict, *, check: bool = False) -> subprocess.CompletedProcess:
     """Run only filesystem recovery against disposable fixtures, without workstation setup."""
 
+    # Isolated role fixtures repeat Ansible play and environment declarations.
+    # pylint: disable=duplicate-code
     configuration = root / "ansible.cfg"
     configuration.write_text("[defaults]\n")
     playbook = root / "playbook.json"
@@ -51,6 +53,7 @@ def run_role(root: pathlib.Path, role: str, variables: dict, *, check: bool = Fa
     if check:
         arguments.append("--check")
     return subprocess.run(arguments, env=environment, cwd=root, capture_output=True, text=True, timeout=60, check=False)
+    # pylint: enable=duplicate-code
 
 
 @pytest.mark.parametrize("config_present", [False, True])
@@ -118,7 +121,7 @@ def test_restore_recovers_single_source_archives_in_the_original_home_subdirecto
     )
     assert result.returncode == 0, result.stdout + result.stderr
     if check:
-        assert list(target_home.iterdir()) == []
+        assert not list(target_home.iterdir())
     else:
         assert (target_home / source_relative / "recovery.txt").read_text() == "archived file\n"
         assert not (target_home / source.name).exists()
@@ -145,13 +148,15 @@ def test_shortened_project_archive_rejects_redirected_documents_before_extractio
     )
     assert result.returncode != 0, result.stdout + result.stderr
     assert "escapes the target home" in result.stdout
-    assert list(outside.iterdir()) == []
+    assert not list(outside.iterdir())
     assert not (target_home / "dev-projects").exists()
 
 
 @pytest.fixture(name="git_archive")
 def fixture_git_archive(tmp_path, monkeypatch) -> dict:
     """Archive local changes and serve a real Git origin through an isolated SSH stub."""
+    # Fixture Git identity and environment repeat across isolated repository tests.
+    # pylint: disable=duplicate-code
     origin = tmp_path / "origin"
     origin.mkdir()
     environment = {
@@ -218,6 +223,7 @@ def fixture_git_archive(tmp_path, monkeypatch) -> dict:
         "primary_remote_url": remote_url,
         "remotes": [{"name": "upstream", "url": remote_url}, {"name": "secondary", "url": str(origin)}],
     }
+    # pylint: enable=duplicate-code
 
 
 def restore_git_archive(root: pathlib.Path, repository: dict, *, check: bool = False) -> subprocess.CompletedProcess:
@@ -291,5 +297,5 @@ def test_git_restore_check_mode_does_not_connect_or_extract(tmp_path, git_archiv
     """A restore preview must leave project files and SSH host trust untouched."""
     result = restore_git_archive(tmp_path, git_archive, check=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert list((tmp_path / "target-home").iterdir()) == []
+    assert not list((tmp_path / "target-home").iterdir())
     assert not (tmp_path / "ssh-calls.jsonl").exists()

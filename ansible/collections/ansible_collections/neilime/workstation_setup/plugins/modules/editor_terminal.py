@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+# Ansible requires each module to repeat its own argument and check-mode documentation.
+# pylint: disable=duplicate-code
 DOCUMENTATION = r"""
 ---
 module: editor_terminal
@@ -30,6 +32,8 @@ attributes:
     description: Inspect settings without creating directories or modifying files.
     support: full
 """
+
+# pylint: enable=duplicate-code
 
 EXAMPLES = r"""
 - name: Configure host Zsh for the VS Code Flatpak

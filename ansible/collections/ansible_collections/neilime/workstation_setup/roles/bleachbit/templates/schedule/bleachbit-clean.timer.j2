@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the managed BleachBit preset clean every week
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=30m
+Unit=workstation-manager-bleachbit-clean.service
+
+[Install]
+WantedBy=timers.target

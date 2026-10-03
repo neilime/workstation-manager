@@ -306,13 +306,17 @@ def test_repeated_live_issues_are_grouped_into_one_short_instruction() -> None:
     assert set(result["actions"]) == {"retry", "save", "restore"}
 
 
-def test_restore_joins_new_profile_without_writing_recovery_words(fixture: tuple) -> None:
+def test_restore_joins_new_profile_without_writing_recovery_words(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Setup can enroll a new profile in its saved chain and verify fresh Sync."""
 
     vault, _pipe, native, _lifecycle = fixture
-    state = {"seed_present": False, "requested": False, "has_setup_completed": False}
+    inspection = live.inspect_browser_profiles("/fixture", [PROFILE])
+    inspection["profiles"][0]["sync"].update({"seed_present": False, "requested": False, "has_setup_completed": False})
+    monkeypatch.setattr(live, "inspect_browser_profiles", Mock(return_value=inspection))
 
-    assert live._verify_profile(native, PROFILE, "restore", vault, state) is None
+    assert live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault)["verified"]
     native.restore.assert_called_once_with(REMOTE, reset=False)
     native.wait.assert_called_once()
     assert all(call.args == ("sync",) for call in vault.run.call_args_list)

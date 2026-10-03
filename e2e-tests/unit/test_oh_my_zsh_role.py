@@ -63,11 +63,9 @@ class OhMyZshRoleTests(unittest.TestCase):
     def apply(self, version: str, *, check: bool = False) -> subprocess.CompletedProcess[str]:
         """Run the production task with an isolated upstream and fixture revision."""
         # Account changes are exercised in the VM; this fixture owns only a home.
-        tasks = [
-            task
-            for task in DataLoader().load_from_file(str(TASK_FILE))
-            if "ansible.builtin.git" in task
-        ]
+        # Isolated role fixtures repeat Ansible play and environment declarations.
+        # pylint: disable=duplicate-code
+        tasks = [task for task in DataLoader().load_from_file(str(TASK_FILE)) if "ansible.builtin.git" in task]
         tasks[0]["ansible.builtin.git"]["repo"] = str(self.origin)
         tasks[0]["ansible.builtin.git"]["version"] = version
         playbook = self.fixture / "playbook.json"
@@ -106,6 +104,7 @@ class OhMyZshRoleTests(unittest.TestCase):
             check=False,
             timeout=60,
         )
+        # pylint: enable=duplicate-code
 
     def assert_succeeded(self, result: subprocess.CompletedProcess[str]) -> None:
         """Report complete Ansible output when a scenario fails."""

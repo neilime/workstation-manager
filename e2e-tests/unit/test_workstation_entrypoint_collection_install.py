@@ -52,9 +52,10 @@ class CollectionInstallRetryTests(unittest.TestCase):
             sleep = fixture / "sleep"
             sleep.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$TEST_SLEEP_LOG"\n')
             sleep.chmod(0o700)
-            curl = fixture / "curl"
-            curl.write_text("#!/bin/sh\nexit 99\n")
-            curl.chmod(0o700)
+            for name in ("wget", "curl"):
+                downloader = fixture / name
+                downloader.write_text("#!/bin/sh\nexit 99\n")
+                downloader.chmod(0o700)
             sleep_log = fixture / "sleep.log"
             result = subprocess.run(
                 [
@@ -118,21 +119,22 @@ class CollectionInstallRetryTests(unittest.TestCase):
                 "exit 1\n"
             )
             ansible_galaxy.chmod(0o700)
-            curl = fixture / "curl"
-            curl.write_text(
-                "#!/bin/sh\n"
-                'destination=""\n'
-                'while [ "$#" -gt 0 ]; do\n'
-                '  if [ "$1" = "-o" ]; then\n'
-                '    destination="$2"\n'
-                "    shift 2\n"
-                "    continue\n"
-                "  fi\n"
-                "  shift\n"
-                "done\n"
-                'printf "%s\\n" "collections: []" >"$destination"\n'
-            )
-            curl.chmod(0o700)
+            for name, output_option in (("wget", "-O"), ("curl", "-o")):
+                downloader = fixture / name
+                downloader.write_text(
+                    "#!/bin/sh\n"
+                    'destination=""\n'
+                    'while [ "$#" -gt 0 ]; do\n'
+                    f'  if [ "$1" = "{output_option}" ]; then\n'
+                    '    destination="$2"\n'
+                    "    shift 2\n"
+                    "    continue\n"
+                    "  fi\n"
+                    "  shift\n"
+                    "done\n"
+                    'printf "%s\\n" "collections: []" >"$destination"\n'
+                )
+                downloader.chmod(0o700)
             sleep = fixture / "sleep"
             sleep.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$TEST_SLEEP_LOG"\n')
             sleep.chmod(0o700)

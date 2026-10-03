@@ -70,6 +70,9 @@ resolved user with `HOME` and `XDG_CONFIG_HOME` pointing to that account. Use th
 same user and environment for avatar downloads and browser synchronization so
 session tokens refer to the same CLI account cache. Setup adapters and backup orchestration
 use its default entrypoint, which also downloads avatar attachments into memory.
+Failed avatar downloads are retried up to three times with a five-second delay.
+If recovery remains incomplete, the loader stops with an error that excludes
+attachment contents and CLI output.
 Cleanup loads `tasks_from: metadata` before calling the inspection entrypoint;
 profile-directory drift does not require avatar images.
 

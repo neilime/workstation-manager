@@ -16,7 +16,8 @@ version_added: '1.0.0'
 description:
   - Gracefully closes the managed browser, checks its native Sync interface, and reopens its previous desktop session.
   - Compares recovery codes privately with Bitwarden and waits for fresh successful Sync without pending changes.
-  - Saves local recovery codes after a backup direction choice or joins stored chains during setup or approved backup recovery.
+  - Saves local recovery codes after a backup direction choice or joins stored chains
+    during setup or approved backup recovery.
   - Never exposes a debugging port, exports recovery codes, or removes profile locks.
 author:
   - workstation-manager contributors (@neilime)

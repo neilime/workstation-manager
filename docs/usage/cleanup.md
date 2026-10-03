@@ -37,6 +37,21 @@ profile metadata without downloading avatar attachments.
 APT upgrades can install or remove packages to resolve dependencies. Docker
 cleanup runs whenever Docker is available, without a second confirmation.
 
+## Weekly BleachBit schedule
+
+Setup also installs a managed user timer for BleachBit:
+
+```text
+~/.config/systemd/user/workstation-manager-bleachbit-clean.timer
+```
+
+It runs weekly and executes `bleachbit --clean --preset` for the managed user.
+The timer only runs BleachBit when `~/.config/bleachbit/bleachbit.ini` contains
+at least one enabled cleaner, so a new workstation does nothing until you choose
+cleaners in the BleachBit GUI. Setup starts the timer immediately in an active
+desktop session; otherwise the desktop autostart entry activates it on the next
+graphical login.
+
 ## Drift report
 
 An applied cleanup writes this report by default:

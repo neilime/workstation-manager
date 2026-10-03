@@ -156,51 +156,8 @@ else:
 """
 
 
-@pytest.fixture(name="docker_setup")
-def fixture_docker_setup(tmp_path: pathlib.Path):
-    """Keep production ordering, lookups, templates, and conditions; isolate privileged mutations."""
-
-    home = tmp_path / "managed home%$"
-    home.mkdir()
-    initial_state = {
-        "packages": {},
-        "group_exists": False,
-        "users": {MANAGED_USER: ["existing-group"]},
-        "services": {},
-        "socket_acls": {},
-    }
-    state_file = tmp_path / "state.json"
-    state_file.write_text(json.dumps(initial_state))
-    unit_file = tmp_path / "workstation-manager-docker.service"
-    library = tmp_path / "library"
-    library.mkdir()
-    (library / "fixture_docker_state.py").write_text(FIXTURE_MODULE)
-    binary_dir = tmp_path / "bin"
-    binary_dir.mkdir()
-    systemctl = binary_dir / "systemctl"
-    systemctl.write_text(
-        f"#!{sys.executable}\n"
-        "import json, os, pathlib, sys\n"
-        "assert sys.argv[1:] == ['list-unit-files', '--no-legend', '--no-pager', 'docker.service', 'docker.socket']\n"
-        "result = json.loads(os.environ['FIXTURE_SYSTEMCTL_RESULT'])\n"
-        "if result is not None:\n"
-        "    rc, stdout, stderr = result\n"
-        "    sys.stdout.write(stdout)\n"
-        "    sys.stderr.write(stderr)\n"
-        "    sys.exit(rc)\n"
-        "state = json.loads(pathlib.Path(os.environ['FIXTURE_STATE_FILE']).read_text())\n"
-        "services = [name for name in ('docker.service', 'docker.socket') if name in state['services']]\n"
-        "for name in services:\n"
-        "    print(name + ' enabled enabled')\n"
-        "sys.exit(0 if services else 1)\n"
-    )
-    systemctl.chmod(0o755)
-    mise = home / ".local/bin/mise"
-    mise.parent.mkdir(parents=True)
-    mise.write_text(f"#!{sys.executable}\n" + MISE_SCRIPT)
-    mise.chmod(0o755)
-    client_script = tmp_path / "docker-client.py"
-    client_script.write_text(f"#!{sys.executable}\n" + CLIENT_SCRIPT)
+def prepare_docker_tasks(tmp_path: pathlib.Path, state_file: pathlib.Path, unit_file: pathlib.Path) -> list[dict]:
+    """Load production tasks and redirect privileged actions into the fixture state."""
 
     def isolate_task(task):
         """Replace privileged operations while retaining real binary and template handling."""
@@ -259,12 +216,66 @@ def fixture_docker_setup(tmp_path: pathlib.Path):
         if task.get("ansible.builtin.import_tasks") == "docker.yml":
             task["ansible.builtin.import_tasks"] = str(task_file)
         isolate_task(task)
+    return tasks
+
+
+@pytest.fixture(name="docker_setup")
+def fixture_docker_setup(tmp_path: pathlib.Path):
+    """Keep production ordering, lookups, templates, and conditions; isolate privileged mutations."""
+
+    # Isolated role fixtures repeat Ansible play and environment declarations.
+    # pylint: disable=duplicate-code
+    home = tmp_path / "managed home%$"
+    home.mkdir()
+    initial_state = {
+        "packages": {},
+        "group_exists": False,
+        "users": {MANAGED_USER: ["existing-group"]},
+        "services": {},
+        "socket_acls": {},
+    }
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps(initial_state))
+    unit_file = tmp_path / "workstation-manager-docker.service"
+    library = tmp_path / "library"
+    library.mkdir()
+    (library / "fixture_docker_state.py").write_text(FIXTURE_MODULE)
+    binary_dir = tmp_path / "bin"
+    binary_dir.mkdir()
+    systemctl = binary_dir / "systemctl"
+    systemctl.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, sys\n"
+        "assert sys.argv[1:] == ['list-unit-files', '--no-legend', '--no-pager', 'docker.service', 'docker.socket']\n"
+        "result = json.loads(os.environ['FIXTURE_SYSTEMCTL_RESULT'])\n"
+        "if result is not None:\n"
+        "    rc, stdout, stderr = result\n"
+        "    sys.stdout.write(stdout)\n"
+        "    sys.stderr.write(stderr)\n"
+        "    sys.exit(rc)\n"
+        "state = json.loads(pathlib.Path(os.environ['FIXTURE_STATE_FILE']).read_text())\n"
+        "services = [name for name in ('docker.service', 'docker.socket') if name in state['services']]\n"
+        "for name in services:\n"
+        "    print(name + ' enabled enabled')\n"
+        "sys.exit(0 if services else 1)\n"
+    )
+    systemctl.chmod(0o755)
+    mise = home / ".local/bin/mise"
+    mise.parent.mkdir(parents=True)
+    mise.write_text(f"#!{sys.executable}\n" + MISE_SCRIPT)
+    mise.chmod(0o755)
+    client_script = tmp_path / "docker-client.py"
+    client_script.write_text(f"#!{sys.executable}\n" + CLIENT_SCRIPT)
+
+    tasks = prepare_docker_tasks(tmp_path, state_file, unit_file)
     config_file = tmp_path / "ansible.cfg"
     config_file.write_text("[defaults]\ninject_facts_as_vars = False\n")
     development_defaults = DataLoader().load_from_file(str(REPOSITORY_PATH / "ansible/group_vars/all.yml"))[
         "workstation_manager"
     ]["development"]
 
+    # Keyword flags model independent installation and failure scenarios.
+    # pylint: disable-next=too-many-arguments
     def run(
         *,
         install_tools_only=False,
@@ -353,6 +364,7 @@ def fixture_docker_setup(tmp_path: pathlib.Path):
         return result, json.loads(state_file.read_text())
 
     return run, initial_state, home, unit_file
+    # pylint: enable=duplicate-code
 
 
 @pytest.mark.parametrize("empty_probe_rc", [0, 1])

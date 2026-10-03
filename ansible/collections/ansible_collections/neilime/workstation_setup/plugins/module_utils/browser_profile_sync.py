@@ -96,7 +96,9 @@ class BrowserVault:
         try:
             value = json.loads(output)
         except (ValueError, TypeError) as error:
-            raise ValueError("Bitwarden returned malformed browser record JSON; check the Bitwarden CLI installation") from error
+            raise ValueError(
+                "Bitwarden returned malformed browser record JSON; check the Bitwarden CLI installation"
+            ) from error
         if not isinstance(value, dict):
             raise ValueError("Bitwarden returned a browser record with an unexpected JSON type")
         return value

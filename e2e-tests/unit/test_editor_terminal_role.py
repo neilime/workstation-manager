@@ -16,6 +16,8 @@ COLLECTIONS_PATH = pathlib.Path(__file__).parents[2] / "ansible/collections"
 def apply(root: pathlib.Path, *, check: bool = False, editor_packages=None) -> subprocess.CompletedProcess[str]:
     """Configure only the fixture's editor settings, without launching Flatpak or Zsh."""
 
+    # Isolated role fixtures repeat Ansible play and environment declarations.
+    # pylint: disable=duplicate-code
     (root / "ansible.cfg").write_text("[defaults]\n")
     playbook = root / "playbook.json"
     playbook.write_text(
@@ -60,6 +62,7 @@ def apply(root: pathlib.Path, *, check: bool = False, editor_packages=None) -> s
         check=False,
         timeout=60,
     )
+    # pylint: enable=duplicate-code
 
 
 def settings_path(root: pathlib.Path) -> pathlib.Path:

@@ -25,6 +25,8 @@ def fixture_chezmoi_setup(
     tmp_path: pathlib.Path,
 ) -> tuple[pathlib.Path, dict[str, str]]:
     """Model Chezmoi path selection and failures without modifying real dotfiles."""
+    # Isolated role fixtures repeat Ansible play and environment declarations.
+    # pylint: disable=duplicate-code
     home = tmp_path / "home"
     home.mkdir()
     (home / ".config").mkdir(mode=0o700)
@@ -78,7 +80,8 @@ def fixture_chezmoi_setup(
         "        print('fixture-private-value', file=sys.stderr)\n"
         "        sys.exit(6)\n"
         "    if '--force' in args:\n"
-        "        if args[args.index('--') + 1:] != [str(destination / '.zshrc'), str(destination / '.config/settings')]:\n"
+        "        if args[args.index('--') + 1:] != "
+        "[str(destination / '.zshrc'), str(destination / '.config/settings')]:\n"
         "            sys.exit(8)\n"
         "        if '--recursive=false' not in args or '--exclude=scripts' not in args:\n"
         "            sys.exit(9)\n"
@@ -130,7 +133,9 @@ def fixture_chezmoi_setup(
                         },
                         "workstation_manager_home_environment_chezmoi_config_path": str(config),
                         "workstation_manager_home_environment_chezmoi_source_dir": str(source),
-                        "workstation_manager_home_environment_chezmoi_source_url": "https://github.com/fixture/dotfiles.git",
+                        "workstation_manager_home_environment_chezmoi_source_url": (
+                            "https://github.com/fixture/dotfiles.git"
+                        ),
                         "workstation_manager_home_environment_chezmoi_source_dir_stat": {"stat": {"exists": False}},
                     },
                     "tasks": tasks,
@@ -150,6 +155,7 @@ def fixture_chezmoi_setup(
         "FIXTURE_ROOT": str(tmp_path),
     }
     return tmp_path, env
+    # pylint: enable=duplicate-code
 
 
 def run_setup(fixture: tuple[pathlib.Path, dict[str, str]], *options: str) -> subprocess.CompletedProcess[str]:
