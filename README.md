@@ -11,7 +11,7 @@ packages, removes unused artifacts, and reports configuration drift.
 
 ## Before you start
 
-You need Ubuntu, internet access, `curl`, `sudo`, and:
+You need Ubuntu, internet access, `wget`, `sudo`, and:
 
 - Access to your configured private configuration and dotfiles sources.
 - Bitwarden credentials and configured SSH/GPG key collections.
@@ -27,7 +27,7 @@ again. Press Ctrl-C to cancel a prompt.
 ## Set up or update the workstation
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
 ```
 
 Run the same command after changing your configuration. Setup installs its
@@ -38,7 +38,7 @@ settings. Close Brave before applying profile changes. After setup, complete
 To preview an action, append `--dry-run`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
 ```
 
 A preview uses Ansible check mode. Bootstrap dependencies may still be installed,
@@ -48,20 +48,21 @@ a normal setup before all preview checks can run.
 ## Back up
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup
 ```
 
 Choose the destination when prompted and resolve any synchronization differences.
 See [backup and restore](docs/usage/backup-and-restore.md) for archive contents,
-recovery checks, and restoring onto another computer.
+recovery checks, the generated restore command file, and restoring onto another
+computer.
 
 ## Clean up
 
 Preview cleanup before applying it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup
 ```
 
 Cleanup includes package upgrades, unused package removal, Docker pruning, and
@@ -70,7 +71,7 @@ log retention. Read [cleanup](docs/usage/cleanup.md) for the exact scope.
 ## Help and documentation
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- help
+wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- help
 ```
 
 - [Configuration](docs/usage/configuration.md): private overrides, keys, dotfiles, and tools.

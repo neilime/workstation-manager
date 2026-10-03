@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import shlex
+
 import pytest
 from ansible_collections.neilime.workstation_backup.plugins.module_utils.backup_planning import (
     BackupManifestContentBuilder,
     BackupPathPlanBuilder,
     BackupRequestedPathsBuilder,
+    BackupRestoreCommandBuilder,
 )
 
 
@@ -116,6 +119,40 @@ def test_manifest_reports_skips_without_claiming_full_recovery() -> None:
     assert content.count("recovery_skipped\tssh-keys\n") == 1
     assert "recovery_skipped\tchezmoi\n" in content
     assert "recovery_skipped\tbrowser-sync\n" in content
+
+
+def test_restore_command_builder_renders_copy_pasteable_setup_command() -> None:
+    """Restore sidecars should point back to the same archive and repository ref."""
+
+    archive_path = "/media/backup/workstation manager/backup's archive.tar.gz"
+    content = BackupRestoreCommandBuilder().build(
+        archive_path,
+        {
+            "repository_url": "https://github.com/neilime/workstation-manager.git",
+            "repository_ref": "feature/restore-backup",
+        },
+    )
+    assert content == (
+        "wget -qO- "
+        "https://raw.githubusercontent.com/neilime/workstation-manager/feature/restore-backup/workstation.sh"
+        f" | WORKSTATION_MANAGER_RESTORE_ARCHIVE={shlex.quote(archive_path)} sh -s -- setup\n"
+    )
+
+
+def test_restore_command_builder_falls_back_to_public_entrypoint_for_local_sources() -> None:
+    """Local checkout sources should still emit a portable restore command."""
+
+    content = BackupRestoreCommandBuilder().build(
+        "/tmp/backup/archive.tar.gz",
+        {
+            "repository_url": "/workspace/workstation-manager",
+            "repository_ref": "feature/local-only",
+        },
+    )
+    assert content == (
+        "wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh"
+        " | WORKSTATION_MANAGER_RESTORE_ARCHIVE=/tmp/backup/archive.tar.gz sh -s -- setup\n"
+    )
 
 
 @pytest.mark.parametrize("skips", ["chezmoi", ["unknown"], [{"secret": "synthetic"}]])

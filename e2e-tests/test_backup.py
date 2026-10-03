@@ -51,18 +51,28 @@ def resolve_backup_git_inventory_path(host) -> str:
     return inventory_path
 
 
+def resolve_backup_restore_command_path(host) -> str:
+    """Return the restore-command sidecar paired with the generated E2E backup archive."""
+
+    archive_path = resolve_backup_archive_path(host)
+    return archive_path.removesuffix(".tar.gz") + ".restore-command.txt"
+
+
 def test_backup_archive_and_manifest_exist(host) -> None:
-    """The E2E backup flow should produce both the archive and its manifest."""
+    """The E2E backup flow should produce the archive plus its core sidecars."""
 
     # Arrange
     backup_archive = host.file(resolve_backup_archive_path(host))
     backup_manifest = host.file(resolve_backup_manifest_path(host))
+    backup_restore_command = host.file(resolve_backup_restore_command_path(host))
 
     # Assert
     assert backup_archive.exists
     assert backup_archive.is_file
     assert backup_manifest.exists
     assert backup_manifest.is_file
+    assert backup_restore_command.exists
+    assert backup_restore_command.is_file
 
 
 def test_backup_git_inventory_exists(host) -> None:
@@ -85,6 +95,7 @@ def test_backup_outputs_are_owned_by_the_managed_user(host) -> None:
         resolve_backup_archive_path(host),
         resolve_backup_manifest_path(host),
         resolve_backup_git_inventory_path(host),
+        resolve_backup_restore_command_path(host),
     ):
         assert host.file(path).user == expected_user
 
@@ -96,6 +107,7 @@ def test_backup_manifest_records_expected_entries(host) -> None:
     archive_path = resolve_backup_archive_path(host)
     manifest_path = resolve_backup_manifest_path(host)
     git_inventory_path = resolve_backup_git_inventory_path(host)
+    restore_command_path = resolve_backup_restore_command_path(host)
 
     # Act
     archive_line = host.run(
@@ -109,11 +121,27 @@ def test_backup_manifest_records_expected_entries(host) -> None:
         f"export\tgit-repositories\t{git_inventory_path}",
         manifest_path,
     )
+    restore_command_line = host.run(
+        "grep -Fx %s %s",
+        f"export\trestore-command\t{restore_command_path}",
+        manifest_path,
+    )
 
     # Assert
     assert archive_line.succeeded
     assert dry_run_line.succeeded
     assert git_inventory_line.succeeded
+    assert restore_command_line.succeeded
+
+
+def test_backup_restore_command_matches_the_generated_archive(host) -> None:
+    """The restore-command sidecar should be ready to paste on another machine."""
+
+    archive_path = resolve_backup_archive_path(host)
+    restore_command = host.file(resolve_backup_restore_command_path(host)).content_string
+    assert restore_command.startswith("wget -qO- https://raw.githubusercontent.com/")
+    assert host.file(resolve_backup_restore_command_path(host)).mode == 0o600
+    assert restore_command.endswith(f"WORKSTATION_MANAGER_RESTORE_ARCHIVE={archive_path} sh -s -- setup\n")
 
 
 def test_backup_browser_export_matches_manifest(host) -> None:

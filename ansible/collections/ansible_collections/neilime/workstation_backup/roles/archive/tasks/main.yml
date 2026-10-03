@@ -25,6 +25,13 @@
     msg: "backup manifest written to {{ workstation_backup_manifest_path }}"
   when: not workstation_backup_dry_run
 
+- name: Report backup restore command path
+  ansible.builtin.debug:
+    msg: "backup restore command written to {{ workstation_backup_restore_command_path }}"
+  when:
+    - not workstation_backup_dry_run
+    - workstation_backup_restore_command_path is defined
+
 - name: Report incomplete recovery coverage after explicit skips
   ansible.builtin.debug:
     msg: >-
