@@ -97,7 +97,20 @@ directory or manage them through Chezmoi.
 
 Enable Oh My Zsh and select plugins in your Chezmoi-managed `.zshrc`. The framework
 supplies aliases and completion; Starship can supply the prompt and mise can
-manage runtimes alongside it. For a pinned installation, put
+manage runtimes alongside it. Setup also installs Déjà through mise; enable it
+after the managed mise activation snippet in your Chezmoi-managed `.zshrc`, then
+run `deja import` once to seed it from your existing shell history:
+
+```zsh
+if [[ -r "$HOME/.local/share/deja/init.zsh" ]]; then
+  source "$HOME/.local/share/deja/init.zsh"
+else
+  eval "$(deja init zsh)"
+fi
+```
+
+Do not enable `zsh-autosuggestions` at the same time; Déjà replaces it. For a
+pinned installation, put
 `zstyle ':omz:update' mode disabled` before sourcing `~/.oh-my-zsh/oh-my-zsh.sh`;
 setup then owns framework updates. Setup leaves `.zshrc` ownership to Chezmoi and
 does not change the account's login shell.
