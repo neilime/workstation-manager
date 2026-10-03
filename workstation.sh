@@ -521,6 +521,10 @@ run_ansible_pull() {
 		set -- "WORKSTATION_MANAGER_GITHUB_TOKEN=$GITHUB_TOKEN_VALUE" "$@"
 	fi
 
+	if interactive_tty_path="$(interactive_terminal_path)"; then
+		set -- "WORKSTATION_MANAGER_TTY=$interactive_tty_path" "$@"
+	fi
+
 	# Preserve the target desktop session for GPG and interactive application setup.
 	set -- \
 		"DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}" \
@@ -533,10 +537,6 @@ run_ansible_pull() {
 		"WORKSTATION_MANAGER_USER_HOME=$TARGET_USER_HOME" \
 		"WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=$PRIVATE_OVERRIDE_LOCAL_FILE" \
 		"WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
-
-	if interactive_tty_path="$(interactive_terminal_path)"; then
-		set -- "WORKSTATION_MANAGER_TTY=$interactive_tty_path" "$@"
-	fi
 
 	# ansible-pull relays playbook output; flush prompts before waiting for input.
 	if [ "${WORKSTATION_MANAGER_SKIP_SUDO:-0}" = "1" ]; then
