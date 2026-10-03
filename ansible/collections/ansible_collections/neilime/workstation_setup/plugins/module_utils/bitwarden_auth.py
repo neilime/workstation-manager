@@ -121,7 +121,7 @@ def _run_interactive_login(
 
     master_fd, slave_fd = pty.openpty()
     output = bytearray()
-    handled_prompts = {prompt: 0 for prompt, _ in _CODE_PROMPTS}
+    handled_prompts = {prompt_data[0]: 0 for prompt_data in _CODE_PROMPTS}
     try:
         _disable_echo(slave_fd)
         # This interactive Bitwarden relay keeps emailed verification codes off the
