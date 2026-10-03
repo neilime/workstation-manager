@@ -232,7 +232,11 @@
     - >-
       (bitwarden_collection_client_id | length == 0)
       or (bitwarden_collection_client_secret | length == 0)
-      or ((bitwarden_collection_api_key_login_fallback.rc | default(1)) != 0)
+      or (
+        (bitwarden_collection_api_key_login_fallback is defined)
+        and
+        (bitwarden_collection_api_key_login_fallback.skipped | default(false))
+      )
 
 - name: Fail when the supplied Bitwarden email or password is rejected
   ansible.builtin.fail:
