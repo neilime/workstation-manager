@@ -69,6 +69,8 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "elif command == ['sync']:\n"
             "    pass\n"
             "elif command[:2] == ['list', 'items']:\n"
+            "    if '--search' in command:\n"
+            "        sys.exit(98)\n"
             "    print((root / 'items.json').read_text())\n"
             "elif command[:2] == ['get', 'attachment']:\n"
             "    if (root / 'attachment-unavailable').exists():\n"
