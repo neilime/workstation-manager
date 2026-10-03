@@ -171,7 +171,7 @@
     - bitwarden_collection_email | length == 0
     - bitwarden_collection_client_id | length > 0
     - bitwarden_collection_client_secret | length > 0
-    - bitwarden_collection_api_key_login.rc != 0
+    - (bitwarden_collection_api_key_login.rc | default(1)) != 0
 
 - name: Login to Bitwarden with the configured email and password
   check_mode: false
@@ -218,7 +218,7 @@
     - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
     - bitwarden_collection_client_id | length > 0
     - bitwarden_collection_client_secret | length > 0
-    - bitwarden_collection_api_key_login_fallback.rc != 0
+    - (bitwarden_collection_api_key_login_fallback.rc | default(1)) != 0
 
 - name: Fail when Bitwarden requires an interactive verification code
   ansible.builtin.fail:
