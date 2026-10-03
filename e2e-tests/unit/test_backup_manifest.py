@@ -37,7 +37,6 @@ class BackupManifestTests(unittest.TestCase):
         self.archive = self.output / "workstation-manager-backup-fixture.tar.gz"
         self.browser_export = self.archive.with_suffix("").with_suffix(".browser-profiles.json")
         self.inventory = self.archive.with_suffix("").with_suffix(".git-repositories.json")
-        self.restore_command = self.archive.with_suffix("").with_suffix(".restore-command.txt")
         self.expected_lines = [
             f"include\tdev-projects\t{projects}",
             f"missing\tworkstation-manager-user-config\t{fixture / '.config/workstation-manager'}",
@@ -57,10 +56,11 @@ class BackupManifestTests(unittest.TestCase):
         """Run the real workflow and compare the manifest with the generated artifacts."""
 
         expected_lines = self.expected_lines.copy()
+        restore_command = self.archive.with_suffix("").with_suffix(".restore-command.txt")
         if profiles_present:
             expected_lines.append(f"export\tbrowser-profiles\t{self.browser_export}")
         expected_lines.append(f"export\tgit-repositories\t{self.inventory}")
-        expected_lines.append(f"export\trestore-command\t{self.restore_command}")
+        expected_lines.append(f"export\trestore-command\t{restore_command}")
         self.playbook.write_text(
             json.dumps(
                 [
@@ -131,7 +131,7 @@ class BackupManifestTests(unittest.TestCase):
             ["created_at\tfixture", f"archive\t{self.archive}", "dry_run\t0"] + expected_lines,
         )
         self.assertTrue(self.inventory.is_file())
-        self.assertTrue(self.restore_command.is_file())
+        self.assertTrue(restore_command.is_file())
         self.assertEqual(self.browser_export.is_file(), profiles_present)
         if profiles_present:
             export = json.loads(self.browser_export.read_text())
@@ -139,9 +139,9 @@ class BackupManifestTests(unittest.TestCase):
             self.assertEqual(self.browser_export.stat().st_mode & 0o777, 0o600)
         self.assertTrue(self.archive.is_file())
         self.assertEqual(self.archive.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(self.restore_command.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(restore_command.stat().st_mode & 0o777, 0o600)
         self.assertEqual(
-            self.restore_command.read_text(),
+            restore_command.read_text(),
             "wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh"
             f" | WORKSTATION_MANAGER_RESTORE_ARCHIVE={shlex.quote(str(self.archive))} sh -s -- setup\n",
         )

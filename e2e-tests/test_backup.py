@@ -141,9 +141,7 @@ def test_backup_restore_command_matches_the_generated_archive(host) -> None:
     restore_command = host.file(resolve_backup_restore_command_path(host)).content_string
     assert restore_command.startswith("wget -qO- https://raw.githubusercontent.com/")
     assert host.file(resolve_backup_restore_command_path(host)).mode == 0o600
-    assert restore_command.endswith(
-        f"WORKSTATION_MANAGER_RESTORE_ARCHIVE={archive_path} sh -s -- setup\n"
-    )
+    assert restore_command.endswith(f"WORKSTATION_MANAGER_RESTORE_ARCHIVE={archive_path} sh -s -- setup\n")
 
 
 def test_backup_browser_export_matches_manifest(host) -> None:

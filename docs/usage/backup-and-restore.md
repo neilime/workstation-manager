@@ -185,13 +185,15 @@ Keep the archive and generated sidecars together. Backup always writes the
 manifest, Git inventory, and restore-command sidecars; the browser sidecar is
 created when local profiles exist:
 
-| File suffix              | Contents                                                                                                       |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `.tar.gz`                | Archived user files.                                                                                           |
-| `.restore-command.txt`   | Copy-pasteable `setup` command that replays the paired archive with `WORKSTATION_MANAGER_RESTORE_ARCHIVE`.    |
-| `.browser-profiles.json` | Browser bookmarks plus sanitized non-secret preferences for local inspection or manual recovery.               |
-| `.git-repositories.json` | Git remotes, branch, commit, and working-tree status for projects discovered under `~/Documents/dev-projects`. |
-| `.manifest.txt`          | Timestamp, archive path, sources, generated sidecar locations, and explicitly skipped recovery categories.     |
+- `.tar.gz`: Archived user files.
+- `.restore-command.txt`: Copy-pasteable `setup` command for replaying the
+  paired archive.
+- `.browser-profiles.json`: Browser bookmarks plus sanitized non-secret
+  preferences for local inspection or manual recovery.
+- `.git-repositories.json`: Git remotes, branch, commit, and working-tree
+  status for discovered dev projects.
+- `.manifest.txt`: Timestamp, archive path, source paths, sidecars, and skipped
+  recovery categories.
 
 These files are **not encrypted**. Project files can contain secrets, the
 inventory contains paths and remote URLs, and bookmarks can reveal private
