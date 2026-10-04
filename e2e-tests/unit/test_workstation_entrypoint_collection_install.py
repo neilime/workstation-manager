@@ -87,7 +87,7 @@ class CollectionInstallRetryTests(unittest.TestCase):
                 ansible_galaxy_log.read_text(),
             )
             self.assertIn(
-                "Ansible collection install failed; retrying (1/3)",
+                "Ansible collection install failed; retrying (attempt 2/3)",
                 result.stdout,
             )
 
