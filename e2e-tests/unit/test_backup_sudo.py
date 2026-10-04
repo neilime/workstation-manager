@@ -41,7 +41,7 @@ class BackupPrivilegeTests(unittest.TestCase):
             loader=self.loader,
             variables={
                 **defaults,
-                "ansible_env": {"HOME": "/root"},
+                "ansible_facts": {"env": {"HOME": "/root"}},
                 "workstation_manager_use_become": True,
                 "workstation_manager_resolved": {"user": {"name": "runner", "home": "/home/runner.guest"}},
                 "workstation_backup_extra_paths_raw": "~/notes",

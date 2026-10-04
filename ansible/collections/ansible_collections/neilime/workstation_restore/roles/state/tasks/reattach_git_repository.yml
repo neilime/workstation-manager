@@ -66,21 +66,17 @@
     - name: Clone the primary remote for Git reattachment
       become: true
       become_user: "{{ workstation_restore_target_user_name }}"
-      ansible.builtin.shell: |
-        set -eu
-        clone_args=(--origin "$PRIMARY_REMOTE_NAME")
-        if [[ -n "$BRANCH_NAME" ]]; then
-          clone_args+=(--branch "$BRANCH_NAME" --single-branch)
-        fi
-        git clone "${clone_args[@]}" "$PRIMARY_REMOTE_URL" "$REPOSITORY_PATH"
-      args:
-        executable: /bin/bash
+      ansible.builtin.git:
+        repo: "{{ workstation_restore_git_repository.primary_remote_url }}"
+        dest: "{{ workstation_restore_current_repository_path }}"
+        remote: "{{ workstation_restore_git_repository.primary_remote_name }}"
+        version: "{{ workstation_restore_git_repository.branch | default('HEAD', true) }}"
+        single_branch: false
+        recursive: false
+        accept_newhostkey: true
       environment:
-        BRANCH_NAME: "{{ workstation_restore_git_repository.branch }}"
-        PRIMARY_REMOTE_NAME: "{{ workstation_restore_git_repository.primary_remote_name }}"
-        PRIMARY_REMOTE_URL: "{{ workstation_restore_git_repository.primary_remote_url }}"
-        REPOSITORY_PATH: "{{ workstation_restore_current_repository_path }}"
-      changed_when: true
+        HOME: "{{ workstation_restore_target_user_home }}"
+        GIT_TERMINAL_PROMPT: "0"
 
     - name: Reconcile additional Git remotes
       become: true

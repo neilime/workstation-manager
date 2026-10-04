@@ -19,7 +19,7 @@ from ansible_collections.neilime.workstation_backup.plugins.module_utils.archive
 class ActionModule(ActionBase):
     """Observe local archive growth without changing module execution privileges."""
 
-    _VALID_ARGS = frozenset(("path", "dest", "exclusion_patterns"))
+    _VALID_ARGS = frozenset(("path", "root", "dest", "exclusion_patterns"))
     _supports_check_mode = True
 
     def run(self, tmp: str | None = None, task_vars: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -31,6 +31,7 @@ class ActionModule(ActionBase):
         _validation, arguments = self.validate_argument_spec(
             argument_spec={
                 "path": {"type": "list", "elements": "path", "required": True},
+                "root": {"type": "path"},
                 "dest": {"type": "path", "required": True},
                 "exclusion_patterns": {"type": "list", "elements": "str", "default": []},
             }

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import pwd
 import shlex
 import shutil
 import subprocess
@@ -30,11 +31,12 @@ def prepare_fixture(
     *,
     email_login_scenario: str = "code-required",
     sync_failures_before_success: int = 0,
+    collection_items: list[dict] | None = None,
+    initial_state: dict | None = None,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """Create a fake Bitwarden CLI and a playbook for the production role tasks."""
 
     audit_path = fixture / "commands.jsonl"
-    state_path = fixture / "state.json"
     bin_dir = fixture / "bin"
     bin_dir.mkdir()
     (bin_dir / "bw").write_text(
@@ -49,8 +51,11 @@ audit_path.parent.mkdir(parents=True, exist_ok=True)
 with audit_path.open("a", encoding="utf-8") as audit:
     audit.write(json.dumps(sys.argv[1:]) + "\\n")
 
-state_path = pathlib.Path({str(state_path)!r})
-state = {{"authenticated": False, "unlocked": False, "sync_attempts": 0}}
+state_path = pathlib.Path(os.environ.get("XDG_CONFIG_HOME", os.environ["HOME"])) / "state.json"
+state_path.parent.mkdir(parents=True, exist_ok=True)
+items = json.loads({json.dumps(collection_items or [])!r})
+state = {{"authenticated": False, "unlocked": False, "sync_attempts": 0, "server": os.environ["EXPECTED_SERVER"]}}
+state.update(json.loads({json.dumps(initial_state or {})!r}))
 if state_path.exists():
     state.update(json.loads(state_path.read_text(encoding="utf-8")))
 email_login_scenario = {email_login_scenario!r}
@@ -68,10 +73,25 @@ if args == ["--version"]:
     sys.exit(0)
 
 if args == ["status"]:
-    print(json.dumps({{"status": "unauthenticated", "serverUrl": expected_server}}))
+    status = "locked" if state["authenticated"] else "unauthenticated"
+    print(json.dumps({{"status": status, "serverUrl": state["server"]}}))
+    sys.exit(0)
+
+if args == ["logout"]:
+    if state.get("logout_failed"):
+        print("Fixture logout failed.", file=sys.stderr)
+        sys.exit(1)
+    state["authenticated"] = False
+    state["unlocked"] = False
+    save_state()
     sys.exit(0)
 
 if args == ["config", "server", expected_server]:
+    if state["authenticated"]:
+        print("Logout required before server config update.", file=sys.stderr)
+        sys.exit(1)
+    state["server"] = expected_server
+    save_state()
     sys.exit(0)
 
 if args == ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD", "--method", "1", "--raw"]:
@@ -132,8 +152,19 @@ if args == ["list", "items", "--collectionid", expected_collection_id]:
     if not state["unlocked"]:
         print("Vault is locked.", file=sys.stderr)
         sys.exit(1)
-    print("[]")
+    print(json.dumps(items))
     sys.exit(0)
+
+if args[:2] == ["get", "item"]:
+    if not state["unlocked"] or os.environ.get("BW_SESSION") != "fixture-session":
+        print("Vault is locked.", file=sys.stderr)
+        sys.exit(1)
+    for item in items:
+        if item["id"] == args[2]:
+            print(json.dumps(item))
+            sys.exit(0)
+    print("Not found.", file=sys.stderr)
+    sys.exit(1)
 
 print("unexpected arguments", args, file=sys.stderr)
 sys.exit(99)
@@ -161,7 +192,9 @@ sys.exit(99)
                             "system": {"packages": {"cache_valid_time": 3600}},
                         },
                     },
-                    "tasks": DataLoader().load_from_file(str(TASK_FILE)),
+                    "tasks": [
+                        {"ansible.builtin.import_role": {"name": "neilime.workstation_setup.bitwarden_collection"}}
+                    ],
                 }
             ]
         ),
@@ -180,6 +213,9 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
         include_api_key: bool = True,
         email_login_scenario: str = "code-required",
         sync_failures_before_success: int = 0,
+        initial_state: dict | None = None,
+        environment_overrides: dict[str, str] | None = None,
+        playbook_arguments: tuple[str, ...] = (),
     ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
         """Run the production role tasks against the fake Bitwarden CLI."""
 
@@ -189,6 +225,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 fixture,
                 email_login_scenario=email_login_scenario,
                 sync_failures_before_success=sync_failures_before_success,
+                initial_state=initial_state,
             )
             config = fixture / "ansible.cfg"
             config.write_text("[defaults]\n", encoding="utf-8")
@@ -210,13 +247,15 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 environment["BITWARDEN_CLIENT_ID"] = "fixture-client"
                 environment["BITWARDEN_CLIENT_SECRET"] = "fixture-secret"
 
+            environment.update(environment_overrides or {})
+
             if interactive:
                 command = shlex.join(
                     [
                         "/bin/sh",
                         "-c",
                         (
-                            'WORKSTATION_MANAGER_TTY="$(tty)"\n'
+                            'WORKSTATION_MANAGER_TTY="${WORKSTATION_MANAGER_TTY:-$(tty)}"\n'
                             "export WORKSTATION_MANAGER_TTY\n"
                             f"exec ansible-playbook -i localhost, -c local {shlex.quote(str(playbook))}\n"
                         ),
@@ -241,7 +280,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 )
             else:
                 result = subprocess.run(
-                    ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+                    ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook), *playbook_arguments],
                     cwd=fixture,
                     env=environment,
                     check=False,
@@ -255,6 +294,97 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 else []
             )
             return result, calls
+
+    def test_browser_collection_and_live_reads_share_managed_user_cache(self) -> None:
+        """Root-style bootstrap must authenticate the same cache used by browser recovery."""
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            managed_home = fixture / "managed-home"
+            managed_home.mkdir()
+            item = {
+                "id": "11111111-1111-4111-8111-111111111111",
+                "type": 2,
+                "name": "Fixture",
+                "notes": "syntheticremote " * 24,
+                "collectionIds": ["fixture-collection"],
+                "fields": [{"name": "id", "value": "fixture"}, {"name": "directory", "value": "Default"}],
+            }
+            audit_path, playbook = prepare_fixture(fixture, collection_items=[item])
+            config = fixture / "ansible.cfg"
+            config.write_text("[defaults]\n", encoding="utf-8")
+            collection_root = TASK_FILE.parents[3]
+            probe = fixture / "read_browser_record.py"
+            probe.write_text(
+                "import os, subprocess, sys\n"
+                "from ansible_collections.neilime.workstation_setup.plugins.module_utils "
+                "import browser_profile_sync\n"
+                "def run_command(argv, **kwargs):\n"
+                "    result = subprocess.run(argv, env=kwargs['environ_update'], "
+                "input=kwargs['data'], capture_output=True, check=False)\n"
+                "    return result.returncode, result.stdout, result.stderr\n"
+                "vault = browser_profile_sync.BrowserVault(os.environ['BW_SESSION'], "
+                "'fixture-collection', run_command)\n"
+                "vault.selected_item({'id': 'fixture', 'directory': 'Default', 'item_id': sys.argv[1]})\n",
+                encoding="utf-8",
+            )
+            content = json.loads(playbook.read_text(encoding="utf-8"))
+            content[0]["vars"]["workstation_manager_resolved"]["user"] = {
+                "name": pwd.getpwuid(os.getuid()).pw_name,
+                "home": str(managed_home),
+            }
+            content[0]["vars"]["workstation_manager_resolved"]["secrets"]["bitwarden"][
+                "browser_profiles_collection_id"
+            ] = "fixture-collection"
+            content[0]["tasks"] = DataLoader().load_from_file(
+                str(collection_root / "roles/browser_profile_collection/tasks/metadata.yml")
+            )
+            content[0]["tasks"].append(
+                {
+                    "name": "Read selected profile using the live browser vault helper",
+                    "ansible.builtin.command": {
+                        "argv": [sys.executable, str(probe), "{{ workstation_manager_browser_profiles[0].item_id }}"]
+                    },
+                    "environment": {
+                        "HOME": str(managed_home),
+                        "XDG_CONFIG_HOME": str(managed_home / ".config"),
+                        "BW_SESSION": "{{ bitwarden_collection_session }}",
+                    },
+                    "changed_when": False,
+                    "no_log": True,
+                }
+            )
+            playbook.write_text(json.dumps(content), encoding="utf-8")
+            environment = {
+                "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
+                "HOME": str(fixture),
+                "XDG_CONFIG_HOME": str(fixture / "bootstrap-config"),
+                "LC_ALL": "C.UTF-8",
+                "ANSIBLE_CONFIG": str(config),
+                "ANSIBLE_HOME": str(fixture / ".ansible"),
+                "ANSIBLE_COLLECTIONS_PATH": os.environ["ANSIBLE_COLLECTIONS_PATH"],
+                "PYTHONPATH": str(collection_root.parents[2]),
+                "AUDIT_PATH": str(audit_path),
+                "EXPECTED_SERVER": "https://vault.example.invalid",
+                "EXPECTED_COLLECTION_ID": "fixture-collection",
+                "BITWARDEN_EMAIL": "fixture@example.com",
+                "BITWARDEN_PASSWORD": "fixture-password",
+                "BITWARDEN_CLIENT_ID": "fixture-client",
+                "BITWARDEN_CLIENT_SECRET": "fixture-secret",
+                "WORKSTATION_MANAGER_INTERACTIVE": "0",
+            }
+            result = subprocess.run(
+                ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
+                cwd=fixture,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue((managed_home / ".config/state.json").exists())
+            self.assertFalse((fixture / "bootstrap-config/state.json").exists())
 
     def test_noninteractive_email_code_challenge_falls_back_to_api_key(self) -> None:
         """CI-style runs should keep going when only the email login needs a verification code."""
@@ -302,6 +432,105 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
             ],
         )
         self.assertNotIn("interactive Bitwarden verification code prompt", output)
+
+    def test_interactive_terminal_access_failure_has_actionable_diagnostic(self) -> None:
+        """Managed-user permission failures must not claim the run is noninteractive."""
+
+        result, _calls = self.run_role(
+            interactive=True,
+            include_api_key=False,
+            email_login_scenario="interactive-code",
+            environment_overrides={"WORKSTATION_MANAGER_TTY": "/dev/workstation-manager-missing-test-tty"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("could not open the terminal", result.stdout + result.stderr)
+        self.assertNotIn("no interactive terminal is available", result.stdout + result.stderr)
+
+    def test_interactive_terminal_access_failure_can_use_configured_api_key(self) -> None:
+        """A configured API key remains a valid fallback when the terminal cannot open."""
+
+        result, calls = self.run_role(
+            interactive=True,
+            email_login_scenario="interactive-code",
+            environment_overrides={"WORKSTATION_MANAGER_TTY": "/dev/workstation-manager-missing-test-tty"},
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(["login", "--apikey"], calls)
+        self.assertIn(["list", "items", "--collectionid", "fixture-collection"], calls)
+
+    def test_server_switch_logs_out_and_authenticates_again(self) -> None:
+        """Both locked and unlocked accounts must leave the old server before login."""
+
+        for unlocked in (False, True):
+            with self.subTest(unlocked=unlocked):
+                result, calls = self.run_role(
+                    initial_state={
+                        "server": "https://old-vault.example.invalid",
+                        "authenticated": True,
+                        "unlocked": unlocked,
+                    }
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(
+                    calls[3:6], [["logout"], ["config", "server", "https://vault.example.invalid"], ["status"]]
+                )
+                self.assertIn(["login", "--apikey"], calls)
+                self.assertIn(["list", "items", "--collectionid", "fixture-collection"], calls)
+
+    def test_server_switch_does_not_logout_an_unauthenticated_cli(self) -> None:
+        """Fresh CLI configuration can change server without a redundant logout."""
+
+        result, calls = self.run_role(initial_state={"server": "https://old-vault.example.invalid"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn(["logout"], calls)
+        self.assertEqual(calls[3:5], [["config", "server", "https://vault.example.invalid"], ["status"]])
+
+    def test_matching_server_preserves_authenticated_account(self) -> None:
+        """Normal recovery reuses an existing account when its server is correct."""
+
+        result, calls = self.run_role(initial_state={"authenticated": True})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(call[0] in {"logout", "config", "login"} for call in calls))
+        self.assertIn(["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"], calls)
+
+    def test_server_switch_requires_credentials_before_logging_out(self) -> None:
+        """Missing login or unlock inputs must leave the authenticated account intact."""
+
+        missing_inputs = [
+            {"BITWARDEN_EMAIL": "", "BITWARDEN_CLIENT_ID": "", "BITWARDEN_CLIENT_SECRET": ""},
+            {"BITWARDEN_PASSWORD": ""},
+        ]
+        for environment in missing_inputs:
+            with self.subTest(missing=list(environment)):
+                result, calls = self.run_role(
+                    initial_state={"server": "https://old-vault.example.invalid", "authenticated": True},
+                    environment_overrides=environment,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(calls, [["--version"], ["--version"], ["status"]])
+
+    def test_dry_runs_do_not_logout_or_change_servers(self) -> None:
+        """Both setup check mode and backup previews reject the mismatch read-only."""
+
+        for arguments in (("--check",), ("--extra-vars", "workstation_backup_dry_run=true")):
+            with self.subTest(arguments=arguments):
+                result, calls = self.run_role(
+                    initial_state={"server": "https://old-vault.example.invalid", "authenticated": True},
+                    playbook_arguments=arguments,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("dry runs do not change the CLI server configuration", result.stdout + result.stderr)
+                self.assertEqual(calls, [["--version"], ["--version"], ["status"]])
+
+    def test_failed_logout_stops_before_configuring_server(self) -> None:
+        """Failed logout cannot be ignored or followed by a server change."""
+
+        result, calls = self.run_role(
+            initial_state={"server": "https://old-vault.example.invalid", "authenticated": True, "logout_failed": True}
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Bitwarden could not log out before changing servers", result.stdout + result.stderr)
+        self.assertEqual(calls, [["--version"], ["--version"], ["status"], ["logout"]])
 
     def test_sync_retries_after_transient_failure(self) -> None:
         """Transient Bitwarden sync failures should retry before the role gives up."""

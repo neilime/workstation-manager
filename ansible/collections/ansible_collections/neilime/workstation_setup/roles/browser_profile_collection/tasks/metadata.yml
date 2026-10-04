@@ -6,6 +6,12 @@
 - name: Read the Bitwarden browser profile collection
   ansible.builtin.include_role:
     name: neilime.workstation_setup.bitwarden_collection
+    apply:
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      environment:
+        HOME: "{{ workstation_manager_resolved.user.home }}"
+        XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
   vars:
     bitwarden_collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
     bitwarden_collection_purpose: Browser profile recovery

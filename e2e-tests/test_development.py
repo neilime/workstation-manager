@@ -122,6 +122,42 @@ def test_declared_editor_package_is_installed(host) -> None:
     assert "com.visualstudio.code" in application_result.stdout.splitlines()
 
 
+def test_vscode_terminal_command_is_available(host) -> None:
+    """The managed Flatpak editor should also expose its command on the host PATH."""
+
+    launcher = host.file("/usr/local/bin/code")
+
+    command_result = host.run("command -v code")
+    version_result = host.run("code --version")
+
+    assert launcher.exists
+    assert launcher.mode == 0o755
+    assert launcher.user == "root"
+    assert launcher.group == "root"
+    assert command_result.succeeded
+    assert command_result.stdout.strip() == launcher.path
+    assert version_result.succeeded
+    assert version_result.stdout.strip()
+
+
+def test_vscode_integrated_terminal_uses_host_zsh(host) -> None:
+    """The Flatpak editor should select a profile that can run the workstation's Zsh."""
+
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    settings = host.file(f"{user_home}/.var/app/com.visualstudio.code/config/Code/User/settings.json")
+    bridge_result = host.run(
+        "sh -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) "
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus "
+        "flatpak run --command=/app/bin/host-spawn com.visualstudio.code /usr/bin/zsh --version'"
+    )
+
+    assert settings.exists
+    assert '"terminal.integrated.defaultProfile.linux": "zsh (host)"' in settings.content_string
+    assert '"path": "/app/bin/host-spawn"' in settings.content_string
+    assert bridge_result.succeeded
+    assert "zsh " in bridge_result.stdout
+
+
 def test_development_sysctl_configuration(host) -> None:
     """Development tooling should apply the configured filesystem watch limit."""
 

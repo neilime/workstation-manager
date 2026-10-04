@@ -55,6 +55,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             "workstation_backup_tab": "\t",
             "workstation_backup_newline": "\n",
             "workstation_backup_include_paths": [str(self.fixture / "projects")],
+            "workstation_backup_archive_root": str(self.fixture),
             "workstation_backup_archive_exclusion_patterns": [],
             "workstation_manager_resolved": {"desktop": {"browser": "fixture"}},
         }

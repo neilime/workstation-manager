@@ -96,7 +96,9 @@ bootstrap still uses the published GitHub repository unless you override
 `REPOSITORY_URL`.
 
 Interactive runs capture Ansible output through `script` while keeping prompts
-on a terminal. When the entrypoint is piped into `sh`, this runner loads
+on a terminal. The capture runner assigns its newly allocated terminal to the
+resolved user without changing its permissions, so root orchestration and
+managed-user verification prompts can share the same input path. When the entrypoint is piped into `sh`, this runner loads
 `workstation.sh` from the configured repository and ref because the running
 script has no source file on disk. Local runs reuse their entrypoint source.
 The runner validates shell syntax before execution and removes its temporary

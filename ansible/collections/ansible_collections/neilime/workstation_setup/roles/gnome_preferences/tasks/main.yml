@@ -2,7 +2,7 @@
 - name: Compute GNOME task privilege requirements
   ansible.builtin.set_fact:
     workstation_manager_gnome_use_become_user: >-
-      {{ workstation_manager_use_become and ansible_user_id != workstation_manager_resolved.user.name }}
+      {{ workstation_manager_use_become and ansible_facts['user_id'] != workstation_manager_resolved.user.name }}
   changed_when: false
 
 - name: Install GNOME preference dependencies
@@ -42,35 +42,8 @@
       {{ workstation_manager_resolved.user.home }}/.local/share/backgrounds/wallpaper.jpg
     mode: "0644"
 
-- name: Ensure target user autostart directory exists
-  become: "{{ workstation_manager_gnome_use_become_user }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    path: "{{ workstation_manager_resolved.user.home }}/.config/autostart"
-    state: directory
-    mode: "0755"
-  when: workstation_manager_resolved.desktop.gnome.autostart | length > 0
-
-- name: Configure GNOME autostart applications
-  become: "{{ workstation_manager_gnome_use_become_user }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.copy:
-    dest: >-
-      {{ workstation_manager_resolved.user.home }}/.config/autostart/{{ item.desktop_file }}
-    mode: "0644"
-    content: |
-      [Desktop Entry]
-      Type=Application
-      Version=1.0
-      Name={{ item.name }}
-      TryExec=/usr/bin/flatpak
-      Exec={{ item.command }}
-      Terminal=false
-      Hidden=false
-      X-GNOME-Autostart-enabled=true
-  loop: "{{ workstation_manager_resolved.desktop.gnome.autostart }}"
-  loop_control:
-    label: "{{ item.desktop_file }}"
+- name: Configure desktop application startup
+  ansible.builtin.import_tasks: autostart.yml
 
 - name: Apply GNOME color scheme preference
   become: "{{ workstation_manager_gnome_use_become_user }}"

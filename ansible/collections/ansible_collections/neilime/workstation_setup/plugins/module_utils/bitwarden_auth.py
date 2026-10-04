@@ -143,7 +143,7 @@ def _run_interactive_login(
 
     master_fd, slave_fd = pty.openpty()
     output = bytearray()
-    handled_prompts = {prompt_data[0]: 0 for prompt_data in _CODE_PROMPTS}
+    handled_prompts: set[str] = set()
     try:
         _disable_echo(slave_fd)
         # This interactive Bitwarden relay keeps emailed verification codes off the
@@ -213,26 +213,25 @@ def _disable_echo(tty_fd: int) -> None:
 
 def _handle_code_prompts(
     output: str,
-    handled_prompts: dict[str, int],
+    handled_prompts: set[str],
     prompt_for_code: Callable[[str], str],
     master_fd: int,
     process: subprocess.Popen[bytes],
 ) -> BitwardenLoginResult | None:
-    """Prompt privately for each newly seen Bitwarden verification-code request."""
+    """Handle each challenge once; terminal redraws repeat the prompt text."""
 
     for prompt, tty_prompt in _CODE_PROMPTS:
-        prompt_count = output.count(prompt)
-        while handled_prompts[prompt] < prompt_count:
+        if prompt in output and prompt not in handled_prompts:
             try:
                 code = prompt_for_code(tty_prompt)
             except BitwardenPromptUnavailableError:
                 _terminate(process)
-                return BitwardenLoginResult(failure_reason="code_required")
+                return BitwardenLoginResult(failure_reason="terminal_unavailable")
             except BitwardenPromptCancelledError as error:
                 _terminate(process)
                 raise ValueError("Bitwarden verification code entry was cancelled.") from error
             os.write(master_fd, code.encode() + b"\n")
-            handled_prompts[prompt] += 1
+            handled_prompts.add(prompt)
     return None
 
 

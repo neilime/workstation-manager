@@ -49,32 +49,8 @@
     update_cache: true
     cache_valid_time: 0
 
-- name: Ensure target user XDG config directory exists
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.file:
-    path: "{{ workstation_manager_resolved.user.home }}/.config"
-    state: directory
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
-
-- name: Apply Brave default browser associations
-  become: "{{ workstation_manager_use_become }}"
-  community.general.ini_file:
-    path: "{{ workstation_manager_resolved.user.home }}/.config/mimeapps.list"
-    section: Default Applications
-    option: "{{ item }}"
-    value: "{{ workstation_manager_browser_desktop_file }}"
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0644"
-    no_extra_spaces: true
-  loop:
-    - x-scheme-handler/http
-    - x-scheme-handler/https
-    - text/html
-  loop_control:
-    label: "{{ item }}"
+- name: Configure Brave as the target user's default browser
+  ansible.builtin.include_tasks: default_browser.yml
 
 - name: Ensure Brave managed policy directory exists
   become: "{{ workstation_manager_use_become }}"
@@ -102,4 +78,8 @@
   neilime.workstation_setup.browser_profiles:
     user_data_dir: "{{ browser_brave_user_data_dir }}"
     profiles: "{{ workstation_manager_browser_profiles }}"
+  when: (workstation_manager_browser_profiles | length) > 0
+
+- name: Recover configured Brave profiles through Sync
+  ansible.builtin.include_tasks: setup_sync.yml
   when: (workstation_manager_browser_profiles | length) > 0

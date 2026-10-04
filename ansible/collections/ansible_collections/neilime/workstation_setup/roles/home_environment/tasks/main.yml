@@ -8,7 +8,7 @@
           'amd64': 'amd64',
           'aarch64': 'arm64',
           'arm64': 'arm64'
-        }.get(ansible_architecture, '')
+        }.get(ansible_facts['architecture'], '')
       }}
 
 - name: Resolve remaining home-environment settings
@@ -57,14 +57,25 @@
         }
       }}
 
-- name: Ensure baseline user directories exist
+- name: Resolve the managed Chezmoi command paths
+  ansible.builtin.set_fact:
+    workstation_manager_home_environment_chezmoi_command:
+      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+      - --config
+      - "{{ workstation_manager_home_environment_chezmoi_config_path }}"
+      - --source
+      - "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
+      - --destination
+      - "{{ workstation_manager_resolved.user.home }}"
+      - --no-pager
+      - --no-tty
+
+- name: Inspect existing baseline user directory permissions
   become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.file:
+  ansible.builtin.stat:
     path: "{{ item }}"
-    state: directory
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
+    follow: true
+  register: workstation_manager_home_environment_baseline_directories
   loop:
     - "{{ workstation_manager_resolved.user.projects_directory }}"
     - "{{ workstation_manager_resolved.user.home }}/.cache"
@@ -72,6 +83,18 @@
     - "{{ workstation_manager_resolved.user.home }}/.local/share"
     - "{{ workstation_manager_resolved.user.home }}/.local/state"
     - "{{ workstation_manager_resolved.user.home }}/.config"
+
+- name: Ensure baseline user directories exist without resetting their permissions
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "{{ item.stat.mode | default('0755') }}"
+  loop: "{{ workstation_manager_home_environment_baseline_directories.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 
 - name: Install the managed Oh My Zsh framework
   ansible.builtin.import_tasks: oh_my_zsh.yml
@@ -82,7 +105,7 @@
       - workstation_manager_home_environment_chezmoi_architecture | length > 0
     fail_msg: >-
       Chezmoi bootstrap currently supports only amd64 and arm64 Linux targets,
-      but ansible_architecture={{ ansible_architecture }}.
+      but the detected architecture is {{ ansible_facts['architecture'] }}.
 
 - name: Check whether Chezmoi is already installed
   ansible.builtin.command:
@@ -136,10 +159,9 @@
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   ansible.builtin.command:
-    argv:
-      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
-      - init
-      - "{{ workstation_manager_home_environment_chezmoi_source_url }}"
+    argv: >-
+      {{ workstation_manager_home_environment_chezmoi_command
+         + ['init', workstation_manager_home_environment_chezmoi_source_url] }}
     creates: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
@@ -163,10 +185,9 @@
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   ansible.builtin.command:
-    argv:
-      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
-      - init
-      - "{{ workstation_manager_home_environment_chezmoi_source_url }}"
+    argv: >-
+      {{ workstation_manager_home_environment_chezmoi_command
+         + ['init', workstation_manager_home_environment_chezmoi_source_url] }}
     creates: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
@@ -179,40 +200,8 @@
       lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') | default('', true) | length == 0
       or not workstation_manager_home_environment_chezmoi_source_url.startswith('https://github.com/')
 
-- name: Check whether Chezmoi apply would change managed files
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
-      - apply
-      - --dry-run
-  register: workstation_manager_home_environment_chezmoi_apply_check
-  changed_when: >-
-    {{
-      workstation_manager_home_environment_chezmoi_apply_check.stdout | trim | length > 0
-      or workstation_manager_home_environment_chezmoi_apply_check.stderr | trim | length > 0
-    }}
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-  check_mode: false
+- name: Inspect and apply the managed Chezmoi dotfiles
+  ansible.builtin.import_tasks: chezmoi_apply.yml
   when:
     - workstation_manager_resolved.home_environment.chezmoi.apply
-    - not ansible_check_mode
-
-- name: Apply the managed Chezmoi target state
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
-      - apply
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-  changed_when: true
-  when:
-    - workstation_manager_resolved.home_environment.chezmoi.apply
-    - workstation_manager_home_environment_chezmoi_apply_check is changed
     - not ansible_check_mode

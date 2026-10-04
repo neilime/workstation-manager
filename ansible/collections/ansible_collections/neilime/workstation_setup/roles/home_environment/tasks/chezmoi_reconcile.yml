@@ -1,0 +1,85 @@
+---
+- name: Choose whether to replace conflicting local Chezmoi files
+  vars:
+    workstation_manager_home_environment_chezmoi_newline: "\n"
+    workstation_manager_home_environment_chezmoi_carriage_return: "\r"
+    workstation_manager_home_environment_chezmoi_conflict_prompt: |
+      Chezmoi found local changes that differ from the source dotfiles:
+      {{ workstation_manager_home_environment_chezmoi_local_changes | join(workstation_manager_home_environment_chezmoi_newline) }}
+
+      apply: Replace only these conflicting paths with their source versions, including permissions.
+      skip: Keep local changes and continue setup without applying Chezmoi dotfiles or scripts.
+      abort: Stop setup and keep the local changes for manual reconciliation.
+      Type apply, skip, or abort (default abort)
+  ansible.builtin.pause:
+    prompt: >-
+      {{ workstation_manager_home_environment_chezmoi_conflict_prompt
+         | regex_replace('(?m)^', workstation_manager_home_environment_chezmoi_carriage_return) }}
+  register: workstation_manager_home_environment_chezmoi_conflict_answer
+  until: >-
+    workstation_manager_home_environment_chezmoi_conflict_answer.user_input
+    | default('', true) | trim | lower in ['', 'apply', 'skip', 'abort']
+  retries: 3
+  delay: 0
+
+- name: Resolve the Chezmoi conflict decision
+  ansible.builtin.set_fact:
+    workstation_manager_home_environment_chezmoi_conflict_action: >-
+      {{ workstation_manager_home_environment_chezmoi_conflict_answer.user_input
+         | default('', true) | trim | lower }}
+
+- name: Stop setup when Chezmoi conflict reconciliation is aborted
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_conflict_action in ['apply', 'skip']
+    quiet: true
+    fail_msg: |
+      Setup stopped; conflicting local changes were left unchanged.
+      Review and resolve the files in a terminal as {{ workstation_manager_resolved.user.name }}:
+      {{ (workstation_manager_home_environment_chezmoi_command | reject('equalto', '--no-tty') | list
+          + ['apply']) | map('quote') | join(' ') }}
+      Rerun setup after resolving the conflicts.
+
+- name: Report skipped Chezmoi dotfile application
+  ansible.builtin.debug:
+    msg: >-
+      Skipped Chezmoi dotfile application and scripts for this setup run;
+      conflicting local changes were left unchanged. Setup will continue.
+  when: workstation_manager_home_environment_chezmoi_conflict_action == 'skip'
+
+- name: Apply the approved source versions of conflicting Chezmoi paths
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv: >-
+      {{ workstation_manager_home_environment_chezmoi_command
+         + ['apply', '--force', '--recursive=false', '--exclude=scripts', '--']
+         + (workstation_manager_home_environment_chezmoi_local_changes
+            | map('regex_replace', '^[AMD][AMD] ', workstation_manager_resolved.user.home ~ '/') | list) }}
+  register: workstation_manager_home_environment_chezmoi_reconciliation
+  changed_when: workstation_manager_home_environment_chezmoi_reconciliation.rc | default(1) == 0
+  failed_when: false
+  no_log: true
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  when: workstation_manager_home_environment_chezmoi_conflict_action == 'apply'
+
+- name: Require successful application of approved Chezmoi conflict replacements
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_reconciliation.rc | default(1) == 0
+    quiet: true
+    fail_msg: |
+      Chezmoi could not apply the approved conflict replacements
+      (exit {{ workstation_manager_home_environment_chezmoi_reconciliation.rc | default('unknown') }}).
+      Run this command in a terminal as {{ workstation_manager_resolved.user.name }}
+      to see the underlying error:
+      {{ (workstation_manager_home_environment_chezmoi_command | reject('equalto', '--no-tty') | list
+          + ['apply']) | map('quote') | join(' ') }}
+      Command output is hidden because templates can contain sensitive data.
+  when: workstation_manager_home_environment_chezmoi_conflict_action == 'apply'
+
+- name: Inspect Chezmoi conflicts again after their approved replacement
+  ansible.builtin.import_tasks: chezmoi_inspect.yml
+  when: workstation_manager_home_environment_chezmoi_conflict_action == 'apply'

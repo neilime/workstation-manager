@@ -258,12 +258,10 @@
 
 - name: Build cleanup report payload
   ansible.builtin.set_fact:
-    # Build the complete mapping in one Jinja expression. Rendering individual
-    # scalar leaves turns integer values into strings with Ansible Core 2.16.
     workstation_manager_cleanup_report: >-
       {{
         {
-          'generated_at': ansible_date_time.iso8601,
+          'generated_at': ansible_facts['date_time']['iso8601'],
           'package_baseline_available': workstation_manager_cleanup_has_package_baseline,
           'cleanup_mode': 'check' if ansible_check_mode else 'apply',
           'drift': {

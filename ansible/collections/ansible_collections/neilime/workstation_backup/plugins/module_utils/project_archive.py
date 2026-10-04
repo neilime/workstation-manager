@@ -28,7 +28,13 @@ class ProjectArchiveWriter:
         self.ignored_paths: dict[Path, set[Path]] = {}
 
     def create(
-        self, paths: list[str], destination: str, exclusion_patterns: list[str], *, check_mode: bool = False
+        self,
+        paths: list[str],
+        destination: str,
+        exclusion_patterns: list[str],
+        *,
+        root: str | None = None,
+        check_mode: bool = False,
     ) -> dict[str, Any]:
         """Write a private gzip tar, publishing it only after all sources succeed."""
 
@@ -47,20 +53,28 @@ class ProjectArchiveWriter:
             raise ValueError("The backup destination must not be a symbolic link.")
         if not output.parent.is_dir():
             raise ValueError(f"The backup destination directory does not exist: {output.parent}")
-        root = Path(os.path.commonpath([str(source.parent) for source in sources]))
+        archive_root = (
+            Path(os.path.abspath(root))
+            if root is not None
+            else Path(os.path.commonpath([str(source.parent) for source in sources]))
+        )
+        if not archive_root.is_dir():
+            raise ValueError(f"The archive root directory does not exist: {archive_root}")
+        if any(not source.is_relative_to(archive_root) for source in sources):
+            raise ValueError("Every backup source must be inside the archive root directory.")
         # Overlapping requested sources must not duplicate entries or repeat traversal.
         sources = [
             source
             for source in sources
             if not any(parent in sources and not parent.is_symlink() for parent in source.parents)
         ]
-        entries = self._entries(sources, root, exclusion_patterns)
+        entries = self._entries(sources, archive_root, exclusion_patterns)
         if check_mode:
             count = sum(1 for _entry in entries)
             changed = True
         else:
-            changed, count = self._write(entries, root, output)
-        return {"changed": changed, "dest": str(output), "arcroot": str(root), "archived_count": count}
+            changed, count = self._write(entries, archive_root, output)
+        return {"changed": changed, "dest": str(output), "arcroot": str(archive_root), "archived_count": count}
 
     def _write(self, entries: Iterator[Path], root: Path, output: Path) -> tuple[bool, int]:
         """Stream selected entries and atomically replace the destination after success."""

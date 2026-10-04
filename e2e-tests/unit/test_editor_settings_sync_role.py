@@ -27,7 +27,7 @@ class EditorSettingsSyncRoleTests(unittest.TestCase):
         for scenario in scenarios:
             with self.subTest(scenario=scenario["name"]), tempfile.TemporaryDirectory() as temporary_dir:
                 fixture = pathlib.Path(temporary_dir)
-                (fixture / "ansible.cfg").write_text("[defaults]\n")
+                (fixture / "ansible.cfg").write_text("[defaults]\ninject_facts_as_vars = False\n")
                 user_home = fixture / "home"
                 user_home.mkdir()
                 if scenario.get("sync_state_exists"):
@@ -42,7 +42,7 @@ class EditorSettingsSyncRoleTests(unittest.TestCase):
                                 "connection": "local",
                                 "gather_facts": False,
                                 "vars": {
-                                    "ansible_user_id": "test-user",
+                                    "ansible_facts": {"user_id": "test-user"},
                                     "ansible_python_interpreter": sys.executable,
                                     "workstation_manager_use_become": False,
                                     "workstation_manager_resolved": {
@@ -60,8 +60,10 @@ class EditorSettingsSyncRoleTests(unittest.TestCase):
                                         "name": "Verify the editor remains untouched",
                                         "ansible.builtin.assert": {
                                             "that": [
-                                                "workstation_manager_vscode_settings_sync_session_environment "
-                                                "is skipped",
+                                                (
+                                                    "workstation_manager_vscode_settings_sync_session_environment "
+                                                    "is skipped"
+                                                ),
                                                 "not workstation_manager_vscode_should_request_settings_sync",
                                                 "workstation_manager_vscode_settings_sync_command is skipped",
                                                 "not workstation_manager_vscode_should_remind_settings_sync",

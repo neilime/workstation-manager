@@ -1,9 +1,11 @@
 # Browser profiles
 
 Setup installs Brave Stable, makes it the default browser, and recreates profiles
-from Bitwarden. Each profile uses its own Brave Sync chain for browsing data.
+from Bitwarden. Setup enables **Sync everything**, joins each configured profile
+to its stored Brave Sync chain, and waits for verified synchronization.
 Browser recovery during backup can connect profiles to their stored chains and
-verify synchronization automatically.
+verify synchronization automatically. Setup sets HTTP, HTTPS, and HTML defaults
+for the managed user, including Ubuntu and GNOME desktop-specific associations.
 
 ## Configure recovery
 
@@ -47,21 +49,21 @@ and Bitwarden when renaming a profile.
 ## Restore on another computer
 
 1. Configure the collection, close Brave completely, and run
-   [setup](../../README.md#set-up-or-update-the-workstation). Setup creates the
-   profiles and applies any stored colors and logos.
-2. Open each profile and go to `brave://settings/braveSync`.
-3. Join that profile's existing chain using its 24 stored Bitwarden recovery
-   words. Append Brave's current rotating 25th word as described in
-   [Brave's Sync setup guide](https://support.brave.app/hc/en-us/articles/360021218111-How-do-I-set-up-Sync).
-   Another connected computer can also display a fresh pairing code.
-4. Enable **Sync everything** and wait for synchronization. Check bookmarks,
-   extensions, and important tabs before relying on the restored profile.
-5. Open `brave://sync-internals` and verify successful synchronization without
-   pending changes or errors.
+   [setup](../../README.md#set-up-or-update-the-workstation) from the managed user's
+   desktop session with its system keyring unlocked. Setup creates the profiles,
+   restores their saved settings, enables **Sync everything**, and joins their
+   stored chains using recovery words read privately from Bitwarden.
+2. Setup waits for fresh successful synchronization and matching recovery codes.
+   If a profile cannot synchronize, setup stops; resolve the reported desktop,
+   policy, vault, or server problem and rerun setup.
+3. Check bookmarks, extensions, settings, and important tabs in each profile.
+   Successful synchronization cannot prove that every file or setting you expected
+   was saved by another device.
 
-You can also run backup after setup and choose the browser `sync` action, then
-`restore` when it reports profiles that need their stored chain. The script joins
-those chains, enables Sync everything, and verifies recovery automatically.
+Setup can switch an existing configured profile to its stored chain. It preserves
+unrelated browser data and does not update Bitwarden recovery words. Brave closes
+safely for recovery and reopens if it was running. Dry runs preview recovery
+without launching Brave or joining chains.
 
 Brave Sync uses a chain code independently of Google site accounts. Server
 data expires after 12 months without access; recovery words cannot recover data
@@ -138,6 +140,7 @@ inspection or manual recovery of bookmarks and non-secret preferences.
 Automatic verification requires Brave and access to the managed user's desktop
 session and unlocked system keyring. A new local profile still needs a secure note
 in the configured collection before its recovery can be managed. Policies that
-block Sync must be resolved by the administrator. Noninteractive runs require
-explicit recovery decisions and do not start browser automation. Dry runs inspect
+block Sync must be resolved by the administrator. Noninteractive setup also requires access to the managed desktop and unlocked
+keyring. Noninteractive backup requires explicit recovery decisions and does not
+start browser automation. Dry runs inspect
 saved settings without launching Brave or certifying live recovery.

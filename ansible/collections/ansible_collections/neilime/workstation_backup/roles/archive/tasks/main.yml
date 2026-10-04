@@ -9,6 +9,7 @@
 - name: Create backup archive
   neilime.workstation_backup.archive_with_progress:
     path: "{{ workstation_backup_include_paths }}"
+    root: "{{ workstation_backup_archive_root }}"
     dest: "{{ workstation_backup_archive_path }}"
     exclusion_patterns: "{{ workstation_backup_archive_exclusion_patterns }}"
   when:

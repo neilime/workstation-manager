@@ -29,7 +29,7 @@
   ansible.builtin.set_fact:
     workstation_manager_resolved: >-
       {{ workstation_effective |
-      neilime.workstation_setup.normalized_workstation_manager(ansible_env) }}
+      neilime.workstation_setup.normalized_workstation_manager(ansible_facts['env']) }}
     workstation_manager_use_become: "{{ workstation_use_become }}"
 
 - name: Validate selected browser adapter entrypoints

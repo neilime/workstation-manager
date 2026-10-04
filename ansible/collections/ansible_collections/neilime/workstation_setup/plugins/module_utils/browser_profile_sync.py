@@ -80,18 +80,25 @@ class BrowserVault:
             environ_update=self.environment,
         )
         if return_code:
-            raise ValueError("Bitwarden browser synchronization failed; check vault access and retry")
+            operation = "read browser record" if arguments[:2] == ("get", "item") else "synchronize browser recovery"
+            raise ValueError(
+                f"Bitwarden browser operation {operation} failed (exit status {return_code}); "
+                "rerun setup or backup to unlock the vault and check access to the configured collection"
+            )
         return stdout
 
     def item(self, item_id: str) -> dict:
         """Read a selected record without rendering its note or attachments."""
 
+        output = self.run("get", "item", item_id)
+        if not output.strip():
+            raise ValueError("Bitwarden returned an empty browser record; rerun setup or backup and check vault access")
         try:
-            value = json.loads(self.run("get", "item", item_id))
+            value = json.loads(output)
         except (ValueError, TypeError) as error:
-            raise ValueError("Bitwarden returned an invalid browser record") from error
+            raise ValueError("Bitwarden returned malformed browser record JSON; check the Bitwarden CLI installation") from error
         if not isinstance(value, dict):
-            raise ValueError("Bitwarden returned an invalid browser record")
+            raise ValueError("Bitwarden returned a browser record with an unexpected JSON type")
         return value
 
     def selected_item(self, declaration: dict) -> dict:

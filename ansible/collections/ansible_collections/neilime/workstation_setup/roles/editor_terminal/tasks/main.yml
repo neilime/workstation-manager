@@ -1,0 +1,7 @@
+---
+- name: Configure the VS Code Flatpak integrated terminal to use host Zsh
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.editor_terminal:
+    path: "{{ workstation_manager_resolved.user.home }}/.var/app/com.visualstudio.code/config/Code/User/settings.json"
+  when: '"com.visualstudio.code" in workstation_manager_resolved.development.editor_packages'

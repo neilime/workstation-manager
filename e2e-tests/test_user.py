@@ -42,6 +42,25 @@ def test_chezmoi_bootstrap_from_tracked_repository(host) -> None:
     assert chezmoi_git_config.exists
     assert chezmoi_git_config.contains('[remote "origin"]')
     assert chezmoi_git_config.contains("workstation-config")
+    shell_config = host.run(
+        "chezmoi --config %s --source %s --destination %s verify %s",
+        f"{user_home}/.config/chezmoi/chezmoi.yaml",
+        f"{user_home}/.local/share/chezmoi",
+        user_home,
+        f"{user_home}/.zshrc",
+    )
+    assert shell_config.succeeded
+
+
+def test_zsh_is_the_target_users_login_shell(host) -> None:
+    """Setup must configure the account shell, independently of the current session."""
+    user_name = host.check_output("whoami")
+    assert host.user(user_name).shell == "/usr/bin/zsh"
+    assert host.file("/usr/bin/zsh").is_file
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    startup = host.file(f"{user_home}/.zshrc")
+    assert startup.is_file
+    assert startup.user == user_name
 
 
 def test_oh_my_zsh_is_installed_for_the_target_user(host) -> None:

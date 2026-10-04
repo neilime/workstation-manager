@@ -111,20 +111,6 @@
       before retrying; dry runs do not change the CLI server configuration.
   when: ansible_check_mode or (workstation_backup_dry_run | default(false))
 
-- name: Configure the declared Bitwarden server
-  check_mode: false
-  ansible.builtin.command:
-    argv:
-      - bw
-      - config
-      - server
-      - "{{ workstation_manager_resolved.secrets.bitwarden.server }}"
-  changed_when: bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
-  environment:
-    BW_SESSION: ""
-  when:
-    - bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
-    - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))
 - name: Ensure Bitwarden authentication data exists before login
   ansible.builtin.assert:
     that:
@@ -139,8 +125,21 @@
     fail_msg: >-
       {{ bitwarden_collection_purpose }} needs either BITWARDEN_EMAIL or both
       BITWARDEN_CLIENT_ID and BITWARDEN_CLIENT_SECRET when the current CLI
-      session is unauthenticated.
-  when: bitwarden_collection_status.status == 'unauthenticated'
+      session is unauthenticated or the configured server must change.
+  when: >-
+    bitwarden_collection_status.status == 'unauthenticated'
+    or bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
+
+- name: Ensure a Bitwarden vault password is available for unlock
+  ansible.builtin.assert:
+    that:
+      - bitwarden_collection_password | length > 0
+    fail_msg: >-
+      {{ bitwarden_collection_purpose }} needs BITWARDEN_PASSWORD to unlock the
+      vault.
+
+- name: Select the configured Bitwarden server
+  ansible.builtin.import_tasks: server.yml
 
 - name: Login to Bitwarden with the configured API key
   check_mode: false
@@ -188,7 +187,7 @@
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
 
-- name: Fall back to the configured Bitwarden API key after a noninteractive email-login code challenge
+- name: Fall back to the configured Bitwarden API key when the email verification prompt is unavailable
   check_mode: false
   ansible.builtin.command:
     argv:
@@ -206,7 +205,9 @@
   when:
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
-    - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
+    - >-
+      (bitwarden_collection_email_password_login.failure_reason | default(''))
+      in ['code_required', 'terminal_unavailable']
     - bitwarden_collection_client_id | length > 0
     - bitwarden_collection_client_secret | length > 0
 
@@ -218,7 +219,9 @@
   when:
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
-    - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
+    - >-
+      (bitwarden_collection_email_password_login.failure_reason | default(''))
+      in ['code_required', 'terminal_unavailable']
     - bitwarden_collection_client_id | length > 0
     - bitwarden_collection_client_secret | length > 0
     - (bitwarden_collection_api_key_login_fallback.rc | default(1)) != 0
@@ -234,6 +237,18 @@
     - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'code_required'
     - (bitwarden_collection_client_id | length == 0) or (bitwarden_collection_client_secret | length == 0)
 
+- name: Fail when the managed user cannot access the Bitwarden verification terminal
+  ansible.builtin.fail:
+    msg: >-
+      {{ bitwarden_collection_purpose }} could not open the terminal for the
+      Bitwarden verification code. Run setup, backup or cleanup from the managed
+      user's terminal with the updated workstation.sh entrypoint.
+  when:
+    - bitwarden_collection_status.status == 'unauthenticated'
+    - bitwarden_collection_email | length > 0
+    - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'terminal_unavailable'
+    - (bitwarden_collection_client_id | length == 0) or (bitwarden_collection_client_secret | length == 0)
+
 - name: Fail when the supplied Bitwarden email or password is rejected
   ansible.builtin.fail:
     msg: >-
@@ -244,14 +259,6 @@
     - bitwarden_collection_status.status == 'unauthenticated'
     - bitwarden_collection_email | length > 0
     - (bitwarden_collection_email_password_login.failure_reason | default('')) == 'email_password_rejected'
-
-- name: Ensure a Bitwarden vault password is available for unlock
-  ansible.builtin.assert:
-    that:
-      - bitwarden_collection_password | length > 0
-    fail_msg: >-
-      {{ bitwarden_collection_purpose }} needs BITWARDEN_PASSWORD to unlock the
-      vault.
 
 - name: Unlock the Bitwarden vault for this run
   check_mode: false

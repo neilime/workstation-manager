@@ -304,3 +304,16 @@ def test_repeated_live_issues_are_grouped_into_one_short_instruction() -> None:
     assert all(f"(Profile {number})" in result["summary"] for number in range(6))
     assert all(len(line) <= 88 for line in result["summary"].splitlines())
     assert set(result["actions"]) == {"retry", "save", "restore"}
+
+
+def test_restore_joins_new_profile_without_writing_recovery_words(fixture: tuple) -> None:
+    """Setup can enroll a new profile in its saved chain and verify fresh Sync."""
+
+    vault, _pipe, native, _lifecycle = fixture
+    state = {"seed_present": False, "requested": False, "has_setup_completed": False}
+
+    assert live._verify_profile(native, PROFILE, "restore", vault, state) is None
+    native.restore.assert_called_once_with(REMOTE, reset=False)
+    native.wait.assert_called_once()
+    assert all(call.args == ("sync",) for call in vault.run.call_args_list)
+    assert native.code.call_count == 1

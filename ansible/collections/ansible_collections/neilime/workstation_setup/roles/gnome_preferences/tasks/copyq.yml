@@ -1,0 +1,74 @@
+---
+- name: Check whether CopyQ is already running for the target user
+  ansible.builtin.command:
+    argv:
+      - pgrep
+      - --uid
+      - "{{ workstation_manager_resolved.user.name }}"
+      - --exact
+      - copyq
+  register: workstation_manager_gnome_copyq_process
+  changed_when: false
+  failed_when: workstation_manager_gnome_copyq_process.rc not in [0, 1]
+
+- name: Discover the active GNOME session environment for CopyQ
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.shell: |
+    set -euo pipefail
+
+    target_user_id="$(id -u "$TARGET_USER")"
+    if gnome_shell_pid="$(pgrep --euid "$target_user_id" --oldest --exact gnome-shell)"; then
+      tr '\0' '\n' <"/proc/${gnome_shell_pid}/environ" |
+        awk -F= '/^(DISPLAY|WAYLAND_DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XAUTHORITY)=/ { print }'
+    else
+      status=$?
+      if [[ "$status" -eq 1 ]]; then
+        exit 10
+      fi
+      exit "$status"
+    fi
+  args:
+    executable: /bin/bash
+  environment:
+    TARGET_USER: "{{ workstation_manager_resolved.user.name }}"
+  register: workstation_manager_gnome_copyq_session_environment
+  changed_when: false
+  failed_when: workstation_manager_gnome_copyq_session_environment.rc not in [0, 10]
+  when: workstation_manager_gnome_copyq_process.rc == 1
+
+- name: Start CopyQ hidden in the active desktop session
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/flatpak
+      - run
+      - com.github.hluk.copyq
+      - --start-server
+      - hide
+  environment: >-
+    {{
+      dict(workstation_manager_gnome_copyq_session_environment.stdout_lines | map('split', '=', 1))
+      | combine({
+          'HOME': workstation_manager_resolved.user.home,
+          'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config',
+          'XDG_DATA_HOME': workstation_manager_resolved.user.home ~ '/.local/share',
+        })
+    }}
+  changed_when: true
+  when:
+    - workstation_manager_gnome_copyq_process.rc == 1
+    - workstation_manager_gnome_copyq_session_environment.rc | default(10) == 0
+    - >-
+      workstation_manager_gnome_copyq_session_environment.stdout_lines
+      | select('match', '^(DISPLAY|WAYLAND_DISPLAY)=.+') | list | length > 0
+
+- name: Report CopyQ startup deferred until graphical login
+  ansible.builtin.debug:
+    msg: CopyQ will start at the next graphical login; no active GNOME display was found.
+  when:
+    - workstation_manager_gnome_copyq_process.rc == 1
+    - >-
+      workstation_manager_gnome_copyq_session_environment.rc | default(10) == 10
+      or workstation_manager_gnome_copyq_session_environment.stdout_lines
+      | select('match', '^(DISPLAY|WAYLAND_DISPLAY)=.+') | list | length == 0

@@ -46,17 +46,20 @@ def test_primary_browser_is_installed_and_default(host) -> None:
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
     browser_command = "command -v brave-browser"
-    mimeapps_file = host.file(f"{user_home}/.config/mimeapps.list")
 
     # Act
     browser_result = host.run(browser_command)
-    has_http_default = mimeapps_file.contains("x-scheme-handler/http=brave-browser.desktop")
-    has_https_default = mimeapps_file.contains("x-scheme-handler/https=brave-browser.desktop")
-    has_html_default = mimeapps_file.contains("text/html=brave-browser.desktop")
 
     # Assert
     assert browser_result.succeeded
-    assert mimeapps_file.exists
-    assert has_http_default
-    assert has_https_default
-    assert has_html_default
+    for filename in ("mimeapps.list", "ubuntu-mimeapps.list", "gnome-mimeapps.list"):
+        mimeapps_file = host.file(f"{user_home}/.config/{filename}")
+        assert mimeapps_file.exists
+        for mime_type in ("x-scheme-handler/http", "x-scheme-handler/https", "text/html"):
+            assert mimeapps_file.contains(f"{mime_type}=brave-browser.desktop")
+
+    for mime_type in ("x-scheme-handler/http", "x-scheme-handler/https", "text/html"):
+        default = host.check_output(
+            "env XDG_CURRENT_DESKTOP=ubuntu:GNOME xdg-mime query default %s", mime_type
+        )
+        assert default == "brave-browser.desktop"

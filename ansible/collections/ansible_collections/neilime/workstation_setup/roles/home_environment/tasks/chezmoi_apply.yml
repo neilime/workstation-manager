@@ -1,0 +1,81 @@
+---
+- name: Reset the Chezmoi conflict decision for this setup run
+  ansible.builtin.set_fact:
+    workstation_manager_home_environment_chezmoi_conflict_action: ""
+
+- name: Inspect the managed Chezmoi dotfiles before application
+  ansible.builtin.import_tasks: chezmoi_inspect.yml
+
+- name: Require an interactive terminal to reconcile locally changed Chezmoi files
+  vars:
+    workstation_manager_home_environment_chezmoi_interactive: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) == '1' }}
+    workstation_manager_home_environment_chezmoi_newline: "\n"
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_interactive
+    quiet: true
+    fail_msg: |
+      Chezmoi found local changes that differ from the source dotfiles:
+      {{ workstation_manager_home_environment_chezmoi_local_changes | join(workstation_manager_home_environment_chezmoi_newline) }}
+      Rerun setup in an interactive terminal to replace these files or skip dotfile application,
+      or resolve these files in a terminal as {{ workstation_manager_resolved.user.name }}:
+      {{ (workstation_manager_home_environment_chezmoi_command | reject('equalto', '--no-tty') | list
+          + ['apply']) | map('quote') | join(' ') }}
+      Chezmoi will ask before replacing conflicting local files. Rerun setup after resolving them.
+  when: workstation_manager_home_environment_chezmoi_local_changes | length > 0
+
+- name: Reconcile locally changed Chezmoi files before application
+  ansible.builtin.include_tasks: chezmoi_reconcile.yml
+  when: workstation_manager_home_environment_chezmoi_local_changes | length > 0
+
+- name: Require completed Chezmoi conflict reconciliation
+  vars:
+    workstation_manager_home_environment_chezmoi_newline: "\n"
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_local_changes | length == 0
+    quiet: true
+    fail_msg: |
+      Chezmoi still has local changes that differ from the source dotfiles:
+      {{ workstation_manager_home_environment_chezmoi_local_changes | join(workstation_manager_home_environment_chezmoi_newline) }}
+      Review and resolve these files in a terminal as {{ workstation_manager_resolved.user.name }}:
+      {{ (workstation_manager_home_environment_chezmoi_command | reject('equalto', '--no-tty') | list
+          + ['apply']) | map('quote') | join(' ') }}
+      Chezmoi will ask before replacing conflicting local files. Rerun setup after resolving them.
+  when: workstation_manager_home_environment_chezmoi_conflict_action != 'skip'
+
+- name: Apply the managed Chezmoi target state
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv: "{{ workstation_manager_home_environment_chezmoi_command + ['apply', '--error-on-conflict'] }}"
+  register: workstation_manager_home_environment_chezmoi_apply
+  changed_when: workstation_manager_home_environment_chezmoi_apply.rc | default(1) == 0
+  failed_when: false
+  no_log: true
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  when:
+    - workstation_manager_home_environment_chezmoi_conflict_action != 'skip'
+    - workstation_manager_home_environment_chezmoi_status.stdout | trim | length > 0
+
+- name: Require successful Chezmoi application of pending dotfiles
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_apply.rc | default(1) == 0
+    quiet: true
+    fail_msg: |
+      Chezmoi could not apply the managed dotfiles
+      (exit {{ workstation_manager_home_environment_chezmoi_apply.rc | default('unknown') }}).
+      Run this command in a terminal as {{ workstation_manager_resolved.user.name }}
+      to see the underlying error and review any conflict prompts:
+      {{ (workstation_manager_home_environment_chezmoi_command | reject('equalto', '--no-tty') | list
+          + ['apply']) | map('quote') | join(' ') }}
+      This applies pending dotfiles and runs their scripts. A dry run does not execute scripts
+      and can exit silently on a conflict, so it may not reproduce this failure.
+      Command output is hidden because templates and scripts can contain sensitive data.
+  when:
+    - workstation_manager_home_environment_chezmoi_conflict_action != 'skip'
+    - workstation_manager_home_environment_chezmoi_status.stdout | trim | length > 0

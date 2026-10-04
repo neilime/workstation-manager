@@ -60,11 +60,25 @@ def test_path_plan_builder_splits_present_and_missing_paths() -> None:
     # Assert
     assert plan == {
         "include_paths": ["/home/emilien/.config/workstation-manager"],
+        "archive_root": "/home/emilien",
         "manifest_lines": [
             "include\tworkstation-manager-user-config\t/home/emilien/.config/workstation-manager",
             "missing\tdev-projects\t/home/emilien/Documents/dev-projects",
         ],
     }
+
+
+def test_path_plan_normalizes_extra_paths_before_choosing_the_common_root() -> None:
+    """The plan and writer must agree when an extra source uses parent-directory segments."""
+
+    plan = BackupPathPlanBuilder().build(
+        [
+            {"item": {"label": "dev-projects", "path": "/home/user/Documents/dev-projects"}, "stat": {"exists": True}},
+            {"item": {"label": "extra", "path": "/home/user/../../srv/shared"}, "stat": {"exists": True}},
+        ],
+        "\t",
+    )
+    assert plan["archive_root"] == "/"
 
 
 def test_manifest_content_builder_renders_header_and_records() -> None:

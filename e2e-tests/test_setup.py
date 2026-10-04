@@ -68,6 +68,7 @@ def test_setup_reattaches_restored_git_project(host) -> None:
     assert restored_local_note.exists
     assert restored_local_note.is_file
     assert restored_local_note.contains("local-untracked")
+    assert not host.file(f"{user_home}/dev-projects/client-restore").exists
     assert origin_url == "/tmp/workstation-manager-e2e-origin-client-restore.git"
     assert current_branch == "main"
 

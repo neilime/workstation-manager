@@ -52,6 +52,12 @@ Choose the server that hosts your vault; the default is
 Your account must be able to read them. Backup also needs write access when you
 approve adding or updating keys.
 
+When the CLI uses a different server, normal runs check that login credentials
+are available, log out of the current CLI account, select the configured server,
+and authenticate again. This invalidates existing CLI sessions. Dry runs stop on
+a server mismatch without logging out or changing the server; run normally to
+select the configured server first.
+
 Create one item per SSH key. Use these fields:
 
 | Item property              | Value                                                    |
@@ -75,7 +81,11 @@ The GPG collection must contain exactly one key for Git signing:
 
 The last two entries are custom fields. A fingerprint can also be read from an
 ownertrust record when no `fingerprint` field is provided. Setup imports the key
-and enables Git commit and tag signing with it.
+and configures Git commit and tag signing in `~/.config/git/config`, preserving
+other entries in that file and leaving the
+Chezmoi-managed `~/.gitconfig` unchanged. Git reads both files; signing settings
+in `.gitconfig` take precedence, so remove conflicting settings there to use the
+restored key. Keep `.config/git/config` outside Chezmoi's managed source.
 
 The browser collection is optional. Leave its selector empty to create no managed
 profiles, or follow [browser profiles](browser.md) to populate it. Backup reports
@@ -86,7 +96,26 @@ local browser profiles missing from the collection as drift.
 `home_environment.chezmoi.source` selects the Git repository used to initialize
 `~/.local/share/chezmoi`. Use a full HTTPS or SSH Git URL. Setup applies its
 dotfiles to your home directory. An existing checkout is reused; changing the
-source setting does not switch its remote.
+source setting does not switch its remote. Setup uses the managed source,
+configured `home_environment.chezmoi.config_path`, and target home explicitly,
+including when your terminal or IDE sets a different `XDG_DATA_HOME`. Existing
+baseline directory permissions are preserved, including private `.config`
+permissions applied by your dotfiles.
+
+Setup checks pending changes with `chezmoi status`. If local changes conflict
+with the source, it lists the affected paths and prompts before replacing them.
+Choose `apply` to use the source versions and permissions for those paths,
+`skip` to keep your local changes and continue setup without applying any Chezmoi
+dotfiles or scripts for this run, or `abort` to stop setup and reconcile your
+changes with the printed interactive Chezmoi command. An empty answer aborts.
+Approved replacements are checked before setup applies the remaining dotfiles
+and runs their scripts. A run without an
+interactive terminal stops at conflicts without replacing them. If inspection or
+application fails, setup prints a command to diagnose the error locally as the
+target user. Command output stays private because templates and scripts may
+contain sensitive data. Application
+errors use an actual `apply` command for diagnosis: a dry run does not run scripts
+and can exit without an error message on conflicts.
 
 Setup installs [Oh My Zsh](https://github.com/ohmyzsh/ohmyzsh) into `~/.oh-my-zsh`
 before applying dotfiles. The installation task pins the framework revision,
@@ -120,7 +149,9 @@ zstyle ':omz:update' mode disabled
 ```
 
 Setup then owns framework updates. Setup leaves `.zshrc` ownership to Chezmoi
-and does not change the account's login shell.
+and sets the target user's login shell to `/usr/bin/zsh`. Log out of your desktop
+session and log back in after setup to use Zsh in new terminals. Existing
+terminals keep their current shell.
 
 Maintain dotfiles in that source repository. Before backup, review local changes;
 the [backup workflow](backup-and-restore.md) offers to capture or reapply managed
@@ -143,6 +174,25 @@ and extensions. Brave recovery is covered in the [browser guide](browser.md).
 
 ## Developer tools and project files
 
+When `development.editor_packages` includes `com.visualstudio.code`, setup
+installs a `code` launcher on your terminal's `PATH`, preserving any existing
+`/usr/local/bin/code`. Open a project or file with:
+
+```sh
+code .
+code --wait path/to/file
+```
+
+Setup also selects `zsh (host)` as the VS Code integrated terminal's default Linux
+profile. It uses the Flatpak package's
+[host-spawn bridge](https://github.com/flathub/com.visualstudio.code#use-host-shell-in-the-integrated-terminal)
+to run `/usr/bin/zsh` on the workstation, where your `.zshrc`, mise tools, and
+project files are available. Setup preserves other editor settings, terminal
+profiles, and comments in `settings.json`. Restart VS Code after setup and open a
+new terminal; existing terminals keep their current shell. Workspace settings
+can override the default; select `zsh (host)` through
+**Terminal: Select Default Profile** in that case.
+
 Set workstation-wide tool versions in `development.mise.tools`. They are
 written to `~/.config/mise/config.toml`; project-specific versions belong in each
 project's `mise.toml`.
@@ -160,6 +210,12 @@ notification once per day.
 
 Review the public defaults for package lists, GNOME preferences, and application
 settings. Override only the values you need to change.
+
+CopyQ starts hidden at graphical login by default. Setup also starts it in an
+active GNOME session if it is not already running. When setup runs without a
+graphical session, CopyQ starts at the next login. Set `desktop.gnome.autostart`
+to `[]` in your private override to skip startup configuration and activation;
+remove any previously installed startup entry in `~/.config/autostart/` yourself.
 
 ## Automated runs
 

@@ -3,6 +3,8 @@
   ansible.builtin.import_tasks: metadata.yml
 
 - name: Read encrypted browser avatar attachments into memory
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
   ansible.builtin.command:
     argv:
       - python3
@@ -18,6 +20,8 @@
       - "{{ item.item_id }}"
       - --raw
   environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
     BW_SESSION: "{{ bitwarden_collection_session }}"
   loop: "{{ workstation_manager_browser_profiles | selectattr('avatar_attachment_id', 'defined') | list }}"
   register: browser_profile_collection_avatars

@@ -1,0 +1,33 @@
+---
+- name: Inspect pending changes in the managed Chezmoi source
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv: "{{ workstation_manager_home_environment_chezmoi_command + ['status', '--path-style', 'relative'] }}"
+  register: workstation_manager_home_environment_chezmoi_status
+  changed_when: false
+  failed_when: false
+  no_log: true
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+
+- name: Require successful Chezmoi inspection before applying dotfiles
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_status.rc | default(1) == 0
+    quiet: true
+    fail_msg: |
+      Chezmoi could not inspect the managed dotfiles
+      (exit {{ workstation_manager_home_environment_chezmoi_status.rc | default('unknown') }}).
+      Run this read-only command in a terminal as {{ workstation_manager_resolved.user.name }}
+      to see the underlying error:
+      {{ (workstation_manager_home_environment_chezmoi_command + ['status']) | map('quote') | join(' ') }}
+      Command output is hidden because templates can contain sensitive data.
+
+- name: Resolve locally changed Chezmoi files that differ from the source
+  ansible.builtin.set_fact:
+    workstation_manager_home_environment_chezmoi_local_changes: >-
+      {{ workstation_manager_home_environment_chezmoi_status.stdout_lines
+         | select('match', '^[AMD][AMD] ') | list }}
+  no_log: true

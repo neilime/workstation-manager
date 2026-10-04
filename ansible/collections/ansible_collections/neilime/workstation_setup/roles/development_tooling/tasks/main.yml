@@ -87,6 +87,10 @@
     remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
   when: workstation_manager_resolved.development.editor_packages | length > 0
 
+- name: Expose the VS Code terminal command
+  ansible.builtin.import_tasks: editor_cli.yml
+  when: workstation_manager_resolved.development.editor_packages | neilime.workstation_setup.has_vscode_editor_package
+
 - name: Validate declared GitHub CLI extensions
   ansible.builtin.assert:
     that:

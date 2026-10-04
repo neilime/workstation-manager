@@ -1,0 +1,55 @@
+---
+- name: Preview Brave Sync recovery
+  ansible.builtin.debug:
+    msg: Setup will enable Sync everything and join the configured profiles to their Bitwarden recovery chains.
+  when: ansible_check_mode
+
+- name: Restore and verify configured Brave Sync chains
+  when: not ansible_check_mode
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  block:
+    - name: Restore browser profile settings and enable Sync everything
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      neilime.workstation_setup.browser_profile_sync:
+        user_data_dir: "{{ browser_brave_user_data_dir }}"
+        profiles: "{{ workstation_manager_browser_profiles }}"
+        direction: restore
+        collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
+        session: "{{ bitwarden_collection_session }}"
+      register: browser_brave_setup_profile_sync
+      no_log: true
+
+    - name: Stop setup when Brave cannot close safely
+      ansible.builtin.fail:
+        msg: "{{ browser_brave_setup_profile_sync.blocker }}"
+      when: browser_brave_setup_profile_sync.blocked | default(false)
+
+    - name: Join saved Brave Sync chains and verify synchronization
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      neilime.workstation_setup.browser_recovery_sync:
+        user_data_dir: "{{ browser_brave_user_data_dir }}"
+        profiles: "{{ workstation_manager_browser_profiles }}"
+        action: restore
+        collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
+        session: "{{ bitwarden_collection_session }}"
+      register: browser_brave_setup_live_sync
+      no_log: true
+
+    - name: Require verified Brave Sync recovery
+      ansible.builtin.assert:
+        that:
+          - browser_brave_setup_live_sync.verified
+        fail_msg: "{{ browser_brave_setup_live_sync.summary }}"
+        success_msg: Configured Brave profiles joined their saved chains and completed verified synchronization.
+  rescue:
+    - name: Report incomplete browser recovery
+      ansible.builtin.fail:
+        msg: >-
+          {{ browser_brave_setup_live_sync.recovery_error
+             | default(browser_brave_setup_live_sync.summary
+             | default(browser_brave_setup_profile_sync.blocker
+             | default('Browser Sync recovery failed; check Brave, desktop access and the configured Bitwarden records, then rerun setup.'))) }}

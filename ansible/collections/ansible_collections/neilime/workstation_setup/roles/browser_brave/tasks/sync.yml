@@ -1,5 +1,8 @@
 ---
 - name: Synchronize browser recovery with safe failure diagnostics
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
   block:
     - name: Run Brave Sync and verify recovery codes automatically
       become: "{{ workstation_manager_use_become }}"

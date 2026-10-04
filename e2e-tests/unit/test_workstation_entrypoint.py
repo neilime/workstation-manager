@@ -533,33 +533,30 @@ class RepositorySourceTests(unittest.TestCase):
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = fixture / "resolve-terminal.sh"
+            wrapper.write_text("\n".join(definitions) + "\ninteractive_terminal_path\n")
             master, slave = pty.openpty()
             slave_path = os.ttyname(slave)
             try:
-                # Reproduce `curl | sh`: stdin is a pipe while a controlling
-                # terminal still exists, so the helper must not return the
-                # unreopenable "/dev/tty" alias.
+                # Mirror the interactive `script` capture path: the entrypoint
+                # runs with the terminal on stdin, so the helper must resolve its
+                # concrete device rather than the unreopenable "/dev/tty" alias.
                 with subprocess.Popen(
                     [
                         sys.executable,
                         "-c",
-                        controlling_tty_exec_python('["sh", "-s", "--", sys.argv[2]]'),
+                        controlling_tty_exec_python('["sh", sys.argv[2]]'),
                         slave_path,
                         str(wrapper),
                     ],
-                    stdin=subprocess.PIPE,
+                    stdin=slave,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env={"PATH": "/usr/bin:/bin", "HOME": temporary_dir},
                     start_new_session=True,
                     text=True,
                 ) as process:
-                    stdout, stderr = process.communicate(
-                        '. "$1"\ninteractive_terminal_path\n',
-                        timeout=10,
-                    )
+                    stdout, stderr = process.communicate(timeout=10)
             finally:
                 os.close(slave)
                 os.close(master)
@@ -824,6 +821,11 @@ class PipedBackupTests(unittest.TestCase):
         (fixture / "private.override.yml").write_text("{}\n")
         scripts = {
             "sudo": sudo_passthrough_script('if [ "$1" = "-v" ]; then exit 0; fi\n'),
+            "chown": (
+                "#!/bin/sh\n"
+                'if [ "${TEST_TERMINAL_OWNER_FAILURE:-0}" = "1" ]; then exit 1; fi\n'
+                'printf "%s|%s\n" "$2" "$3" >"$TEST_TERMINAL_OWNER_FILE"\n'
+            ),
             "git": "#!/bin/sh\nexit 99\n",
             "getent": '#!/bin/sh\nprintf "fixture:x:1000:1000::%s:/bin/sh\\n" "$HOME"\n',
             "ansible-playbook": "#!/bin/sh\nexit 99\n",
@@ -848,9 +850,16 @@ class PipedBackupTests(unittest.TestCase):
             ),
             "ansible-pull": (
                 f"#!{sys.executable}\n"
-                "import json, os, sys\n"
+                "import json, os, subprocess, sys\n"
                 'print("Fixture recovery confirmation: ", end="", flush=True)\n'
                 "answer = sys.stdin.readline().strip()\n"
+                'if os.environ.get("TEST_BITWARDEN_CODE") == "1":\n'
+                "    from ansible_collections.neilime.workstation_setup.plugins.module_utils import bitwarden_auth\n"
+                "    code = bitwarden_auth._prompt_for_hidden_code(\n"
+                "        'Fixture Bitwarden emailed code: ', tty_path=os.environ['WORKSTATION_MANAGER_TTY'])\n"
+                "    if code != '654321': sys.exit(8)\n"
+                "terminal = subprocess.check_output(\n"
+                "    ['ps', '-o', 'tty=', '-p', str(os.getpid())], text=True).strip()\n"
                 'with open(os.environ["TEST_INVOCATION_FILE"], "w") as output:\n'
                 "    json.dump({\n"
                 '        "args": sys.argv[1:], "answer": answer,\n'
@@ -858,6 +867,7 @@ class PipedBackupTests(unittest.TestCase):
                 '        "password": os.environ["BITWARDEN_PASSWORD"],\n'
                 '        "output_dir": os.environ["WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR"],\n'
                 '        "user_home": os.environ["WORKSTATION_MANAGER_USER_HOME"],\n'
+                '        "prompt_tty": os.environ["WORKSTATION_MANAGER_TTY"], "relay_tty": "/dev/" + terminal,\n'
                 "    }, output)\n"
                 'sys.exit(0 if answer == "continue" else 9)\n'
             ),
@@ -881,6 +891,8 @@ class PipedBackupTests(unittest.TestCase):
             "TEST_ENTRYPOINT_FILE": str(ENTRYPOINT_PATH),
             "TEST_DOWNLOAD_LOG": str(fixture / "downloads.txt"),
             "TEST_INVOCATION_FILE": str(fixture / "invocation.json"),
+            "TEST_TERMINAL_OWNER_FILE": str(fixture / "terminal-owner.txt"),
+            "PYTHONPATH": str(ENTRYPOINT_PATH.parent / "ansible/collections"),
         }
 
     def test_piped_backup_preserves_terminal_credentials_paths_and_check_mode(
@@ -931,6 +943,41 @@ class PipedBackupTests(unittest.TestCase):
                     ],
                 )
                 self.assertEqual(list(fixture.glob("workstation-manager-*")), [])
+
+    def test_piped_capture_assigns_prompt_terminal_and_hides_emailed_code(self) -> None:
+        """The runner must assign its own terminal before reopening it for hidden input."""
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            environment = self._prepare_fixture(fixture)
+            environment["TEST_BITWARDEN_CODE"] = "1"
+            returncode, output = run_interactive(
+                ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'],
+                fixture,
+                environment,
+                [("Fixture recovery confirmation: ", "continue"), ("Fixture Bitwarden emailed code: ", "654321")],
+            )
+            self.assertEqual(returncode, 0, output)
+            invocation = json.loads((fixture / "invocation.json").read_text())
+            self.assertEqual(invocation["prompt_tty"], invocation["relay_tty"])
+            self.assertEqual(
+                (fixture / "terminal-owner.txt").read_text().strip(), f"fixture|{invocation['prompt_tty']}"
+            )
+            self.assertNotIn("654321", output)
+
+    def test_prompt_terminal_ownership_failure_stops_before_ansible(self) -> None:
+        """An inaccessible relay must fail before any authentication or workstation work."""
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            environment = self._prepare_fixture(fixture)
+            environment["TEST_TERMINAL_OWNER_FAILURE"] = "1"
+            returncode, output = run_interactive(
+                ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'], fixture, environment
+            )
+            self.assertNotEqual(returncode, 0)
+            self.assertIn("Failed to make the interactive relay terminal accessible", output)
+            self.assertFalse((fixture / "invocation.json").exists())
 
     def test_unavailable_or_invalid_runner_source_stops_before_ansible(self) -> None:
         """Download and parsing failures must fail clearly and remove temporary source files."""

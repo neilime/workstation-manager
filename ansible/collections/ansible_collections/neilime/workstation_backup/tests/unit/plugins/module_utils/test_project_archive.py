@@ -208,6 +208,35 @@ def test_preview_idempotence_and_private_permissions(projects):
     assert destination.stat().st_mode & 0o777 == 0o600
 
 
+def test_explicit_archive_root_preserves_the_home_relative_project_path(tmp_path):
+    """Selecting one present source must not shorten a root chosen from all requested paths."""
+
+    home = tmp_path / "home"
+    projects = home / "Documents/dev-projects"
+    projects.mkdir(parents=True)
+    (projects / "local-note.txt").write_text("untracked source")
+    destination = tmp_path / "backup.tar.gz"
+    result = project_archive.ProjectArchiveWriter(run_command).create(
+        [str(projects)], str(destination), [], root=str(home)
+    )
+    assert result["arcroot"] == str(home)
+    with tarfile.open(destination, "r:gz") as archive:
+        assert archive.getnames() == ["Documents/dev-projects", "Documents/dev-projects/local-note.txt"]
+
+
+def test_explicit_archive_root_rejects_sources_outside_it(projects):
+    """Invalid roots must fail before writing or replacing an archive."""
+
+    destination = projects.parent / "backup.tar.gz"
+    outside = projects.parent / "outside.txt"
+    outside.write_text("outside root")
+    with pytest.raises(ValueError, match="inside the archive root"):
+        project_archive.ProjectArchiveWriter(run_command).create(
+            [str(outside)], str(destination), [], root=str(projects)
+        )
+    assert not destination.exists()
+
+
 def test_native_tar_treats_filenames_as_data_and_ignores_inherited_options(projects, monkeypatch):
     """Leading dashes and newlines must not become tar options or split the selection list."""
 

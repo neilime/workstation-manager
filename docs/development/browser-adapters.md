@@ -65,7 +65,10 @@ and expose it through thin modules or filters.
 ## Profile input
 
 Use `neilime.workstation_setup.browser_profile_collection` to load
-`workstation_manager_browser_profiles`. Setup adapters and backup orchestration
+`workstation_manager_browser_profiles`. The loader authenticates Bitwarden as the
+resolved user with `HOME` and `XDG_CONFIG_HOME` pointing to that account. Use the
+same user and environment for avatar downloads and browser synchronization so
+session tokens refer to the same CLI account cache. Setup adapters and backup orchestration
 use its default entrypoint, which also downloads avatar attachments into memory.
 Cleanup loads `tasks_from: metadata` before calling the inspection entrypoint;
 profile-directory drift does not require avatar images.
@@ -103,8 +106,9 @@ profile names and enables Sync everything for managed profiles; `save` updates
 existing vault metadata and avatars without changing recovery words. Approved
 operations close the managed user's matching Brave instance with a graceful
 exit request, preserve session tabs, and reopen it afterward if it was running.
-Locks are never removed and processes are never force-killed. Setup preserves
-existing Sync choices.
+Locks are never removed and processes are never force-killed. Setup restores
+profile metadata, enables Sync everything, joins the stored chains, and requires
+verified live synchronization. Preview runs do not launch Brave.
 
 Live verification uses Brave's native WebUI APIs through inherited anonymous
 DevTools pipes. It opens no debugging port and does not copy profiles, bypass

@@ -371,3 +371,33 @@ def test_sync_restore_does_not_change_undeclared_profiles(sync_only: tuple) -> N
     inspection = sync.inspect_browser_profiles(str(root), profiles)
     assert sync.browser_sync_directions(inspection) == {}
     assert any(record["directory"] == "Profile 9" for record in inspection["sync_issues"])
+
+
+@pytest.mark.parametrize(
+    ("returncode", "output", "message"),
+    [
+        (1, b"private vault failure", "read browser record failed (exit status 1)"),
+        (0, b"", "empty browser record"),
+        (0, b"private malformed record", "malformed browser record JSON"),
+        (0, b"[]", "unexpected JSON type"),
+    ],
+)
+def test_vault_record_failures_preserve_safe_cause(returncode: int, output: bytes, message: str) -> None:
+    """CLI failures must not become parse errors or expose private command output."""
+
+    runner = Mock(return_value=(returncode, output, b"private stderr"))
+    vault = sync.BrowserVault("fixture-session", "fixture-collection", runner)
+    with pytest.raises(ValueError) as caught:
+        vault.item(ITEM_ID)
+    assert message in str(caught.value)
+    assert "private" not in str(caught.value)
+    assert ITEM_ID not in str(caught.value)
+
+
+def test_vault_record_returns_valid_json() -> None:
+    """A valid CLI response remains available to identity and collection checks."""
+
+    record = {"id": ITEM_ID, "notes": "synthetic-private-note"}
+    runner = Mock(return_value=(0, json.dumps(record).encode(), b""))
+    vault = sync.BrowserVault("fixture-session", "fixture-collection", runner)
+    assert vault.item(ITEM_ID) == record

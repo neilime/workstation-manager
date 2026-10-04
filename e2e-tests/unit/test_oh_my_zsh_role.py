@@ -62,7 +62,12 @@ class OhMyZshRoleTests(unittest.TestCase):
 
     def apply(self, version: str, *, check: bool = False) -> subprocess.CompletedProcess[str]:
         """Run the production task with an isolated upstream and fixture revision."""
-        tasks = DataLoader().load_from_file(str(TASK_FILE))
+        # Account changes are exercised in the VM; this fixture owns only a home.
+        tasks = [
+            task
+            for task in DataLoader().load_from_file(str(TASK_FILE))
+            if "ansible.builtin.git" in task
+        ]
         tasks[0]["ansible.builtin.git"]["repo"] = str(self.origin)
         tasks[0]["ansible.builtin.git"]["version"] = version
         playbook = self.fixture / "playbook.json"

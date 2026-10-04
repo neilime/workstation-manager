@@ -1,4 +1,16 @@
 ---
+- name: Ensure Zsh is installed for the target user's login shell
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: zsh
+    state: present
+
+- name: Set Zsh as the target user's login shell
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.user:
+    name: "{{ workstation_manager_resolved.user.name }}"
+    shell: /usr/bin/zsh
+
 - name: Install the pinned Oh My Zsh checkout for the target user
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"

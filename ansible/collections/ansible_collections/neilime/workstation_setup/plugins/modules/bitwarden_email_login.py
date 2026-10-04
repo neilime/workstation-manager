@@ -14,7 +14,7 @@ version_added: '1.0.0'
 description:
   - Logs in to Bitwarden with email/password and returns the raw session token from C(bw login --raw).
   - Handles emailed two-step and new-device verification prompts without echoing codes into captured output.
-  - Returns retryable failure reasons for rejected credentials or missing interactive verification.
+  - Returns safe failure reasons for rejected credentials, missing interactive verification or an inaccessible terminal.
 author:
   - workstation-manager contributors (@neilime)
 options:

@@ -2,7 +2,7 @@
 - name: Resolve VS Code settings sync state
   ansible.builtin.set_fact:
     workstation_manager_vscode_settings_sync_use_become_user: >-
-      {{ workstation_manager_use_become and ansible_user_id != workstation_manager_resolved.user.name }}
+      {{ workstation_manager_use_become and ansible_facts['user_id'] != workstation_manager_resolved.user.name }}
     workstation_manager_vscode_settings_sync_state_dir: >-
       {{ workstation_manager_resolved.user.home | neilime.workstation_setup.vscode_settings_sync_state_dir }}
     workstation_manager_vscode_settings_sync_interactive: >-

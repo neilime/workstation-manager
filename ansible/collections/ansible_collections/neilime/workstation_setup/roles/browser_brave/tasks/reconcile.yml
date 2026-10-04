@@ -8,6 +8,9 @@
     direction: "{{ workstation_backup_recovery_choices['browser-recovery'] }}"
     collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
     session: "{{ bitwarden_collection_session }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
   register: browser_brave_sync_result
   when:
     - not workstation_backup_dry_run

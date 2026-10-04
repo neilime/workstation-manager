@@ -1,0 +1,29 @@
+---
+- name: Ensure target user XDG config directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+- name: Apply Brave default browser associations for Ubuntu and GNOME
+  become: "{{ workstation_manager_use_become }}"
+  community.general.ini_file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/{{ item.0 }}"
+    section: Default Applications
+    option: "{{ item.1 }}"
+    value: "{{ workstation_manager_browser_desktop_file }}"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+    no_extra_spaces: true
+  loop: >-
+    {{
+      ['mimeapps.list', 'ubuntu-mimeapps.list', 'gnome-mimeapps.list']
+      | product(['x-scheme-handler/http', 'x-scheme-handler/https', 'text/html'])
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0 }}: {{ item.1 }}"

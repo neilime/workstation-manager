@@ -68,11 +68,29 @@
       neilime.workstation_restore.validate_archive:
         path: "{{ workstation_restore_archive_path }}"
         target_home: "{{ workstation_restore_target_user_home }}"
+        manifest_path: >-
+          {{ workstation_restore_manifest_path if workstation_restore_manifest_stat.stat.exists | default(false) else omit }}
+      register: workstation_restore_archive_plan
+
+    - name: Preview archive extraction directory
+      ansible.builtin.debug:
+        msg: "archive extraction directory: {{ workstation_restore_archive_plan.destination }}"
+      when: ansible_check_mode
+
+    - name: Ensure archive extraction directory exists
+      ansible.builtin.file:
+        path: "{{ workstation_restore_archive_plan.destination }}"
+        state: directory
+        owner: "{{ workstation_restore_target_user_name }}"
+        mode: "0755"
+      when:
+        - not ansible_check_mode
+        - not workstation_restore_archive_plan.destination_exists
 
     - name: Restore backup archive into the target user home
       ansible.builtin.unarchive:
         src: "{{ workstation_restore_archive_path }}"
-        dest: "{{ workstation_restore_target_user_home }}"
+        dest: "{{ workstation_restore_archive_plan.destination }}"
         remote_src: true
       when: not ansible_check_mode
 
@@ -108,6 +126,7 @@
       ansible.builtin.debug:
         msg:
           - "restore archive applied from {{ workstation_restore_archive_path }}"
+          - "archive extraction directory: {{ workstation_restore_archive_plan.destination }}"
           - >-
             {{
               'git repository inventory processed from ' ~ workstation_restore_git_inventory_path

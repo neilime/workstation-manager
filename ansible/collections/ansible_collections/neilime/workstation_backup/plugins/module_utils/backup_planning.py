@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from ansible_collections.neilime.workstation_backup.plugins.module_utils.recovery import (
@@ -45,8 +46,8 @@ class BackupPathPlanBuilder:
         self,
         path_stats_results: list[dict[str, Any]],
         tab_character: str,
-    ) -> dict[str, list[str]]:
-        """Return include paths plus manifest lines for present and missing paths."""
+    ) -> dict[str, Any]:
+        """Keep archive paths stable even when a requested source is missing."""
 
         include_paths: list[str] = []
         manifest_lines: list[str] = []
@@ -67,6 +68,13 @@ class BackupPathPlanBuilder:
         return {
             "include_paths": include_paths,
             "manifest_lines": manifest_lines,
+            "archive_root": (
+                os.path.commonpath(
+                    [os.path.dirname(os.path.abspath(result["item"]["path"])) for result in path_stats_results]
+                )
+                if path_stats_results
+                else ""
+            ),
         }
 
 

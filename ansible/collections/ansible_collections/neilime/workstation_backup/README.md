@@ -30,6 +30,8 @@ planning preserves those records, so the manifest lists each generated sidecar.
 Archive creation streams files once with fast gzip compression, prunes excluded
 directories, and applies standard Git ignore rules. It reports compressed archive
 size and elapsed time and runs under the managed user's permissions.
+Archive paths use the common parent of all requested sources, so a missing default
+source does not shorten the home-relative project paths.
 
 See [backup and restore](../../../../../docs/usage/backup-and-restore.md) for the
 user workflow and recovery limits, and the

@@ -28,5 +28,6 @@
   ansible.builtin.set_fact:
     workstation_backup_include_paths: >-
       {{ workstation_backup_path_plan.include_paths }}
+    workstation_backup_archive_root: "{{ workstation_backup_path_plan.archive_root }}"
     workstation_backup_manifest_lines: >-
       {{ workstation_backup_path_plan.manifest_lines + workstation_backup_manifest_lines }}

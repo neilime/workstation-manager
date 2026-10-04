@@ -704,6 +704,15 @@ run_ansible_pull_captured_with_fifo() {
 	return "$exit_code"
 }
 
+prepare_ansible_prompt_terminal() {
+	# script allocates this private relay after sudo, so its initial owner is root.
+	# Keep its permissions and input forwarding while allowing managed-user prompts.
+	[ -t 0 ] || fail "Interactive Ansible capture requires a terminal"
+	relay_terminal="$(tty)" || fail "Failed to resolve the interactive relay terminal"
+	chown -- "$TARGET_USER" "$relay_terminal" ||
+		fail "Failed to make the interactive relay terminal accessible to $TARGET_USER"
+}
+
 run_ansible_pull_captured_with_script() {
 	playbook_path="$1"
 	dry_run="$2"
@@ -743,6 +752,7 @@ run_ansible_pull_captured_with_script() {
 			printf ' %s' "$(shell_quote "$extra_arg")"
 		done
 		printf '\n'
+		printf 'prepare_ansible_prompt_terminal\n'
 		printf 'run_ansible_pull %s %s "$@"\n' \
 			"$(shell_quote "$playbook_path")" \
 			"$(shell_quote "$dry_run")"

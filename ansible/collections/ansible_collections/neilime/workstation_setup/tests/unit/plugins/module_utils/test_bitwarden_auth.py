@@ -20,6 +20,7 @@ def _write_fake_bw(path: Path, scenario: str) -> None:
 import os
 import pathlib
 import sys
+import time
 
 root = pathlib.Path(os.environ["HOME"])
 attempt_file = root / "attempt.txt"
@@ -46,6 +47,18 @@ if sys.argv[1:] == ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_
         code = sys.stdin.readline().strip()
         if code != "123456":
             print("\\nInvalid verification code.")
+            sys.exit(1)
+        print("\\nfixture-login-session")
+        sys.exit(0)
+    if scenario == "redrawn-code":
+        prompt = "New device verification required. Enter OTP sent to login email:"
+        print(prompt, end="", flush=True)
+        code = sys.stdin.readline().strip()
+        # Inquirer redraws the completed prompt before the server responds.
+        print("\\r\\x1b[2K" + prompt + " ******", end="", flush=True)
+        time.sleep(0.2)
+        if code != "654321":
+            print("\\nInvalid email or verification code")
             sys.exit(1)
         print("\\nfixture-login-session")
         sys.exit(0)
@@ -188,3 +201,43 @@ def test_login_requires_interactive_code_prompt_when_noninteractive(
     )
 
     assert result == bitwarden_auth.BitwardenLoginResult(failure_reason="code_required")
+
+
+def test_login_ignores_completed_prompt_redraw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A completed new-device prompt redraw must not request another code."""
+
+    _fixture_environment(tmp_path, monkeypatch, "redrawn-code")
+    prompts: list[str] = []
+
+    def prompt_code(prompt: str) -> str:
+        prompts.append(prompt)
+        return "654321"
+
+    result = bitwarden_auth.login_with_email_password(
+        "fixture@example.com",
+        "fixture-password",
+        interactive=True,
+        prompt_for_code=prompt_code,
+    )
+
+    assert result == bitwarden_auth.BitwardenLoginResult(session="fixture-login-session")
+    assert prompts == ["Bitwarden emailed a new-device verification code: "]
+    assert (tmp_path / "attempt.txt").read_text() == "1"
+
+
+def test_interactive_login_reports_inaccessible_terminal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A configured interactive run must distinguish terminal access from a missing code."""
+
+    _fixture_environment(tmp_path, monkeypatch, "email-code")
+
+    def unavailable_prompt(_prompt: str) -> str:
+        raise bitwarden_auth.BitwardenPromptUnavailableError("synthetic private failure")
+
+    result = bitwarden_auth.login_with_email_password(
+        "fixture@example.com",
+        "fixture-password",
+        interactive=True,
+        prompt_for_code=unavailable_prompt,
+    )
+
+    assert result == bitwarden_auth.BitwardenLoginResult(failure_reason="terminal_unavailable")

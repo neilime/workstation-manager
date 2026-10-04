@@ -1,0 +1,62 @@
+---
+- name: Switch Bitwarden to the configured server
+  when:
+    - bitwarden_collection_status.serverUrl != workstation_manager_resolved.secrets.bitwarden.server
+    - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))
+  block:
+    - name: Log out of Bitwarden before changing servers
+      check_mode: false
+      ansible.builtin.command:
+        argv:
+          - bw
+          - logout
+      environment:
+        BW_SESSION: ""
+      register: bitwarden_collection_server_logout
+      changed_when: bitwarden_collection_server_logout.rc == 0
+      failed_when: false
+      no_log: true
+      when: bitwarden_collection_status.status != 'unauthenticated'
+
+    - name: Stop when Bitwarden cannot log out before changing servers
+      ansible.builtin.fail:
+        msg: >-
+          Bitwarden could not log out before changing servers. Check CLI access
+          and retry; the configured server has not been changed.
+      when:
+        - bitwarden_collection_status.status != 'unauthenticated'
+        - bitwarden_collection_server_logout.rc != 0
+
+    - name: Configure the declared Bitwarden server
+      check_mode: false
+      ansible.builtin.command:
+        argv:
+          - bw
+          - config
+          - server
+          - "{{ workstation_manager_resolved.secrets.bitwarden.server }}"
+      changed_when: true
+      environment:
+        BW_SESSION: ""
+
+    - name: Read Bitwarden session status after changing servers
+      check_mode: false
+      ansible.builtin.command:
+        argv:
+          - bw
+          - status
+      register: bitwarden_collection_server_status_command
+      changed_when: false
+      environment:
+        BW_SESSION: ""
+
+    - name: Refresh Bitwarden authentication state after changing servers
+      ansible.builtin.set_fact:
+        bitwarden_collection_status: "{{ bitwarden_collection_server_status_command.stdout | from_json }}"
+
+    - name: Verify the selected Bitwarden server
+      ansible.builtin.assert:
+        that:
+          - bitwarden_collection_status.serverUrl == workstation_manager_resolved.secrets.bitwarden.server
+          - bitwarden_collection_status.status == 'unauthenticated'
+        fail_msg: Bitwarden did not switch to the configured server in an unauthenticated state; retry setup or backup.

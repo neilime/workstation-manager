@@ -32,8 +32,10 @@ curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/wo
 
 Run the same command after changing your configuration. Setup installs its
 dependencies and applies the configured packages, keys, dotfiles, and desktop
-settings. Close Brave before applying profile changes. After setup, complete
-[Brave Sync](docs/usage/browser.md) and editor sign-in when prompted.
+settings. Close Brave before applying profile changes. Setup automatically
+recovers configured profiles through [Brave Sync](docs/usage/browser.md); run it
+from your desktop session with the system keyring unlocked. Complete editor
+sign-in when prompted.
 
 To preview an action, append `--dry-run`:
 

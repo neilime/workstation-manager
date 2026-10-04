@@ -1,0 +1,43 @@
+---
+- name: Ensure the target user's Git configuration directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/git"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+
+- name: Ensure the separate Git configuration file exists with restricted permissions
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/git/config"
+    state: touch
+    access_time: preserve
+    modification_time: preserve
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0600"
+
+- name: Configure Git GPG signing settings from restored keys
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.git_config:
+    name: "{{ item.name }}"
+    scope: file
+    file: "{{ workstation_manager_resolved.user.home }}/.config/git/config"
+    value: "{{ item.value }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  loop:
+    - name: gpg.format
+      value: openpgp
+    - name: user.signingkey
+      value: "{{ gpg_keys_signing_fingerprint }}"
+    - name: commit.gpgsign
+      value: "true"
+    - name: tag.gpgsign
+      value: "true"
+  loop_control:
+    label: "{{ item.name }}"

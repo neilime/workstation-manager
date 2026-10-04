@@ -162,7 +162,7 @@ begins growing. A final size update appears when archive creation finishes.
 
 SSH/GPG keys, browser data, and other home directories are not archive sources by
 default. Setup restores keys from Bitwarden, applies Chezmoi, and recreates browser
-profiles for [manual Sync pairing](browser.md). Backup writes browser bookmarks and
+profiles with [automatic Sync recovery](browser.md). Backup writes browser bookmarks and
 sanitized non-secret preferences to a separate sidecar when profiles exist, but
 setup does not import that sidecar automatically.
 
@@ -176,8 +176,9 @@ curl -fsSL https://raw.githubusercontent.com/neilime/workstation-manager/main/wo
 
 The same exclusions apply to extra paths. Explicitly selected browser stores are
 included without browser-specific filtering. Archive paths are relative to the
-common parent of the included sources; keep extra paths under your home and check
-the archive layout before restoring.
+common parent of all requested sources, including missing default sources. Default
+backups therefore keep paths relative to your home. Keep extra paths under your
+home and check the archive layout before restoring.
 
 Keep the archive and generated sidecars together. The browser sidecar is created
 when local profiles exist:
@@ -221,18 +222,33 @@ tar -tzf /path/to/workstation-manager-backup.tar.gz
 ```
 
 For the default sources, expect paths such as `Documents/dev-projects/...` and
-`.config/workstation-manager/...`. If a default source was missing or extra paths
-changed the archive root, inspect where those relative paths will land.
+`.config/workstation-manager/...`, even when one source was missing at backup time.
+Setup also restores single-source archives containing `dev-projects/...` into
+`~/Documents`, or `workstation-manager/...` into `~/.config`. The matching manifest
+lets setup resolve a shortened archive root when extra source paths are present.
+Setup reports the extraction directory; inspect it when extra paths changed the
+archive root.
 
 Setup validates the archive before extraction. It rejects absolute paths, path
-traversal, links outside your home, entries beneath archived symlinks, and special
-files. This checks extraction safety, not whether the files are trustworthy.
+traversal, relative link paths that leave your home, absolute hard links, entries beneath
+archived symlinks, duplicate entries at symlink paths, and special files. Absolute
+symbolic links and relative aliases to them are preserved, including virtual
+environment interpreter links;
+their targets must exist on the restored workstation before you use them. This
+checks extraction safety, not whether the files are trustworthy.
 
-When the Git inventory is present, setup clones each project's primary remote and
-recorded branch, restores its additional remotes, then copies the archived files
-over the clone. A recorded detached commit is restored only when available from
-the clone. This overlay does not replay file deletions; inspect `git status` after
-recovery.
+When the Git inventory is present, setup clones each project's primary remote,
+fetches all its branches, checks out the recorded branch, restores its additional
+remotes, then copies the archived files over the clone. Other remote branches
+remain available for commands such as `git switch main`. A recorded detached
+commit is restored only when available from the clone. This overlay does not
+replay file deletions; inspect `git status` after recovery.
+
+SSH remotes use the target user's restored keys and SSH configuration. Setup
+automatically records a host's key on first connection and rejects changes to
+known keys. A host-key verification error occurs before repository permissions
+are checked; verify the server's fingerprint and review the target user's
+`~/.ssh/known_hosts` before retrying.
 
 A project without a recorded remote remains a plain directory. If reattachment
 fails, its restored files are kept as a plain directory and the result is reported

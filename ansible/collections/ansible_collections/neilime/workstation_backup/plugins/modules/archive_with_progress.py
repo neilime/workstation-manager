@@ -21,10 +21,15 @@ description:
   - Check mode and tasks marked C(no_log) do not display progress.
 options:
   path:
-    description: Source files or directories to archive, relative to their common parent.
+    description: Source files or directories to archive.
     type: list
     elements: path
     required: true
+  root:
+    description:
+      - Directory used for relative archive entry paths; every source must be inside it.
+      - Defaults to the common parent of the existing sources.
+    type: path
   dest:
     description:
       - Destination path for the gzip archive.
@@ -63,7 +68,7 @@ dest:
   type: str
   returned: success
 arcroot:
-  description: Common parent used for relative archive paths.
+  description: Directory used for relative archive paths.
   type: str
   returned: success
 archived_count:
@@ -88,6 +93,7 @@ def main() -> None:
     module = AnsibleModule(
         argument_spec={
             "path": {"type": "list", "elements": "path", "required": True},
+            "root": {"type": "path"},
             "dest": {"type": "path", "required": True},
             "exclusion_patterns": {"type": "list", "elements": "str", "default": []},
         },
@@ -101,6 +107,7 @@ def main() -> None:
             module.params["path"],
             module.params["dest"],
             module.params["exclusion_patterns"],
+            root=module.params["root"],
             check_mode=module.check_mode,
         )
     except (OSError, ValueError) as error:

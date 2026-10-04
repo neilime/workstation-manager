@@ -53,13 +53,11 @@ def test_git_gpg_signing_configuration(host) -> None:
     """Git signing should be configured from the restored GPG key."""
 
     # Act
-    signing_key_result = host.run("git config --global --get user.signingkey")
-    commit_sign_result = host.run("git config --global --get commit.gpgsign")
-    tag_sign_result = host.run("git config --global --get tag.gpgsign")
-    gpg_format_result = host.run("git config --global --get gpg.format")
-    secret_key_result = host.run(
-        'gpg --batch --with-colons --list-secret-keys "$(git config --global --get user.signingkey)"'
-    )
+    signing_key_result = host.run("git config --get user.signingkey")
+    commit_sign_result = host.run("git config --get commit.gpgsign")
+    tag_sign_result = host.run("git config --get tag.gpgsign")
+    gpg_format_result = host.run("git config --get gpg.format")
+    secret_key_result = host.run('gpg --batch --with-colons --list-secret-keys "$(git config --get user.signingkey)"')
 
     # Assert
     assert signing_key_result.succeeded
