@@ -111,7 +111,20 @@ interactive_terminal_flag() {
 
 interactive_terminal_path() {
 	has_interactive_terminal || return 1
-	tty </dev/tty 2>/dev/null
+	# When the terminal is already on stdin, `tty` reports its concrete device.
+	if terminal_path="$(tty 2>/dev/null)" && [ "$terminal_path" != "/dev/tty" ]; then
+		printf '%s\n' "$terminal_path"
+		return 0
+	fi
+	# Opening /dev/tty resolves to the "/dev/tty" alias, which the relayed setup
+	# process (sudo, script, and Ansible modules) cannot reliably reopen. Resolve
+	# the controlling terminal's real device so Bitwarden prompts reach the caller.
+	terminal_path="$(ps -o tty= -p "$$" 2>/dev/null | tr -d '[:space:]')"
+	case "$terminal_path" in
+	'' | '?') return 1 ;;
+	/dev/*) printf '%s\n' "$terminal_path" ;;
+	*) printf '/dev/%s\n' "$terminal_path" ;;
+	esac
 }
 
 shell_quote() {

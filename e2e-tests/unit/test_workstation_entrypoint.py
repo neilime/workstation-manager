@@ -526,6 +526,47 @@ class RepositorySourceTests(unittest.TestCase):
             invocation = json.loads(result.stdout.splitlines()[-1])
             self.assertEqual(invocation["tty"], "/dev/pts/fake")
 
+    def test_interactive_terminal_path_resolves_concrete_device(self) -> None:
+        """The resolved TTY must be a concrete device the relayed setup can reopen."""
+
+        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        self.assertEqual(definitions.pop(), 'main "$@"')
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            wrapper = fixture / "wrapper-definitions.sh"
+            wrapper.write_text("\n".join(definitions) + "\n")
+            master, slave = pty.openpty()
+            slave_path = os.ttyname(slave)
+            try:
+                # Reproduce `curl | sh`: stdin is a pipe while a controlling
+                # terminal still exists, so the helper must not return the
+                # unreopenable "/dev/tty" alias.
+                with subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        controlling_tty_exec_python('["sh", "-s", "--", sys.argv[2]]'),
+                        slave_path,
+                        str(wrapper),
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env={"PATH": "/usr/bin:/bin", "HOME": temporary_dir},
+                    start_new_session=True,
+                    text=True,
+                ) as process:
+                    stdout, stderr = process.communicate(
+                        '. "$1"\ninteractive_terminal_path\n',
+                        timeout=10,
+                    )
+            finally:
+                os.close(slave)
+                os.close(master)
+
+            self.assertEqual(stdout.strip(), slave_path, stderr)
+            self.assertNotEqual(stdout.strip(), "/dev/tty")
+
 
 class BitwardenRetryTests(unittest.TestCase):
     """Retry interactive Bitwarden auth without leaking credentials."""
