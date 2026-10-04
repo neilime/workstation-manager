@@ -379,20 +379,20 @@ download_github_file() {
 		-o "$destination"
 }
 
-install_collection_requirements_file() {
-	requirements_file="$1"
+install_collection_requirements_file() (
+	collection_requirements_file="$1"
 	collection_install_attempt=1
 	collection_install_max_attempts=3
 
-	while ! ansible-galaxy collection install -r "$requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null; do
+	while ! ansible-galaxy collection install -r "$collection_requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null; do
 		if [ "$collection_install_attempt" -ge "$collection_install_max_attempts" ]; then
 			return 1
 		fi
-		info "Ansible collection install failed; retrying ($collection_install_attempt/$collection_install_max_attempts)"
 		collection_install_attempt=$((collection_install_attempt + 1))
+		info "Ansible collection install failed; retrying (attempt $collection_install_attempt/$collection_install_max_attempts)"
 		sleep 5
 	done
-}
+)
 
 install_collection_requirements() {
 	requirements_file=""
