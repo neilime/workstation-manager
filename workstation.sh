@@ -379,6 +379,21 @@ download_github_file() {
 		-o "$destination"
 }
 
+install_collection_requirements_file() {
+	requirements_file="$1"
+	collection_install_attempt=1
+	collection_install_max_attempts=3
+
+	while ! ansible-galaxy collection install -r "$requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null; do
+		if [ "$collection_install_attempt" -ge "$collection_install_max_attempts" ]; then
+			return 1
+		fi
+		info "Ansible collection install failed; retrying ($collection_install_attempt/$collection_install_max_attempts)"
+		collection_install_attempt=$((collection_install_attempt + 1))
+		sleep 5
+	done
+}
+
 install_collection_requirements() {
 	requirements_file=""
 
@@ -386,7 +401,7 @@ install_collection_requirements() {
 	if repo_path="$(resolve_github_repository_path "$REPOSITORY_URL")"; then
 		requirements_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-requirements-XXXXXX.yml")"
 		download_github_file "$repo_path" "$REPOSITORY_BRANCH" "ansible/collections/requirements.yml" "$requirements_file"
-		ansible-galaxy collection install -r "$requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null
+		install_collection_requirements_file "$requirements_file"
 		rm -f "$requirements_file"
 		return
 	fi
@@ -395,7 +410,7 @@ install_collection_requirements() {
 		fail "REPOSITORY_URL must point to a GitHub repository or local checkout"
 	requirements_file="$repository_root/ansible/collections/requirements.yml"
 	[ -f "$requirements_file" ] || fail "Collection requirements were not found in $repository_root"
-	ansible-galaxy collection install -r "$requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null
+	install_collection_requirements_file "$requirements_file"
 }
 
 prepare_private_override_file() {
