@@ -300,8 +300,20 @@
       - sync
   environment:
     BW_SESSION: "{{ bitwarden_collection_session }}"
+  register: bitwarden_collection_sync
   changed_when: false
+  failed_when: false
+  until: bitwarden_collection_sync.rc == 0
+  retries: 3
+  delay: 5
   no_log: true
+
+- name: Fail when Bitwarden vault synchronization does not complete
+  ansible.builtin.fail:
+    msg: >-
+      {{ bitwarden_collection_purpose }} could not sync Bitwarden before
+      reading collection items.
+  when: bitwarden_collection_sync.rc != 0
 
 - name: Read Bitwarden collection items
   ansible.builtin.command:
