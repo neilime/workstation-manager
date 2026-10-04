@@ -564,8 +564,9 @@ class RepositorySourceTests(unittest.TestCase):
                 os.close(slave)
                 os.close(master)
 
+            # slave_path is a concrete pty device (never the "/dev/tty" alias),
+            # so matching it proves the helper resolved a reopenable device.
             self.assertEqual(stdout.strip(), slave_path, stderr)
-            self.assertNotEqual(stdout.strip(), "/dev/tty")
 
 
 class BitwardenRetryTests(unittest.TestCase):
