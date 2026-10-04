@@ -406,6 +406,77 @@ class RepositorySourceTests(unittest.TestCase):
             self.assertEqual(result.stderr, "")
             self.assertIn(f"collection install -r {requirements} -p /tmp/collections", ansible_galaxy_log.read_text())
 
+    def test_collection_install_retries_after_transient_failure(self) -> None:
+        """Collection bootstrap should retry transient ansible-galaxy failures."""
+
+        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        self.assertEqual(definitions.pop(), 'main "$@"')
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            repository = fixture / "repository"
+            requirements = repository / "ansible/collections/requirements.yml"
+            requirements.parent.mkdir(parents=True)
+            requirements.write_text("collections: []\n")
+            wrapper = fixture / "wrapper-definitions.sh"
+            wrapper.write_text("\n".join(definitions) + "\n")
+            ansible_galaxy_log = fixture / "ansible-galaxy.log"
+            ansible_galaxy_attempts = fixture / "ansible-galaxy-attempts.txt"
+            ansible_galaxy = fixture / "ansible-galaxy"
+            ansible_galaxy.write_text(
+                "#!/bin/sh\n"
+                "attempt=0\n"
+                'if [ -f "$TEST_ANSIBLE_GALAXY_ATTEMPTS" ]; then\n'
+                '  attempt="$(cat "$TEST_ANSIBLE_GALAXY_ATTEMPTS")"\n'
+                "fi\n"
+                "attempt=$((attempt + 1))\n"
+                'printf "%s\\n" "$attempt" >"$TEST_ANSIBLE_GALAXY_ATTEMPTS"\n'
+                'printf "%s\\n" "$*" >>"$TEST_ANSIBLE_GALAXY_LOG"\n'
+                'if [ "$attempt" -lt 2 ]; then\n'
+                '  printf "%s\\n" "synthetic transient failure" >&2\n'
+                "  exit 1\n"
+                "fi\n"
+                "exit 0\n"
+            )
+            ansible_galaxy.chmod(0o700)
+            sleep = fixture / "sleep"
+            sleep.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$TEST_SLEEP_LOG"\n')
+            sleep.chmod(0o700)
+            curl = fixture / "curl"
+            curl.write_text("#!/bin/sh\nexit 99\n")
+            curl.chmod(0o700)
+            sleep_log = fixture / "sleep.log"
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$1"\n'
+                    'REPOSITORY_URL="$2"\n'
+                    'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
+                    "install_collection_requirements\n",
+                    "entrypoint-test",
+                    str(wrapper),
+                    str(repository),
+                ],
+                env={
+                    "PATH": f"{fixture}:/usr/bin:/bin",
+                    "HOME": temporary_dir,
+                    "TEST_ANSIBLE_GALAXY_LOG": str(ansible_galaxy_log),
+                    "TEST_ANSIBLE_GALAXY_ATTEMPTS": str(ansible_galaxy_attempts),
+                    "TEST_SLEEP_LOG": str(sleep_log),
+                },
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(ansible_galaxy_attempts.read_text().strip(), "2")
+            self.assertEqual(sleep_log.read_text().splitlines(), ["5"])
+            self.assertIn(
+                f"collection install -r {requirements} -p /tmp/collections",
+                ansible_galaxy_log.read_text(),
+            )
+            self.assertIn("Ansible collection install failed; retrying (1/3)", result.stdout)
+
     def test_local_repository_runs_playbook_from_worktree(self) -> None:
         """A local repository source should run ansible-playbook from the working tree."""
 
