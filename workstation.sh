@@ -401,8 +401,10 @@ install_collection_requirements() {
 	if repo_path="$(resolve_github_repository_path "$REPOSITORY_URL")"; then
 		requirements_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-requirements-XXXXXX.yml")"
 		download_github_file "$repo_path" "$REPOSITORY_BRANCH" "ansible/collections/requirements.yml" "$requirements_file"
-		install_collection_requirements_file "$requirements_file"
+		collection_install_status=0
+		install_collection_requirements_file "$requirements_file" || collection_install_status=$?
 		rm -f "$requirements_file"
+		[ "$collection_install_status" -eq 0 ] || return "$collection_install_status"
 		return
 	fi
 
