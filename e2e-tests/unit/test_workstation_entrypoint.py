@@ -533,33 +533,30 @@ class RepositorySourceTests(unittest.TestCase):
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = fixture / "resolve-terminal.sh"
+            wrapper.write_text("\n".join(definitions) + "\ninteractive_terminal_path\n")
             master, slave = pty.openpty()
             slave_path = os.ttyname(slave)
             try:
-                # Reproduce `curl | sh`: stdin is a pipe while a controlling
-                # terminal still exists, so the helper must not return the
-                # unreopenable "/dev/tty" alias.
+                # Mirror the interactive `script` capture path: the entrypoint
+                # runs with the terminal on stdin, so the helper must resolve its
+                # concrete device rather than the unreopenable "/dev/tty" alias.
                 with subprocess.Popen(
                     [
                         sys.executable,
                         "-c",
-                        controlling_tty_exec_python('["sh", "-s", "--", sys.argv[2]]'),
+                        controlling_tty_exec_python('["sh", sys.argv[2]]'),
                         slave_path,
                         str(wrapper),
                     ],
-                    stdin=subprocess.PIPE,
+                    stdin=slave,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env={"PATH": "/usr/bin:/bin", "HOME": temporary_dir},
                     start_new_session=True,
                     text=True,
                 ) as process:
-                    stdout, stderr = process.communicate(
-                        '. "$1"\ninteractive_terminal_path\n',
-                        timeout=10,
-                    )
+                    stdout, stderr = process.communicate(timeout=10)
             finally:
                 os.close(slave)
                 os.close(master)
