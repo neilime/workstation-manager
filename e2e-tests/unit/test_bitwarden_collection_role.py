@@ -26,7 +26,10 @@ TASK_FILE = (
 
 
 def prepare_fixture(
-    fixture: pathlib.Path, *, email_login_scenario: str = "code-required"
+    fixture: pathlib.Path,
+    *,
+    email_login_scenario: str = "code-required",
+    sync_failures_before_success: int = 0,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """Create a fake Bitwarden CLI and a playbook for the production role tasks."""
 
@@ -47,10 +50,11 @@ with audit_path.open("a", encoding="utf-8") as audit:
     audit.write(json.dumps(sys.argv[1:]) + "\\n")
 
 state_path = pathlib.Path({str(state_path)!r})
-state = {{"authenticated": False, "unlocked": False}}
+state = {{"authenticated": False, "unlocked": False, "sync_attempts": 0}}
 if state_path.exists():
     state.update(json.loads(state_path.read_text(encoding="utf-8")))
 email_login_scenario = {email_login_scenario!r}
+sync_failures_before_success = {sync_failures_before_success!r}
 
 def save_state() -> None:
     state_path.write_text(json.dumps(state), encoding="utf-8")
@@ -117,6 +121,11 @@ if args == ["sync"]:
     if not state["unlocked"]:
         print("Vault is locked.", file=sys.stderr)
         sys.exit(1)
+    state["sync_attempts"] += 1
+    save_state()
+    if state["sync_attempts"] <= sync_failures_before_success:
+        print("Sync failed.", file=sys.stderr)
+        sys.exit(1)
     sys.exit(0)
 
 if args == ["list", "items", "--collectionid", expected_collection_id]:
@@ -170,6 +179,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
         interactive: bool = False,
         include_api_key: bool = True,
         email_login_scenario: str = "code-required",
+        sync_failures_before_success: int = 0,
     ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
         """Run the production role tasks against the fake Bitwarden CLI."""
 
@@ -178,6 +188,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
             audit_path, playbook = prepare_fixture(
                 fixture,
                 email_login_scenario=email_login_scenario,
+                sync_failures_before_success=sync_failures_before_success,
             )
             config = fixture / "ansible.cfg"
             config.write_text("[defaults]\n", encoding="utf-8")
@@ -291,6 +302,28 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
             ],
         )
         self.assertNotIn("interactive Bitwarden verification code prompt", output)
+
+    def test_sync_retries_after_transient_failure(self) -> None:
+        """Transient Bitwarden sync failures should retry before the role gives up."""
+
+        result, calls = self.run_role(sync_failures_before_success=1)
+        output = result.stdout + result.stderr
+
+        self.assertEqual(result.returncode, 0, output)
+        self.assertEqual(
+            calls,
+            [
+                ["--version"],
+                ["--version"],
+                ["status"],
+                ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD", "--method", "1", "--raw"],
+                ["login", "--apikey"],
+                ["unlock", "--passwordenv", "BITWARDEN_PASSWORD", "--raw"],
+                ["sync"],
+                ["sync"],
+                ["list", "items", "--collectionid", "fixture-collection"],
+            ],
+        )
 
 
 if __name__ == "__main__":
