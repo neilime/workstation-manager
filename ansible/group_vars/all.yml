@@ -125,6 +125,7 @@ workstation_manager:
         "github:Giammarco-Ferranti/deja": "0.4.2"
         "aqua:docker/cli": latest
         "aqua:docker/compose": latest
+        "aqua:docker/buildx": latest
         "aqua:helm/helm": "4"
         "aqua:wagoodman/dive": latest
       gh_extensions:
@@ -133,6 +134,10 @@ workstation_manager:
       docker_cli_plugins:
         - command: docker-compose
           tool: aqua:docker/compose
+          binary: docker-cli-plugin-docker-compose
+        - command: docker-buildx
+          tool: aqua:docker/buildx
+          binary: docker-cli-plugin-docker-buildx
     settings:
       # Development tooling often needs a higher filesystem watch limit.
       sysctl:

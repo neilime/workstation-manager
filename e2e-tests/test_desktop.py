@@ -1,6 +1,7 @@
 """End-to-end checks for the desktop tests."""
 
 import ast
+import configparser
 import pathlib
 
 from ansible.parsing.dataloader import DataLoader
@@ -147,3 +148,14 @@ def test_copyq_starts_with_the_graphical_session(host) -> None:
     assert copyq_process.succeeded
     assert appindicator_extension.succeeded
     assert "State: ACTIVE" in appindicator_extension.stdout
+
+
+def test_copyq_uses_xwayland_for_clipboard_monitoring(host) -> None:
+    """Flatpak launches should use the configured clipboard backend on GNOME."""
+
+    overrides = configparser.ConfigParser()
+    overrides.read_string(host.check_output("flatpak override --user --show com.github.hluk.copyq"))
+    assert overrides["Environment"]["QT_QPA_PLATFORM"] == "xcb"
+
+    platform = host.check_output("flatpak run --command=printenv com.github.hluk.copyq QT_QPA_PLATFORM")
+    assert platform == "xcb"

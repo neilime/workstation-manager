@@ -15,6 +15,7 @@ DECLARED_DOCKER_CLI_PLUGINS = [
     {
         "command": "docker-compose",
         "tool": "aqua:docker/compose",
+        "binary": "docker-cli-plugin-docker-compose",
     }
 ]
 

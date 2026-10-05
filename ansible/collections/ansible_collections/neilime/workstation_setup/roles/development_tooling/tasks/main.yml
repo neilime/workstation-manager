@@ -112,9 +112,11 @@
       - item.command | length > 0
       - item.tool is string
       - item.tool | length > 0
+      - item.binary | default(item.command) is string
+      - item.binary | default(item.command) | length > 0
     fail_msg: >-
       Declared Docker CLI plugin {{ item | to_nice_json }} must include
-      non-empty command and tool fields.
+      non-empty command and tool fields, and a non-empty binary when specified.
   loop: "{{ workstation_manager_resolved.development.mise.docker_cli_plugins }}"
   loop_control:
     label: "{{ item.command | default('unnamed-plugin') }}"
@@ -354,19 +356,23 @@
     mode: "0755"
   when: workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
 
-- name: Resolve declared Docker CLI plugin install directories
+- name: Resolve declared Docker CLI plugin binaries through mise
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   ansible.builtin.command:
     argv:
-      - /bin/bash
-      - -lc
-      - |
-        set -euo pipefail
-        . "$HOME/.config/workstation-manager/mise.sh"
-        "$HOME/.local/bin/mise" where {{ item.tool | quote }}
+      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+      - which
+      - --tool
+      - "{{ item.tool }}"
+      - "{{ item.binary | default(item.command) }}"
+    chdir: "{{ workstation_manager_resolved.user.home }}"
   register: workstation_manager_development_docker_cli_plugin_commands
   changed_when: false
+  failed_when:
+    - not ansible_check_mode
+    - workstation_manager_development_docker_cli_plugin_commands.rc != 0
+  check_mode: false
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
     XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
@@ -381,7 +387,7 @@
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   ansible.builtin.file:
-    src: "{{ item.stdout }}/bin/{{ item.item.command }}"
+    src: "{{ item.stdout }}"
     dest: >-
       {{ workstation_manager_resolved.user.home }}/.docker/cli-plugins/{{ item.item.command }}
     state: link
@@ -392,7 +398,23 @@
     label: "{{ item.item.command }}"
   when:
     - workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
-    - item.stdout | length > 0
+    - item.stdout | default('') | length > 0
+
+- name: Report Docker CLI plugins deferred until mise tools are installed
+  ansible.builtin.debug:
+    msg: >-
+      Docker CLI plugin {{ item.item.command }} configuration is deferred in this
+      preview because mise cannot resolve its installed binary. Run setup normally
+      to install the configured plugin.
+  loop: "{{ workstation_manager_development_docker_cli_plugin_commands.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.command }}"
+  when:
+    - ansible_check_mode
+    - item.rc | default(1) != 0
+
+- name: Configure and start the mise-managed Docker daemon
+  ansible.builtin.import_tasks: docker.yml
 
 - name: Remove managed development sysctl configuration when no values are declared
   become: "{{ workstation_manager_use_become }}"

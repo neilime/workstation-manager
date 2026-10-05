@@ -197,6 +197,33 @@ Set workstation-wide tool versions in `development.mise.tools`. They are
 written to `~/.config/mise/config.toml`; project-specific versions belong in each
 project's `mise.toml`.
 
+Setup always configures the local Docker daemon.
+Mise installs the Docker client and runtime binaries through `aqua:docker/cli`,
+with Compose and Buildx installed as Docker CLI plugins. Setup creates and starts
+`workstation-manager-docker.service`, and adds the managed user to the `docker`
+group. The daemon uses the containerd and runc binaries from the same mise
+installation. Setup also grants the managed user direct socket access, so
+existing terminals and IDE sessions can use Docker without `sudo` or a logout.
+The service reapplies this permission whenever it starts. Check access after
+setup with `docker info`.
+Docker access grants root-level control of the workstation; see
+[Docker's post-installation guide](https://docs.docker.com/engine/install/linux-postinstall/).
+
+The [public defaults](../../ansible/group_vars/all.yml) provide the Compose and
+Buildx plugin mappings. Setup links their mise-managed binaries automatically.
+
+Rerun setup after changing the workstation's Docker version in
+`development.mise.tools` or upgrading Docker through mise. Setup updates the
+service's binary path and restarts the daemon when its service configuration
+changes. Running containers can be interrupted by that restart.
+
+Setup supports fresh installations without existing Docker service units. If
+another installation provides `docker.service` or `docker.socket`, setup stops.
+Reconcile that installation before continuing with the mise-managed daemon.
+A dry run previews available configuration without starting or verifying the
+daemon. If mise cannot resolve installed Docker binaries or plugins yet, their
+configuration is deferred until a normal setup run.
+
 The default backup includes `~/Documents/dev-projects`. Keep project files there
 or include another location through the [backup options](backup-and-restore.md).
 Changing `user.projects_directory` changes setup paths; backup still uses its
@@ -216,6 +243,24 @@ active GNOME session if it is not already running. When setup runs without a
 graphical session, CopyQ starts at the next login. Set `desktop.gnome.autostart`
 to `[]` in your private override to skip startup configuration and activation;
 remove any previously installed startup entry in `~/.config/autostart/` yourself.
+
+Setup configures the CopyQ Flatpak to use XWayland (`QT_QPA_PLATFORM=xcb`) for
+clipboard monitoring on GNOME. The setting applies to graphical login and manual
+launches. After setup changes this setting, quit CopyQ from its menu and reopen
+it, or log out and back in. Closing its window leaves the existing process running.
+
+If an existing installation does not record copied text, run this from your
+desktop terminal, then quit and reopen CopyQ:
+
+```sh
+flatpak override --user --env=QT_QPA_PLATFORM=xcb com.github.hluk.copyq
+```
+
+Copy two different pieces of ordinary text while CopyQ's window is hidden, then
+open it and check that both appear. GNOME's native CopyQ clipboard extension is
+unavailable to the Flatpak build. The
+[upstream XWayland workaround](https://copyq.readthedocs.io/en/latest/known-issues.html#workaround-running-under-xwayland)
+depends on the compositor and may still miss clipboard changes on some systems.
 
 ## Automated runs
 

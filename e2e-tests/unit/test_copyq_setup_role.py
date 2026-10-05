@@ -1,7 +1,8 @@
-"""Exercise CopyQ startup without launching desktop applications on the host."""
+"""Exercise CopyQ clipboard configuration and startup without desktop applications."""
 
 from __future__ import annotations
 
+import configparser
 import json
 import os
 import pathlib
@@ -73,6 +74,14 @@ def fixture_copyq_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str,
     for task in tasks:
         if "ansible.builtin.include_tasks" in task:
             task["ansible.builtin.include_tasks"] = str(startup_file)
+    flatpak_tasks = TASK_DIRECTORY.parent.parent / "flatpak_apps/tasks"
+    clipboard_task = next(
+        task
+        for task in loader.load_from_file(str(flatpak_tasks / "main.yml"))
+        if task.get("ansible.builtin.import_tasks") == "copyq.yml"
+    )
+    clipboard_task["ansible.builtin.import_tasks"] = str(flatpak_tasks / "copyq.yml")
+    tasks.insert(0, clipboard_task)
     account = pwd.getpwuid(os.getuid())
     (tmp_path / "playbook.json").write_text(
         json.dumps(
@@ -121,6 +130,8 @@ def fixture_copyq_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str,
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/fixture/bus",
         "XDG_DATA_HOME": str(tmp_path / "ide-data"),
     }
+    if "ANSIBLE_COLLECTIONS_PATH" in os.environ:
+        environment["ANSIBLE_COLLECTIONS_PATH"] = os.environ["ANSIBLE_COLLECTIONS_PATH"]
     return tmp_path, environment
 
 
@@ -162,6 +173,9 @@ def test_setup_starts_copyq_hidden_and_is_idempotent(copyq_setup) -> None:
     autostart = root / "home/.config/autostart/com.github.hluk.copyq.desktop"
     assert "Exec=/usr/bin/flatpak run com.github.hluk.copyq --start-server hide" in autostart.read_text()
     assert "X-GNOME-Autostart-enabled=true" in autostart.read_text()
+    override = root / "home/.local/share/flatpak/overrides/com.github.hluk.copyq"
+    assert "QT_QPA_PLATFORM=xcb" in override.read_text()
+    assert not (root / "ide-data/flatpak/overrides/com.github.hluk.copyq").exists()
 
 
 def test_setup_preserves_an_already_running_copyq(copyq_setup) -> None:
@@ -173,6 +187,47 @@ def test_setup_preserves_an_already_running_copyq(copyq_setup) -> None:
     result = run_setup(copyq_setup)
     assert result.returncode == 0, result.stdout + result.stderr
     assert not (root / "calls.jsonl").exists()
+
+
+@pytest.mark.parametrize("options", [(), ("--extra-vars", '{"fixture_autostart":[]}')])
+def test_copyq_clipboard_override_preserves_other_settings(copyq_setup, options: tuple[str, ...]) -> None:
+    """Every launch should use XWayland, without replacing unrelated permissions."""
+
+    root, _ = copyq_setup
+    override = root / "home/.local/share/flatpak/overrides/com.github.hluk.copyq"
+    override.parent.mkdir(parents=True)
+    override.write_text(
+        "[Context]\nsockets=x11;wayland;\nfilesystems=xdg-download;\n"
+        "[Environment]\nQT_QPA_PLATFORM=wayland\nCOPYQ_LOG_LEVEL=WARNING\n"
+    )
+
+    result = run_setup(copyq_setup, *options)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    settings = configparser.ConfigParser()
+    settings.read(override)
+    assert dict(settings["Environment"]) == {"qt_qpa_platform": "xcb", "copyq_log_level": "WARNING"}
+    assert dict(settings["Context"]) == {"sockets": "x11;wayland;", "filesystems": "xdg-download;"}
+    repeated = run_setup(copyq_setup, *options)
+    assert repeated.returncode == 0, repeated.stdout + repeated.stderr
+    assert "changed=0" in repeated.stdout
+    assert "quit it from its menu and reopen it" not in repeated.stdout
+
+
+@pytest.mark.parametrize("options", [("--check",), ("--extra-vars", '{"fixture_packages":[]}')])
+def test_copyq_override_is_not_written_in_preview_or_when_unmanaged(copyq_setup, options: tuple[str, ...]) -> None:
+    """Dry runs and an unmanaged CopyQ must preserve an existing override file."""
+
+    root, _ = copyq_setup
+    override = root / "home/.local/share/flatpak/overrides/com.github.hluk.copyq"
+    override.parent.mkdir(parents=True)
+    original = "[Environment]\nQT_QPA_PLATFORM=wayland\n"
+    override.write_text(original)
+
+    result = run_setup(copyq_setup, *options)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert override.read_text() == original
 
 
 @pytest.mark.parametrize("session", ["headless", "without-display"])

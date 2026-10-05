@@ -1,0 +1,35 @@
+---
+- name: Ensure target user Flatpak override directory exists
+  become: "{{ workstation_manager_use_become and ansible_facts['user_id'] != workstation_manager_resolved.user.name }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.local/share/flatpak/overrides"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+# GNOME cannot expose its native clipboard monitor to the sandboxed application.
+# Persist the upstream XWayland workaround for autostart and manual launches alike.
+- name: Configure CopyQ clipboard access through XWayland
+  become: "{{ workstation_manager_use_become and ansible_facts['user_id'] != workstation_manager_resolved.user.name }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.ini_file:
+    path: "{{ workstation_manager_resolved.user.home }}/.local/share/flatpak/overrides/com.github.hluk.copyq"
+    section: Environment
+    option: QT_QPA_PLATFORM
+    value: xcb
+    no_extra_spaces: true
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+  register: workstation_manager_copyq_flatpak_override
+
+- name: Report CopyQ restart required after clipboard configuration changes
+  ansible.builtin.debug:
+    msg: >-
+      CopyQ will use XWayland for clipboard monitoring. If CopyQ is already running,
+      quit it from its menu and reopen it, or log out and back in, to apply the change.
+  when:
+    - workstation_manager_copyq_flatpak_override is changed
+    - not ansible_check_mode

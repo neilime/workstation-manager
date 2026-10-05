@@ -13,7 +13,17 @@ email login prompts privately once per challenge, ignores terminal redraws, and
 retries rejected codes with a fresh login attempt. Developer tool installation uses the GitHub credentials described in the
 [configuration guide](../../../../../docs/usage/configuration.md#automated-runs).
 CopyQ is configured for graphical login and started hidden during setup when a
-GNOME session is active. See the [configuration guide](../../../../../docs/usage/configuration.md).
+GNOME session is active. Its Flatpak uses the XWayland clipboard workaround; an
+already running instance needs a restart after that setting changes. See the
+[configuration guide](../../../../../docs/usage/configuration.md) for verification
+and limitations.
+Developer tooling configures a system service for mise's Docker runtime bundle
+on fresh installations and reruns, and grants the managed user immediate socket
+access through a per-user ACL that is reapplied on every service start.
+Compose and Buildx use mise-managed
+CLI plugin binaries linked under Docker's expected plugin filenames. See
+[developer tools](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
+for access verification and version updates.
 The managed VS Code Flatpak also exposes a `code` terminal launcher, preserving
 an existing `/usr/local/bin/code`. Its integrated terminal uses host Zsh through
 `host-spawn`; setup preserves unrelated JSONC settings and terminal profiles.

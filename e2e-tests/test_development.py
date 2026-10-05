@@ -85,27 +85,93 @@ def test_mise_global_config_and_activation_are_managed(host) -> None:
     assert_mise_tool_uses_pinned_version(config_file, "github:Giammarco-Ferranti/deja")
     assert_mise_tool_is_declared(config_file, "aqua:docker/cli")
     assert_mise_tool_is_declared(config_file, "aqua:docker/compose")
+    assert_mise_tool_is_declared(config_file, "aqua:docker/buildx")
     assert_mise_tool_uses_major_track(config_file, "aqua:helm/helm")
     assert activation_file.exists
     assert activation_file.contains('MISE_BACKENDS_PHP="vfox:mise-plugins/vfox-php"')
     assert activation_file.contains('eval "$("$HOME/.local/bin/mise" activate zsh)"')
 
 
-def test_development_vendor_repositories_are_not_required(host) -> None:
-    """The installed machine should not require vendor APT repositories for dev CLIs."""
+def test_docker_engine_is_available_to_the_managed_user(host) -> None:
+    """Docker must provide a running daemon, not just working client commands."""
+
+    docker_service = host.service("workstation-manager-docker")
+    docker_socket = host.file("/var/run/docker.sock")
+    docker_info = run_with_mise_activation(host, "docker --host unix:///var/run/docker.sock info")
+
+    assert docker_service.is_running
+    assert docker_service.is_enabled
+    assert docker_socket.is_socket
+    assert docker_socket.group == "docker"
+    assert "docker" in host.user().groups
+    assert docker_info.succeeded, docker_info.stderr
+
+
+def test_docker_access_without_group_refresh_survives_service_restart(host) -> None:
+    """Direct socket access must work without supplementary groups, including after a daemon restart."""
+
+    account = host.user()
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    docker_binary = host.check_output("%s/.local/bin/mise which --tool aqua:docker/cli docker", user_home)
+    assert account.uid != 0
+    assert account.gid != host.group("docker").gid
+
+    for restart in (False, True):
+        if restart:
+            host.check_output("sudo -n systemctl restart workstation-manager-docker.service")
+        acl = host.check_output("getfacl --numeric --omit-header /var/run/docker.sock").splitlines()
+        assert f"user:{account.uid}:rw-" in acl
+        assert "other::---" in acl
+        docker_info = host.run(
+            "sudo -n setpriv --reuid %s --regid %s --clear-groups --reset-env -- "
+            "%s --host unix:///var/run/docker.sock info",
+            str(account.uid),
+            str(account.gid),
+            docker_binary,
+        )
+        assert docker_info.succeeded, docker_info.stderr
+
+
+def test_docker_service_uses_the_mise_runtime_bundle(host) -> None:
+    """The system service must use mise's runtime without a second Docker installation."""
+
+    user_home = host.check_output("printf '%s' \"$HOME\"")
+    daemon = host.check_output("%s/.local/bin/mise which --tool aqua:docker/cli dockerd", user_home)
+    unit = host.file("/etc/systemd/system/workstation-manager-docker.service")
+    service_command = host.check_output(
+        "systemctl show workstation-manager-docker.service --property=ExecStart --value"
+    )
+    service_environment = host.check_output(
+        "systemctl show workstation-manager-docker.service --property=Environment --value"
+    )
+    runtime_directory = daemon.rsplit("/", 1)[0]
+
+    assert unit.exists
+    assert unit.user == "root"
+    assert unit.group == "root"
+    assert unit.mode == 0o644
+    assert daemon in service_command
+    assert f"PATH={runtime_directory}:" in service_environment
+    for binary in ("containerd", "containerd-shim-runc-v2", "runc", "docker-init", "docker-proxy"):
+        assert host.file(f"{runtime_directory}/{binary}").is_executable
+    for package in ("docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"):
+        assert not host.package(package).is_installed
+    assert not host.file("/etc/apt/keyrings/docker.asc").exists
+    assert not host.file("/etc/apt/sources.list.d/docker.list").exists
+    assert not host.file("/etc/apt/sources.list.d/docker.sources").exists
+
+
+def test_github_cli_does_not_require_a_vendor_repository(host) -> None:
+    """The mise-managed GitHub CLI should not require its vendor APT repository."""
 
     # Arrange
     github_keyring_file = host.file("/usr/share/keyrings/githubcli-archive-keyring.gpg")
     github_source_file = host.file("/etc/apt/sources.list.d/github-cli.list")
-    docker_keyring_file = host.file("/etc/apt/keyrings/docker.asc")
-    docker_source_file = host.file("/etc/apt/sources.list.d/docker.list")
 
     # Act
     # Assert
     assert not github_keyring_file.exists
     assert not github_source_file.exists
-    assert not docker_keyring_file.exists
-    assert not docker_source_file.exists
 
 
 def test_declared_editor_package_is_installed(host) -> None:

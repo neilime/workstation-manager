@@ -33,3 +33,7 @@
     method: system
     remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
   when: workstation_manager_resolved.desktop.flatpak.packages | length > 0
+
+- name: Configure CopyQ clipboard monitoring
+  ansible.builtin.import_tasks: copyq.yml
+  when: "'com.github.hluk.copyq' in workstation_manager_resolved.desktop.flatpak.packages"
