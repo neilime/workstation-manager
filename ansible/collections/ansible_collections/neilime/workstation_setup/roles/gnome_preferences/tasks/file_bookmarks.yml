@@ -1,0 +1,50 @@
+---
+- name: Inspect the Files bookmarks directory
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/gtk-3.0"
+    follow: true
+  register: workstation_manager_gnome_bookmarks_directory
+
+- name: Ensure the Files bookmarks directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/gtk-3.0"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "{{ workstation_manager_gnome_bookmarks_directory.stat.mode | default('0700') }}"
+
+- name: Inspect existing Files bookmarks
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/gtk-3.0/bookmarks"
+    follow: true
+  register: workstation_manager_gnome_bookmarks_file
+
+- name: Read existing Files bookmark labels
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.slurp:
+    src: "{{ workstation_manager_resolved.user.home }}/.config/gtk-3.0/bookmarks"
+  register: workstation_manager_gnome_bookmarks
+  when: workstation_manager_gnome_bookmarks_file.stat.exists
+
+- name: Ensure the projects directory is bookmarked in Files
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.lineinfile:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/gtk-3.0/bookmarks"
+    create: true
+    line: >-
+      {{
+        (workstation_manager_gnome_bookmarks.content | default('') | b64decode).splitlines()
+        | select('match', workstation_manager_gnome_projects_bookmark_pattern)
+        | first | default(workstation_manager_gnome_projects_bookmark_uri)
+      }}
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "{{ workstation_manager_gnome_bookmarks_file.stat.mode | default('0600') }}"
+  vars:
+    workstation_manager_gnome_projects_bookmark_uri: >-
+      file://{{ workstation_manager_resolved.user.projects_directory | urlencode }}
+    workstation_manager_gnome_projects_bookmark_pattern: >-
+      ^{{ workstation_manager_gnome_projects_bookmark_uri | regex_escape }}/?(?: .*)?$

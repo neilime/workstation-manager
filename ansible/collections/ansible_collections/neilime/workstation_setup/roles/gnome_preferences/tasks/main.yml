@@ -45,6 +45,9 @@
 - name: Configure desktop application startup
   ansible.builtin.import_tasks: autostart.yml
 
+- name: Bookmark the projects directory in Files
+  ansible.builtin.import_tasks: file_bookmarks.yml
+
 - name: Apply GNOME color scheme preference
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
