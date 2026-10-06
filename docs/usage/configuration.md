@@ -260,6 +260,10 @@ A dry run previews available configuration without starting or verifying the
 daemon. If mise cannot resolve installed Docker binaries or plugins yet, their
 configuration is deferred until a normal setup run.
 
+Setup creates `user.projects_directory` (`~/Documents/dev-projects` by default)
+and adds it to the Files sidebar bookmarks. Existing bookmarks and custom labels
+are preserved.
+
 The default backup includes `~/Documents/dev-projects`. Keep project files there
 or include another location through the [backup options](backup-and-restore.md).
 Changing `user.projects_directory` changes setup paths; backup still uses its

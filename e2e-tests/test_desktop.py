@@ -51,6 +51,20 @@ def test_desktop_dark_mode_preference(host) -> None:
     assert color_scheme == "'prefer-dark'"
 
 
+def test_projects_directory_is_bookmarked_in_files(host) -> None:
+    """The projects directory should appear once in the Files sidebar bookmarks."""
+    user_home = host.check_output('printf %s "$HOME"')
+    user_name = host.check_output("whoami")
+    projects = pathlib.Path(user_home) / "Documents/dev-projects"
+    bookmarks = host.file(f"{user_home}/.config/gtk-3.0/bookmarks")
+
+    assert host.file(str(projects)).is_directory
+    assert bookmarks.is_file
+    assert bookmarks.user == user_name
+    bookmark_uris = [line.split(" ", maxsplit=1)[0].rstrip("/") for line in bookmarks.content_string.splitlines()]
+    assert bookmark_uris.count(projects.as_uri()) == 1
+
+
 def test_desktop_wallpaper(host) -> None:
     """The branded wallpaper should be installed and selected for both color schemes."""
 
