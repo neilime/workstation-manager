@@ -78,6 +78,9 @@
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
   when: workstation_manager_resolved.development.packages | length > 0
 
+- name: Configure Git automatic garbage collection
+  ansible.builtin.import_tasks: git.yml
+
 - name: Install declared editor packages
   become: "{{ workstation_manager_use_become }}"
   community.general.flatpak:

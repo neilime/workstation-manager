@@ -41,6 +41,15 @@ def assert_mise_tool_uses_major_track(config_file, tool_name: str) -> None:
     assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9]*"$')
 
 
+def test_git_automatic_garbage_collection_is_enabled(host) -> None:
+    """Git should use a positive automatic garbage collection threshold after setup."""
+
+    result = host.run("git config --global --int --get gc.auto")
+
+    assert result.succeeded
+    assert int(result.stdout.strip()) > 0
+
+
 def test_declared_development_tools_are_available(host) -> None:
     """The installed machine should provide representative command-line tools."""
 
