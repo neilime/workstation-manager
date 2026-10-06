@@ -4,6 +4,10 @@ Owns configuration normalization, system and application setup, secrets retrieva
 home-environment setup (including the Zsh login shell, Oh My Zsh, and Chezmoi),
 developer tooling, and browser adapters. GNOME setup bookmarks the configured
 projects directory in Files while preserving existing bookmarks and labels.
+Developer tooling enables Git automatic garbage collection in the managed user's
+`~/.config/git/config`; see the
+[configuration guide](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
+for the threshold and configuration precedence.
 Chezmoi initialization and application use the managed source, configuration file,
 and target home explicitly. Setup
 requests approval before replacing conflicting local dotfiles, then checks the

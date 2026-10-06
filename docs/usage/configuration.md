@@ -179,6 +179,13 @@ and extensions. Brave recovery is covered in the [browser guide](browser.md).
 
 ## Developer tools and project files
 
+Setup enables Git automatic garbage collection by setting `gc.auto = 6700` in
+`~/.config/git/config`, independently of GPG key restoration. This is Git's
+[default loose-object threshold](https://git-scm.com/docs/git-gc#Documentation/git-gc.txt-gcauto).
+Setup preserves other Git settings and Chezmoi's `~/.gitconfig`. Settings in
+`.gitconfig` or a repository's local configuration take precedence; remove any
+conflicting `gc.auto = 0` there to use the managed threshold.
+
 When `development.editor_packages` includes `com.visualstudio.code`, setup
 installs a `code` launcher on your terminal's `PATH`, preserving any existing
 `/usr/local/bin/code`. Open a project or file with:
