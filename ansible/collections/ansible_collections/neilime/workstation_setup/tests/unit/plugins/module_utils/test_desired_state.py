@@ -88,8 +88,7 @@ def test_normalize_returns_complete_shape_with_defaults() -> None:
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "flathub"
     assert normalized["desktop"]["browser"] == "brave"
-    assert normalized["desktop"]["gnome"]["show_trash"] is True
-    assert normalized["desktop"]["gnome"]["autostart"] == []
+    assert normalized["desktop"]["gnome"] == {"dark_mode": None, "show_trash": None, "favorites": None}
     assert normalized["development"]["repositories"]["apt"] == []
     assert normalized["development"]["mise"] == {
         "tools": {},
@@ -162,13 +161,6 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
             "gnome": {
                 "dark_mode": False,
                 "show_trash": False,
-                "autostart": [
-                    {
-                        "desktop_file": "com.github.hluk.copyq.desktop",
-                        "name": "CopyQ",
-                        "command": "flatpak run com.github.hluk.copyq --start-server hide",
-                    }
-                ],
                 "favorites": ["org.gnome.Terminal.desktop"],
             },
         },
@@ -226,13 +218,6 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     assert normalized["desktop"]["browser"] == "brave"
     assert normalized["desktop"]["gnome"]["dark_mode"] is False
     assert normalized["desktop"]["gnome"]["show_trash"] is False
-    assert normalized["desktop"]["gnome"]["autostart"] == [
-        {
-            "desktop_file": "com.github.hluk.copyq.desktop",
-            "name": "CopyQ",
-            "command": "flatpak run com.github.hluk.copyq --start-server hide",
-        }
-    ]
     assert normalized["desktop"]["gnome"]["favorites"] == ["org.gnome.Terminal.desktop"]
     assert normalized["development"]["packages"] == [
         "git",
@@ -442,3 +427,19 @@ def test_normalize_does_not_expose_oh_my_zsh_configuration() -> None:
         {"home_environment": {"oh_my_zsh": {"version": "unmanaged-revision"}}}
     )
     assert normalized["home_environment"] == build_home_environment()
+
+
+def test_empty_gnome_favorites_explicitly_clears_the_dock() -> None:
+    """An empty preference list is distinct from leaving the setting unmanaged."""
+    normalized = DesiredStateConfigNormalizer().normalize(
+        {"desktop": {"gnome": {"dark_mode": False, "show_trash": False, "favorites": []}}},
+        {"USER": "fixture"},
+    )
+    assert normalized["desktop"]["gnome"] == {"dark_mode": False, "show_trash": False, "favorites": []}
+
+
+@pytest.mark.parametrize("key,value", [("dark_mode", "true"), ("show_trash", 1), ("favorites", "browser")])
+def test_gnome_preferences_reject_invalid_types(key: str, value: object) -> None:
+    """Optional settings still require explicit booleans and a list of favorites."""
+    with pytest.raises(ValueError):
+        DesiredStateConfigNormalizer().normalize({"desktop": {"gnome": {key: value}}}, {"USER": "fixture"})

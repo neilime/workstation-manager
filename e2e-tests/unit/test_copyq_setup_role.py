@@ -27,6 +27,13 @@ def fixture_copyq_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str,
     # pylint: disable=duplicate-code
     home = tmp_path / "home"
     home.mkdir()
+    autostart = home / ".config/autostart/com.github.hluk.copyq.desktop"
+    autostart.parent.mkdir(parents=True, mode=0o700)
+    autostart.write_text(
+        "[Desktop Entry]\nType=Application\n"
+        "Exec=/usr/bin/flatpak run com.github.hluk.copyq --start-server hide\n"
+        "Hidden=false\nX-GNOME-Autostart-enabled=true\n"
+    )
     binaries = tmp_path / "bin"
     binaries.mkdir()
     probe = binaries / "pgrep"
@@ -84,7 +91,6 @@ def fixture_copyq_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str,
     )
     clipboard_task["ansible.builtin.import_tasks"] = str(flatpak_tasks / "copyq.yml")
     tasks.insert(0, clipboard_task)
-    account = pwd.getpwuid(os.getuid())
     (tmp_path / "playbook.json").write_text(
         json.dumps(
             [
@@ -97,21 +103,11 @@ def fixture_copyq_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str,
                         "workstation_manager_use_become": False,
                         "workstation_manager_gnome_use_become_user": False,
                         "workstation_manager_resolved": {
-                            "user": {"name": account.pw_name, "home": str(home)},
+                            "user": {"name": pwd.getpwuid(os.getuid()).pw_name, "home": str(home)},
                             "desktop": {
                                 "flatpak": {"packages": "{{ fixture_packages | default(['com.github.hluk.copyq']) }}"},
-                                "gnome": {
-                                    "autostart": "{{ fixture_autostart | default(copyq_autostart) }}",
-                                },
                             },
                         },
-                        "copyq_autostart": [
-                            {
-                                "desktop_file": "com.github.hluk.copyq.desktop",
-                                "name": "CopyQ",
-                                "command": "/usr/bin/flatpak run com.github.hluk.copyq --start-server hide",
-                            }
-                        ],
                     },
                     "tasks": tasks,
                 }
@@ -157,6 +153,8 @@ def test_setup_starts_copyq_hidden_and_is_idempotent(copyq_setup) -> None:
     """An existing desktop session should not require logout after setup."""
 
     root, _ = copyq_setup
+    autostart = root / "home/.config/autostart/com.github.hluk.copyq.desktop"
+    original = autostart.read_bytes()
     initial = run_setup(copyq_setup)
     assert initial.returncode == 0, initial.stdout + initial.stderr
     repeated = run_setup(copyq_setup)
@@ -176,6 +174,8 @@ def test_setup_starts_copyq_hidden_and_is_idempotent(copyq_setup) -> None:
     autostart = root / "home/.config/autostart/com.github.hluk.copyq.desktop"
     assert "Exec=/usr/bin/flatpak run com.github.hluk.copyq --start-server hide" in autostart.read_text()
     assert "X-GNOME-Autostart-enabled=true" in autostart.read_text()
+    assert autostart.read_bytes() == original
+    assert autostart.parent.stat().st_mode & 0o777 == 0o700
     override = root / "home/.local/share/flatpak/overrides/com.github.hluk.copyq"
     assert "QT_QPA_PLATFORM=xcb" in override.read_text()
     assert not (root / "ide-data/flatpak/overrides/com.github.hluk.copyq").exists()
@@ -192,11 +192,13 @@ def test_setup_preserves_an_already_running_copyq(copyq_setup) -> None:
     assert not (root / "calls.jsonl").exists()
 
 
-@pytest.mark.parametrize("options", [(), ("--extra-vars", '{"fixture_autostart":[]}')])
-def test_copyq_clipboard_override_preserves_other_settings(copyq_setup, options: tuple[str, ...]) -> None:
+@pytest.mark.parametrize("autostart_enabled", [False, True])
+def test_copyq_clipboard_override_preserves_other_settings(copyq_setup, autostart_enabled: bool) -> None:
     """Every launch should use XWayland, without replacing unrelated permissions."""
 
     root, _ = copyq_setup
+    if not autostart_enabled:
+        (root / "home/.config/autostart/com.github.hluk.copyq.desktop").unlink()
     override = root / "home/.local/share/flatpak/overrides/com.github.hluk.copyq"
     override.parent.mkdir(parents=True)
     override.write_text(
@@ -204,14 +206,14 @@ def test_copyq_clipboard_override_preserves_other_settings(copyq_setup, options:
         "[Environment]\nQT_QPA_PLATFORM=wayland\nCOPYQ_LOG_LEVEL=WARNING\n"
     )
 
-    result = run_setup(copyq_setup, *options)
+    result = run_setup(copyq_setup)
 
     assert result.returncode == 0, result.stdout + result.stderr
     settings = configparser.ConfigParser()
     settings.read(override)
     assert dict(settings["Environment"]) == {"qt_qpa_platform": "xcb", "copyq_log_level": "WARNING"}
     assert dict(settings["Context"]) == {"sockets": "x11;wayland;", "filesystems": "xdg-download;"}
-    repeated = run_setup(copyq_setup, *options)
+    repeated = run_setup(copyq_setup)
     assert repeated.returncode == 0, repeated.stdout + repeated.stderr
     assert "changed=0" in repeated.stdout
     assert "quit it from its menu and reopen it" not in repeated.stdout
@@ -254,7 +256,6 @@ def test_setup_without_a_graphical_display_defers_startup(copyq_setup, session: 
     "options",
     [
         ("--check",),
-        ("--extra-vars", '{"fixture_autostart":[]}'),
         ("--extra-vars", '{"fixture_packages":[]}'),
     ],
 )
@@ -277,3 +278,31 @@ def test_copyq_startup_errors_fail_setup(copyq_setup, operation: str) -> None:
     result = run_setup(copyq_setup)
     assert result.returncode != 0, result.stdout + result.stderr
     assert not (root / "running").exists()
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        None,
+        "[Desktop Entry]\nType=Application\nHidden=true\n",
+        "[Desktop Entry]\nType=Application\nX-GNOME-Autostart-enabled=false\n",
+    ],
+)
+def test_missing_or_disabled_autostart_preserves_user_choice(copyq_setup, entry: str | None) -> None:
+    """Setup must not recreate or activate a removed or disabled dotfile."""
+    root, _ = copyq_setup
+    autostart = root / "home/.config/autostart/com.github.hluk.copyq.desktop"
+    if entry is None:
+        autostart.unlink()
+    else:
+        autostart.write_text(entry)
+    (root / "fail-probe").touch()
+
+    result = run_setup(copyq_setup)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (root / "calls.jsonl").exists()
+    if entry is None:
+        assert not autostart.exists()
+    else:
+        assert autostart.read_text() == entry

@@ -86,11 +86,11 @@ The GPG collection must contain exactly one key for Git signing:
 
 The last two entries are custom fields. A fingerprint can also be read from an
 ownertrust record when no `fingerprint` field is provided. Setup imports the key
-and configures Git commit and tag signing in `~/.config/git/config`, preserving
-other entries in that file and leaving the
-Chezmoi-managed `~/.gitconfig` unchanged. Git reads both files; signing settings
-in `.gitconfig` take precedence, so remove conflicting settings there to use the
-restored key. Keep `.config/git/config` outside Chezmoi's managed source.
+and writes its Git signing fingerprint and OpenPGP format to
+`~/.config/git/config`, preserving other entries and the Chezmoi-managed
+`~/.gitconfig`. Choose automatic commit and tag signing in your Chezmoi Git
+configuration. Git reads both files; settings in `.gitconfig` take precedence.
+Keep `.config/git/config` outside Chezmoi's managed source.
 
 The browser collection is optional. Leave its selector empty to create no managed
 profiles, or follow [browser profiles](browser.md) to populate it. Backup reports
@@ -179,12 +179,10 @@ and extensions. Brave recovery is covered in the [browser guide](browser.md).
 
 ## Developer tools and project files
 
-Setup enables Git automatic garbage collection by setting `gc.auto = 6700` in
-`~/.config/git/config`, independently of GPG key restoration. This is Git's
-[default loose-object threshold](https://git-scm.com/docs/git-gc#Documentation/git-gc.txt-gcauto).
-Setup preserves other Git settings and Chezmoi's `~/.gitconfig`. Settings in
-`.gitconfig` or a repository's local configuration take precedence; remove any
-conflicting `gc.auto = 0` there to use the managed threshold.
+Manage Git preferences, including `gc.auto`, `commit.gpgsign`, and `tag.gpgsign`,
+in your Chezmoi `~/.gitconfig`. The companion repository enables automatic garbage
+collection with `gc.auto = 6700` and enables commit and tag signing. Repository-local
+settings and conditional includes can override those preferences.
 
 When `development.editor_packages` includes `com.visualstudio.code`, setup
 installs a `code` launcher on your terminal's `PATH`, preserving any existing
@@ -282,14 +280,24 @@ work in progress. A user-level daily timer is installed alongside it, and the
 desktop session activates that timer so the same summary appears as a
 notification once per day.
 
-Review the public defaults for package lists, GNOME preferences, and application
-settings. Override only the values you need to change.
+Choose `desktop.gnome.dark_mode`, `show_trash`, and `favorites` in
+`ansible/private.override.yml` in the companion repository. Unset values preserve
+existing desktop preferences; an explicit `favorites: []` clears the dock.
+Use `browser` in the favorites list for the selected browser adapter's desktop entry.
+The [override example](../../ansible/vars/private.override.example.yml) shows the structure.
 
-CopyQ starts hidden at graphical login by default. Setup also starts it in an
-active GNOME session if it is not already running. When setup runs without a
-graphical session, CopyQ starts at the next login. Set `desktop.gnome.autostart`
-to `[]` in your private override to skip startup configuration and activation;
-remove any previously installed startup entry in `~/.config/autostart/` yourself.
+Manage the wallpaper through Chezmoi at
+`~/.local/share/backgrounds/wallpaper.jpg`. Setup selects that image for both light
+and dark modes with zoom scaling when it exists; it preserves the current
+wallpaper settings when the file is absent.
+
+Manage CopyQ's graphical-login entry through Chezmoi at
+`~/.config/autostart/com.github.hluk.copyq.desktop`. The companion entry starts
+CopyQ hidden. Setup also starts it in an active GNOME session if the entry exists,
+is enabled, and CopyQ is installed but not running. Set `Hidden=true` or
+`X-GNOME-Autostart-enabled=false` in its Chezmoi source and apply it to disable
+startup. Without a graphical session, startup is deferred to the next login.
+Setup preserves existing `~/.config` permissions, including Chezmoi's private mode.
 
 Setup configures the CopyQ Flatpak to use XWayland (`QT_QPA_PLATFORM=xcb`) for
 clipboard monitoring on GNOME. The setting applies to graphical login and manual

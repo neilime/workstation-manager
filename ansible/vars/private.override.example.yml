@@ -10,6 +10,14 @@
 # Keep actual secrets in Bitwarden. This file is for non-secret workstation data.
 desktop:
   browser: brave
+  gnome:
+    dark_mode: true
+    show_trash: true
+    # Use browser for the selected adapter's desktop entry; [] clears favorites.
+    favorites:
+      - org.gnome.Nautilus.desktop
+      - browser
+      - com.visualstudio.code.desktop
 
 home_environment:
   chezmoi:

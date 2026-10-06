@@ -152,10 +152,9 @@ class DesiredStateDefaultsFactory:
                 },
                 "browser": "brave",
                 "gnome": {
-                    "dark_mode": True,
-                    "show_trash": True,
-                    "autostart": [],
-                    "favorites": [],
+                    "dark_mode": None,
+                    "show_trash": None,
+                    "favorites": None,
                 },
             },
             "development": {
