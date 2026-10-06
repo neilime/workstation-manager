@@ -35,9 +35,5 @@
       value: openpgp
     - name: user.signingkey
       value: "{{ gpg_keys_signing_fingerprint }}"
-    - name: commit.gpgsign
-      value: "true"
-    - name: tag.gpgsign
-      value: "true"
   loop_control:
     label: "{{ item.name }}"

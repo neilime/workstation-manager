@@ -78,9 +78,6 @@
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
   when: workstation_manager_resolved.development.packages | length > 0
 
-- name: Configure Git automatic garbage collection
-  ansible.builtin.import_tasks: git.yml
-
 - name: Install declared editor packages
   become: "{{ workstation_manager_use_become }}"
   community.general.flatpak:
@@ -124,6 +121,13 @@
   loop_control:
     label: "{{ item.command | default('unnamed-plugin') }}"
 
+- name: Inspect development config directory permissions
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.config"
+    follow: true
+  register: workstation_manager_development_config_directory
+
 - name: Ensure mise user directories exist
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
@@ -131,7 +135,9 @@
     state: directory
     owner: "{{ workstation_manager_resolved.user.name }}"
     group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
+    mode: >-
+      {{ workstation_manager_development_config_directory.stat.mode | default('0700')
+         if item == workstation_manager_resolved.user.home ~ '/.config' else '0755' }}
   loop:
     - "{{ workstation_manager_resolved.user.home }}/.local/bin"
     - "{{ workstation_manager_resolved.user.home }}/.local/share"

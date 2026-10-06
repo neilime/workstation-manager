@@ -54,24 +54,11 @@ workstation_manager:
     # Select the browser adapter; installation details belong to its role.
     browser: brave
     gnome:
-      # Apply the workstation's GNOME appearance and Ubuntu Dock layout.
-      dark_mode: true
-      show_trash: true
-      autostart:
-        - desktop_file: com.github.hluk.copyq.desktop
-          name: CopyQ
-          command: /usr/bin/flatpak run com.github.hluk.copyq --start-server hide
+      # Leave unset to preserve existing preferences; choose values in private overrides.
+      dark_mode:
+      show_trash:
+      # An explicit empty list clears the dock favorites.
       favorites:
-        - org.gnome.Nautilus.desktop
-        - org.gnome.Software.desktop
-        - com.bitwarden.desktop.desktop
-        # The selected browser adapter supplies its desktop entry.
-        - browser
-        - com.slack.Slack.desktop
-        - com.spotify.Client.desktop
-        - com.visualstudio.code.desktop
-        - orca-ide.desktop
-        - org.gnome.Terminal.desktop
   development:
     # Core developer packages installed globally from APT.
     packages:

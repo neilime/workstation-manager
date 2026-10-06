@@ -85,7 +85,8 @@ def test_desktop_wallpaper(host) -> None:
     assert wallpaper_file.is_file
     assert wallpaper_file.user == host.check_output("whoami")
     assert wallpaper_file.mode == 0o644
-    assert wallpaper_file.sha256sum == "612972bfe0d9aa6644b6f4103db9032e21e3c9f6f18a0db2c210e4f004850d70"
+    source = host.file(f"{user_home}/.local/share/chezmoi/home/dot_local/share/backgrounds/wallpaper.jpg")
+    assert wallpaper_file.sha256sum == source.sha256sum
     assert picture_uri == expected_uri
     assert picture_uri_dark == expected_uri
     assert picture_options == "'zoom'"
@@ -95,9 +96,10 @@ def test_desktop_favorites_preference(host) -> None:
     """The dock should contain the desired applications in the desired order."""
 
     # Arrange
-    defaults_path = pathlib.Path(__file__).parents[1] / "ansible" / "group_vars" / "all.yml"
-    defaults = DataLoader().load_from_file(str(defaults_path))["workstation_manager"]
-    configured_favorites = defaults["desktop"]["gnome"]["favorites"]
+    user_home = host.check_output('printf %s "$HOME"')
+    overrides_file = host.file(f"{user_home}/.local/share/chezmoi/ansible/private.override.yml")
+    overrides = DataLoader().load(overrides_file.content_string)
+    configured_favorites = overrides["desktop"]["gnome"]["favorites"]
     default_browser_app_id = host.check_output("xdg-mime query default text/html")
 
     # Act

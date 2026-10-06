@@ -28,6 +28,17 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             defaults.get("flatpak"), "workstation_manager.desktop.defaults.flatpak"
         )
         default_gnome = self._resolver.mapping(defaults.get("gnome"), "workstation_manager.desktop.defaults.gnome")
+        preferences = {
+            key: self._resolver.value_or_default(gnome.get(key), default_gnome.get(key))
+            for key in ("dark_mode", "show_trash", "favorites")
+        }
+        for key in ("dark_mode", "show_trash"):
+            if preferences[key] is not None:
+                preferences[key] = self._resolver.bool_value(preferences[key], False)
+        if preferences["favorites"] is not None:
+            preferences["favorites"] = self._resolver.list_value(
+                preferences["favorites"], "workstation_manager.desktop.gnome.favorites"
+            )
 
         return {
             "flatpak": {
@@ -44,28 +55,5 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                 ),
             },
             "browser": browser,
-            "gnome": {
-                "dark_mode": self._resolver.bool_value(
-                    gnome.get("dark_mode"),
-                    self._resolver.bool_value(default_gnome.get("dark_mode"), True),
-                ),
-                "show_trash": self._resolver.bool_value(
-                    gnome.get("show_trash"),
-                    self._resolver.bool_value(default_gnome.get("show_trash"), True),
-                ),
-                "autostart": self._resolver.list_value(
-                    self._resolver.value_or_default(
-                        gnome.get("autostart"),
-                        default_gnome.get("autostart"),
-                    ),
-                    "workstation_manager.desktop.gnome.autostart",
-                ),
-                "favorites": self._resolver.list_value(
-                    self._resolver.value_or_default(
-                        gnome.get("favorites"),
-                        default_gnome.get("favorites"),
-                    ),
-                    "workstation_manager.desktop.gnome.favorites",
-                ),
-            },
+            "gnome": preferences,
         }

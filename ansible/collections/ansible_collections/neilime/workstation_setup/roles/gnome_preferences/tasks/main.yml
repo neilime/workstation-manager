@@ -25,24 +25,14 @@
     state: directory
     mode: "0700"
 
-- name: Ensure target user backgrounds directory exists
+- name: Inspect the dotfiles-managed wallpaper
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    path: "{{ workstation_manager_resolved.user.home }}/.local/share/backgrounds"
-    state: directory
-    mode: "0755"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.local/share/backgrounds/wallpaper.jpg"
+  register: workstation_manager_gnome_wallpaper
 
-- name: Install wallpaper
-  become: "{{ workstation_manager_gnome_use_become_user }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.copy:
-    src: wallpaper.jpg
-    dest: >-
-      {{ workstation_manager_resolved.user.home }}/.local/share/backgrounds/wallpaper.jpg
-    mode: "0644"
-
-- name: Configure desktop application startup
+- name: Activate configured desktop applications
   ansible.builtin.import_tasks: autostart.yml
 
 - name: Bookmark the projects directory in Files
@@ -58,6 +48,7 @@
   vars:
     workstation_manager_gnome_color_scheme_value: >-
       {{ "'prefer-dark'" if workstation_manager_resolved.desktop.gnome.dark_mode else "'default'" }}
+  when: workstation_manager_resolved.desktop.gnome.dark_mode is not none
 
 - name: Apply GNOME wallpaper
   become: "{{ workstation_manager_gnome_use_become_user }}"
@@ -74,6 +65,7 @@
     - picture-uri-dark
   loop_control:
     label: "{{ item }}"
+  when: workstation_manager_gnome_wallpaper.stat.isreg | default(false)
 
 - name: Apply GNOME wallpaper display style
   become: "{{ workstation_manager_gnome_use_become_user }}"
@@ -82,6 +74,7 @@
     key: /org/gnome/desktop/background/picture-options
     value: "'zoom'"
     state: present
+  when: workstation_manager_gnome_wallpaper.stat.isreg | default(false)
 
 - name: Apply GNOME favorites
   become: "{{ workstation_manager_gnome_use_become_user }}"
@@ -100,6 +93,7 @@
         | map('regex_replace', '^browser$', workstation_manager_browser_desktop_file)
         | list | to_json
       }}
+  when: workstation_manager_resolved.desktop.gnome.favorites is not none
 
 - name: Apply Ubuntu Dock trash visibility
   become: "{{ workstation_manager_gnome_use_become_user }}"
@@ -108,3 +102,4 @@
     key: /org/gnome/shell/extensions/dash-to-dock/show-trash
     value: "{{ workstation_manager_resolved.desktop.gnome.show_trash | ternary('true', 'false') }}"
     state: present
+  when: workstation_manager_resolved.desktop.gnome.show_trash is not none

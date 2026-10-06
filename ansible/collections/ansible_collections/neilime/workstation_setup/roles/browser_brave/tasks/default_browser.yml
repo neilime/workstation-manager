@@ -1,4 +1,11 @@
 ---
+- name: Inspect target user XDG config directory permissions
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.config"
+    follow: true
+  register: workstation_manager_browser_config_directory
+
 - name: Ensure target user XDG config directory exists
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
@@ -6,7 +13,7 @@
     state: directory
     owner: "{{ workstation_manager_resolved.user.name }}"
     group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
+    mode: "{{ workstation_manager_browser_config_directory.stat.mode | default('0700') }}"
 
 - name: Apply Brave default browser associations for Ubuntu and GNOME
   become: "{{ workstation_manager_use_become }}"

@@ -1,43 +1,30 @@
 ---
-- name: Ensure target user autostart directory exists
+- name: Inspect the dotfiles-managed CopyQ autostart entry
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    path: "{{ workstation_manager_resolved.user.home }}/.config/autostart"
-    state: directory
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
-  when: workstation_manager_resolved.desktop.gnome.autostart | length > 0
-
-- name: Configure GNOME autostart applications
-  become: "{{ workstation_manager_gnome_use_become_user }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.copy:
-    dest: >-
-      {{ workstation_manager_resolved.user.home }}/.config/autostart/{{ item.desktop_file }}
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0644"
-    content: |
-      [Desktop Entry]
-      Type=Application
-      Version=1.0
-      Name={{ item.name }}
-      TryExec=/usr/bin/flatpak
-      Exec={{ item.command }}
-      Terminal=false
-      Hidden=false
-      X-GNOME-Autostart-enabled=true
-  loop: "{{ workstation_manager_resolved.desktop.gnome.autostart }}"
-  loop_control:
-    label: "{{ item.desktop_file }}"
-
-- name: Activate CopyQ in the current desktop session
-  ansible.builtin.include_tasks: copyq.yml
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/autostart/com.github.hluk.copyq.desktop"
+  register: workstation_manager_gnome_copyq_autostart
   when:
     - not ansible_check_mode
     - "'com.github.hluk.copyq' in workstation_manager_resolved.desktop.flatpak.packages"
-    - >-
-      workstation_manager_resolved.desktop.gnome.autostart
-      | selectattr('desktop_file', 'equalto', 'com.github.hluk.copyq.desktop') | list | length > 0
+
+- name: Read CopyQ autostart preferences
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.slurp:
+    src: "{{ workstation_manager_resolved.user.home }}/.config/autostart/com.github.hluk.copyq.desktop"
+  register: workstation_manager_gnome_copyq_autostart_content
+  when: workstation_manager_gnome_copyq_autostart.stat.isreg | default(false)
+
+- name: Activate CopyQ in the current desktop session
+  ansible.builtin.include_tasks: copyq.yml
+  vars:
+    workstation_manager_gnome_copyq_desktop_entry: >-
+      {{ (workstation_manager_gnome_copyq_autostart_content.content | b64decode
+          | community.general.from_ini).get('Desktop Entry', {}) }}
+  when:
+    - workstation_manager_gnome_copyq_autostart.stat.isreg | default(false)
+    - workstation_manager_gnome_copyq_desktop_entry.get('Type') == 'Application'
+    - not workstation_manager_gnome_copyq_desktop_entry.get('Hidden', 'false') | bool
+    - workstation_manager_gnome_copyq_desktop_entry.get('X-GNOME-Autostart-enabled', 'true') | bool

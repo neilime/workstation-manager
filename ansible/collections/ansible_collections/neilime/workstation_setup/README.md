@@ -4,24 +4,24 @@ Owns configuration normalization, system and application setup, secrets retrieva
 home-environment setup (including the Zsh login shell, Oh My Zsh, and Chezmoi),
 developer tooling, and browser adapters. GNOME setup bookmarks the configured
 projects directory in Files while preserving existing bookmarks and labels.
-Developer tooling enables Git automatic garbage collection in the managed user's
-`~/.config/git/config`; see the
-[configuration guide](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
-for the threshold and configuration precedence.
 Chezmoi initialization and application use the managed source, configuration file,
 and target home explicitly. Setup
 requests approval before replacing conflicting local dotfiles, then checks the
 approved paths before continuing application. An explicit skip preserves local
 changes and continues setup without applying Chezmoi dotfiles or scripts for that
-run. Baseline home directories retain their permissions, and Git signing for restored keys uses
-`~/.config/git/config` to leave Chezmoi's `.gitconfig` untouched. Bitwarden
+run. Baseline home directories and browser setup preserve existing `.config`
+permissions. Restored Git signing fingerprints and formats use
+`~/.config/git/config`; static Git preferences belong to Chezmoi's `.gitconfig`. Bitwarden
 collection reads use `community.general.bitwarden` with the shared managed-user
 cache described in the [integration guide](../../../../../docs/development/README.md#bitwarden-integration).
 Bitwarden email login prompts privately once per challenge, ignores terminal redraws, and
 retries rejected codes with a fresh login attempt. Developer tool installation uses the GitHub credentials described in the
 [configuration guide](../../../../../docs/usage/configuration.md#automated-runs).
-CopyQ is configured for graphical login and started hidden during setup when a
-GNOME session is active. Its Flatpak uses the XWayland clipboard workaround; an
+CopyQ's graphical-login entry and the wallpaper asset belong to Chezmoi. Setup
+starts CopyQ hidden when its existing autostart entry is enabled and a GNOME
+session is active. GNOME appearance values come from private overrides;
+unset values preserve existing preferences, and wallpaper settings are applied
+only when the dotfiles-managed image exists. CopyQ's Flatpak uses the XWayland clipboard workaround; an
 already running instance needs a restart after that setting changes. See the
 [configuration guide](../../../../../docs/usage/configuration.md) for verification
 and limitations.
