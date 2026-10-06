@@ -183,15 +183,46 @@ code .
 code --wait path/to/file
 ```
 
-Setup also selects `zsh (host)` as the VS Code integrated terminal's default Linux
-profile. It uses the Flatpak package's
+Setup also selects `zsh (host)` as the Visual Studio Code integrated terminal's
+default Linux profile. It uses the Flatpak package's
 [host-spawn bridge](https://github.com/flathub/com.visualstudio.code#use-host-shell-in-the-integrated-terminal)
 to run `/usr/bin/zsh` on the workstation, where your `.zshrc`, mise tools, and
 project files are available. Setup preserves other editor settings, terminal
-profiles, and comments in `settings.json`. Restart VS Code after setup and open a
-new terminal; existing terminals keep their current shell. Workspace settings
+profiles, and comments in `settings.json`. Restart Visual Studio Code after setup
+and open a new terminal; existing terminals keep their current shell. Workspace settings
 can override the default; select `zsh (host)` through
 **Terminal: Select Default Profile** in that case.
+
+Setup adds `terminal.integrated.profiles.linux` and
+`terminal.integrated.defaultProfile.linux` to
+[`settingsSync.ignoredSettings`](https://code.visualstudio.com/docs/configure/settings-sync#configure-synced-data).
+These Linux terminal settings stay local to the workstation so Settings Sync
+cannot replace the Flatpak host bridge. Other sync exclusions are preserved;
+explicit sync opt-ins for these two settings are removed.
+
+If Settings Sync has already removed `zsh (host)`, rerun setup or open
+**Preferences: Open User Settings (JSON)** and merge these entries into the
+existing settings, keeping any other terminal profiles and sync exclusions:
+
+```json
+{
+  "terminal.integrated.profiles.linux": {
+    "zsh (host)": {
+      "path": "/app/bin/host-spawn",
+      "args": ["/usr/bin/zsh", "-l"],
+      "overrideName": true
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "zsh (host)",
+  "settingsSync.ignoredSettings": [
+    "terminal.integrated.profiles.linux",
+    "terminal.integrated.defaultProfile.linux"
+  ]
+}
+```
+
+Open a new terminal after saving. Zsh is installed on the workstation; selecting
+`/usr/bin/zsh` directly inside the Flatpak does not use the host installation.
 
 Set workstation-wide tool versions in `development.mise.tools`. They are
 written to `~/.config/mise/config.toml`; project-specific versions belong in each

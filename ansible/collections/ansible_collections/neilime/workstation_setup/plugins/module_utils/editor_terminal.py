@@ -8,12 +8,16 @@ from typing import Any
 
 _JSONC_TOKENS = re.compile(r'"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*[\s\S]*?\*/')
 _TRAILING_COMMAS = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
+_LOCAL_TERMINAL_SETTINGS = (
+    "terminal.integrated.profiles.linux",
+    "terminal.integrated.defaultProfile.linux",
+)
 
 
 # The editor exposes the single configuration operation used by its module.
 # pylint: disable-next=too-few-public-methods
 class EditorTerminalSettings:
-    """Edit only the managed terminal profile and its default selection."""
+    """Configure the managed terminal profile and keep its Linux settings local."""
 
     def configure(self, content: str) -> str:
         """Preserve comments, unrelated settings and profiles, accepting JSONC trailing commas."""
@@ -25,7 +29,18 @@ class EditorTerminalSettings:
             ("terminal.integrated.profiles.linux", "zsh (host)"),
             {"path": "/app/bin/host-spawn", "args": ["/usr/bin/zsh", "-l"], "overrideName": True},
         )
-        return self._set(content, ("terminal.integrated.defaultProfile.linux",), "zsh (host)")
+        content = self._set(content, ("terminal.integrated.defaultProfile.linux",), "zsh (host)")
+        settings = json.loads(self._parse(content))
+        ignored = settings.get("settingsSync.ignoredSettings", [])
+        if not isinstance(ignored, list) or any(not isinstance(setting, str) for setting in ignored):
+            raise ValueError("VS Code settingsSync.ignoredSettings must be an array of strings.")
+        # A leading minus explicitly opts a setting back into Settings Sync.
+        terminal_sync_opt_ins = {f"-{key}" for key in _LOCAL_TERMINAL_SETTINGS}
+        ignored = [setting for setting in ignored if setting not in terminal_sync_opt_ins]
+        for setting in _LOCAL_TERMINAL_SETTINGS:
+            if setting not in ignored:
+                ignored.append(setting)
+        return self._set(content, ("settingsSync.ignoredSettings",), ignored)
 
     @staticmethod
     def _without_comments(content: str) -> str:
@@ -100,7 +115,8 @@ class EditorTerminalSettings:
 
         masked = self._parse(content)
         properties, closing = self._properties(masked, start)
-        parent_indent = re.match(r"[ \t]*", content[content.rfind("\n", 0, start) + 1 :]).group()
+        parent_indent = content[content.rfind("\n", 0, start) + 1 :]
+        parent_indent = parent_indent[: len(parent_indent) - len(parent_indent.lstrip(" \t"))]
         child_indent = parent_indent + "  "
         newline = "\r\n" if "\r\n" in content else "\n"
         formatted = json.dumps(value, ensure_ascii=False, indent=2).replace("\n", newline + child_indent)

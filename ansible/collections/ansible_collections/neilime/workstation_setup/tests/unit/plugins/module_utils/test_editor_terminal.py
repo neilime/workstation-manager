@@ -20,6 +20,51 @@ def test_new_settings_select_the_host_zsh_profile() -> None:
         "args": ["/usr/bin/zsh", "-l"],
         "overrideName": True,
     }
+    assert settings["settingsSync.ignoredSettings"] == [
+        "terminal.integrated.profiles.linux",
+        "terminal.integrated.defaultProfile.linux",
+    ]
+
+
+def test_sync_exclusions_preserve_personal_choices_and_remove_terminal_opt_ins() -> None:
+    """Host-specific terminal settings must stay local even after explicitly opting into sync."""
+
+    existing = json.dumps(
+        {
+            "settingsSync.ignoredSettings": [
+                "editor.fontSize",
+                "-window.zoomLevel",
+                "-terminal.integrated.profiles.linux",
+                "terminal.integrated.defaultProfile.linux",
+                "-terminal.integrated.defaultProfile.linux",
+            ],
+            "settingsSync.ignoredExtensions": ["fixture.personal"],
+        }
+    )
+    result = EditorTerminalSettings().configure(existing)
+    settings = json.loads(result)
+    assert settings["settingsSync.ignoredSettings"] == [
+        "editor.fontSize",
+        "-window.zoomLevel",
+        "terminal.integrated.defaultProfile.linux",
+        "terminal.integrated.profiles.linux",
+    ]
+    assert settings["settingsSync.ignoredExtensions"] == ["fixture.personal"]
+    assert EditorTerminalSettings().configure(result) == result
+
+
+def test_existing_sync_exclusions_retain_jsonc_comments_when_already_configured() -> None:
+    """An unchanged exclusion list must not lose its comments or trailing comma."""
+
+    exclusions = (
+        '"settingsSync.ignoredSettings": [\n'
+        "    // machine-specific shells\n"
+        '    "terminal.integrated.profiles.linux",\n'
+        '    "terminal.integrated.defaultProfile.linux",\n'
+        "  ]"
+    )
+    result = EditorTerminalSettings().configure("{" + exclusions + "}")
+    assert exclusions in result
 
 
 @pytest.mark.parametrize("trailing_comma", ["", ","])
@@ -90,7 +135,16 @@ def test_bom_crlf_and_unicode_settings_are_preserved() -> None:
 
 
 @pytest.mark.parametrize(
-    "content", ["[]", '{"broken":', "{/* unterminated", '{"terminal.integrated.profiles.linux": []}']
+    "content",
+    [
+        "[]",
+        '{"broken":',
+        "{/* unterminated",
+        '{"terminal.integrated.profiles.linux": []}',
+        '{"settingsSync.ignoredSettings": "synthetic-private-marker"}',
+        '{"settingsSync.ignoredSettings": ["synthetic-private-marker", 42]}',
+        '{"settingsSync.ignoredSettings": null}',
+    ],
 )
 def test_invalid_settings_fail_without_exposing_their_contents(content: str) -> None:
     """Malformed or incompatible settings must not be discarded to configure the terminal."""

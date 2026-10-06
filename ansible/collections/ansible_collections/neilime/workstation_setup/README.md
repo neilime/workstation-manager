@@ -24,9 +24,11 @@ Compose and Buildx use mise-managed
 CLI plugin binaries linked under Docker's expected plugin filenames. See
 [developer tools](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
 for access verification and version updates.
-The managed VS Code Flatpak also exposes a `code` terminal launcher, preserving
+The managed Visual Studio Code Flatpak also exposes a `code` terminal launcher, preserving
 an existing `/usr/local/bin/code`. Its integrated terminal uses host Zsh through
-`host-spawn`; setup preserves unrelated JSONC settings and terminal profiles.
+`host-spawn`; setup preserves unrelated JSONC settings and terminal profiles,
+and excludes Linux terminal profiles and their default selection from Settings
+Sync so cloud preferences cannot replace the host-shell configuration.
 SSH restoration rejects private-key material in a Bitwarden `public_key` field
 before writing the key pair. Browser inspection uses registered profile names
 before falling back to saved per-profile names. Browser backup can explicitly

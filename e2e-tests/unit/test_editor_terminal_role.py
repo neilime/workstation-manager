@@ -81,6 +81,34 @@ def test_fresh_installation_creates_a_private_idempotent_terminal_configuration(
     assert "changed=0" in repeat.stdout
 
 
+def test_synced_settings_receive_local_terminal_sync_exclusions(tmp_path):
+    """Restoring editor preferences must not leave the host terminal vulnerable to later syncs."""
+
+    path = settings_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "editor.fontSize": 19,
+                "settingsSync.ignoredSettings": ["editor.fontSize", "-terminal.integrated.profiles.linux"],
+            }
+        )
+    )
+    result = apply(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    settings = json.loads(path.read_text())
+    assert settings["editor.fontSize"] == 19
+    assert settings["terminal.integrated.defaultProfile.linux"] == "zsh (host)"
+    assert settings["settingsSync.ignoredSettings"] == [
+        "editor.fontSize",
+        "terminal.integrated.profiles.linux",
+        "terminal.integrated.defaultProfile.linux",
+    ]
+    repeat = apply(tmp_path)
+    assert repeat.returncode == 0, repeat.stdout + repeat.stderr
+    assert "changed=0" in repeat.stdout
+
+
 def test_existing_settings_comments_permissions_and_symlinks_are_preserved(tmp_path):
     """Settings managed through a dotfile symlink must retain the link and private attributes."""
 
@@ -129,12 +157,15 @@ def test_other_editors_do_not_receive_vscode_configuration(tmp_path, packages):
     assert not (tmp_path / "home").exists()
 
 
-def test_invalid_settings_stop_setup_without_overwriting_the_file(tmp_path):
+@pytest.mark.parametrize(
+    "original",
+    ['{"synthetic-private-marker":', '{"settingsSync.ignoredSettings": ["synthetic-private-marker", 42]}'],
+)
+def test_invalid_settings_stop_setup_without_overwriting_the_file(tmp_path, original):
     """An invalid settings file must produce a useful failure instead of replacing personal preferences."""
 
     path = settings_path(tmp_path)
     path.parent.mkdir(parents=True)
-    original = '{"synthetic-private-marker":'
     path.write_text(original)
     result = apply(tmp_path)
     assert result.returncode != 0

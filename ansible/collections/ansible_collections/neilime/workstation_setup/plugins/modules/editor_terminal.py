@@ -14,6 +14,8 @@ version_added: "1.0.0"
 description:
   - Adds a C(zsh (host)) terminal profile using the Flatpak's C(/app/bin/host-spawn) bridge.
   - Selects that profile as the Linux default and preserves other settings and terminal profiles.
+  - Excludes Linux terminal profiles and their default selection from Settings Sync.
+  - Preserves other sync exclusions and removes explicit sync opt-ins for these terminal settings.
   - Supports JSONC comments and trailing commas without rewriting unrelated text.
   - Follows settings-file symlinks and preserves existing file permissions and ownership.
 options:

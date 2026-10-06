@@ -1,5 +1,7 @@
 """End-to-end checks for development tooling."""
 
+import json
+
 
 def resolve_mise_command(host, tool: str):
     """Return the resolved command path for a mise-managed tool."""
@@ -220,6 +222,10 @@ def test_vscode_integrated_terminal_uses_host_zsh(host) -> None:
     assert settings.exists
     assert '"terminal.integrated.defaultProfile.linux": "zsh (host)"' in settings.content_string
     assert '"path": "/app/bin/host-spawn"' in settings.content_string
+    ignored_settings = json.loads(settings.content_string)["settingsSync.ignoredSettings"]
+    for setting in ("terminal.integrated.profiles.linux", "terminal.integrated.defaultProfile.linux"):
+        assert setting in ignored_settings
+        assert f"-{setting}" not in ignored_settings
     assert bridge_result.succeeded
     assert "zsh " in bridge_result.stdout
 
