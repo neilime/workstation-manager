@@ -54,6 +54,12 @@ run_phase_tests() {
 	local phase_report_file=""
 	shift
 
+	# Setup can add groups. Reauthenticate the test connection so assertions see
+	# the same permissions as a new terminal session after login.
+	if [[ "$phase_name" == setup ]] && ssh -F "$ssh_config_path" -O check "$ssh_host" >/dev/null 2>&1; then
+		ssh -F "$ssh_config_path" -O exit "$ssh_host"
+	fi
+
 	if [[ -n "$report_dir" ]]; then
 		phase_report_file="$report_dir/tests/e2e-${phase_name}.junit.xml"
 		mkdir -p "$(dirname "$phase_report_file")"
@@ -99,13 +105,10 @@ run_e2e_timed_command backup-assertions run_phase_tests backup e2e-tests/test_ba
 setup_status=0
 run_e2e_timed_command setup bash "$script_dir/e2e-setup.sh" "$vm_name" || setup_status=$?
 if [[ $setup_status -eq 0 ]]; then
-	run_e2e_timed_command setup-copyq wait_for_e2e_user_process copyq || setup_status=$?
-fi
-if [[ $setup_status -eq 0 ]]; then
 	run_e2e_timed_command desktop-restart restart_e2e_desktop_session || setup_status=$?
 fi
 if [[ $setup_status -eq 0 ]]; then
-	run_e2e_timed_command desktop-autostart wait_for_e2e_user_process copyq || setup_status=$?
+	run_e2e_timed_command clipboard-extension wait_for_e2e_clipboard_extension || setup_status=$?
 fi
 capture_status=0
 run_e2e_timed_command setup-screenshot capture_phase_screenshot setup || capture_status=$?

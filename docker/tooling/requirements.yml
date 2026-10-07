@@ -1,8 +1,0 @@
----
-# Direct collection pins for the tooling image's Ansible runtime.
-# Renovate's ansible-galaxy manager updates these collection pins.
-collections:
-  - name: community.general
-    version: "13.4.0"
-  - name: ansible.posix
-    version: "2.2.2"

@@ -1,11 +1,18 @@
 ---
-- name: Install Flatpak and GNOME Software support packages
+- name: Install Flatpak and GNOME session integration
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name:
       - flatpak
       - gnome-software
       - gnome-software-plugin-flatpak
+      - dconf-cli
+      - python3-psutil
+      - python3-gi
+      - gnome-keyring
+      - libpam-gnome-keyring
+      - xdg-desktop-portal-gnome
+      - xdg-desktop-portal-gtk
     state: present
     install_recommends: false
     update_cache: true
@@ -16,6 +23,10 @@
   ansible.builtin.apt:
     name: gnome-software-plugin-snap
     state: absent
+    purge: true
+
+- name: Configure GNOME Software updates
+  ansible.builtin.import_tasks: updates.yml
 
 - name: Ensure configured Flatpak remote is present
   become: "{{ workstation_manager_use_become }}"
@@ -34,6 +45,5 @@
     remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
   when: workstation_manager_resolved.desktop.flatpak.packages | length > 0
 
-- name: Configure CopyQ clipboard monitoring
-  ansible.builtin.import_tasks: copyq.yml
-  when: "'com.github.hluk.copyq' in workstation_manager_resolved.desktop.flatpak.packages"
+- name: Apply native scanner delivery
+  ansible.builtin.import_tasks: scanner.yml

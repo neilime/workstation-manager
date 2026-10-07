@@ -138,7 +138,10 @@ When profiles exist locally, backup also writes the sidecar noted above for manu
 inspection or manual recovery of bookmarks and non-secret preferences.
 
 Automatic verification requires Brave and access to the managed user's desktop
-session and unlocked system keyring. A new local profile still needs a secure note
+session and unlocked system keyring. Setup launched through SSH discovers that
+user's existing GNOME session; log in to the desktop first. If no display is
+available, recovery stops with a desktop-session error before launching Brave.
+A new local profile still needs a secure note
 in the configured collection before its recovery can be managed. Policies that
 block Sync must be resolved by the administrator. Noninteractive setup also requires access to the managed desktop and unlocked
 keyring. Noninteractive backup requires explicit recovery decisions and does not

@@ -1,4 +1,31 @@
 ---
+- name: Require the single supported Ubuntu release
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] == lookup('ansible.builtin.file', playbook_dir ~ '/ubuntu-version') | trim
+    fail_msg: >-
+      This revision requires Ubuntu {{ lookup('ansible.builtin.file', playbook_dir ~ '/ubuntu-version') | trim }}.
+      Upgrade the operating system before running setup.
+
+- name: Inspect Snap boot dependencies before changing the workstation
+  become: "{{ workstation_manager_use_become }}"
+  neilime.workstation_setup.snap_removal:
+    state: inspected
+
+- name: Prevent automatic Snap reinstallation
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/workstation-manager-no-snap
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by workstation-manager.
+      Package: snapd
+      Pin: version *
+      Pin-Priority: -1
+
 - name: Install system prerequisite packages
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
@@ -54,32 +81,11 @@
     state: link
     force: true
 
-- name: Ensure required system directories exist
+- name: Ensure the system state directory exists
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
-    path: "{{ item.path }}"
+    path: "{{ workstation_manager_resolved.system.state_dir }}"
     state: directory
-    owner: "{{ item.owner | default('root') }}"
-    group: "{{ item.group | default('root') }}"
-    mode: "{{ item.mode | default('0755') }}"
-  loop: >-
-    {{
-      [{"path": workstation_manager_resolved.system.state_dir}] +
-      workstation_manager_resolved.system.directories
-    }}
-
-- name: Enable configured system services
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.systemd_service:
-    name: "{{ item }}"
-    enabled: true
-  loop: "{{ workstation_manager_resolved.system.services.enabled }}"
-  when: workstation_manager_resolved.system.services.enabled | length > 0
-
-- name: Disable configured system services
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.systemd_service:
-    name: "{{ item }}"
-    enabled: false
-  loop: "{{ workstation_manager_resolved.system.services.disabled }}"
-  when: workstation_manager_resolved.system.services.disabled | length > 0
+    owner: root
+    group: root
+    mode: "0755"

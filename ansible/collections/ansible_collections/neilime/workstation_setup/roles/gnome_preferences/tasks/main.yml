@@ -11,8 +11,10 @@
     name:
       - dconf-cli
       - gnome-shell-common
-      - gnome-shell-extension-appindicator
+      - gnome-shell-ubuntu-extensions
+      - ptyxis
       - python3-psutil
+      - python3-gi
     state: present
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
@@ -32,23 +34,23 @@
     path: "{{ workstation_manager_resolved.user.home }}/.local/share/backgrounds/wallpaper.jpg"
   register: workstation_manager_gnome_wallpaper
 
-- name: Activate configured desktop applications
-  ansible.builtin.import_tasks: autostart.yml
+- name: Install and enable Clipboard Indicator
+  ansible.builtin.include_tasks: clipboard.yml
+  vars:
+    workstation_manager_clipboard_directory: >-
+      {{ workstation_manager_resolved.user.home ~ '/.local/share/workstation-manager/clipboard-indicator/'
+         ~ workstation_manager_resolved.desktop.clipboard_indicator.sha256 }}
 
 - name: Bookmark the projects directory in Files
   ansible.builtin.import_tasks: file_bookmarks.yml
 
-- name: Apply GNOME color scheme preference
+- name: Enable GNOME dark mode
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   community.general.dconf:
     key: /org/gnome/desktop/interface/color-scheme
-    value: "{{ workstation_manager_gnome_color_scheme_value }}"
+    value: "'prefer-dark'"
     state: present
-  vars:
-    workstation_manager_gnome_color_scheme_value: >-
-      {{ "'prefer-dark'" if workstation_manager_resolved.desktop.gnome.dark_mode else "'default'" }}
-  when: workstation_manager_resolved.desktop.gnome.dark_mode is not none
 
 - name: Apply GNOME wallpaper
   become: "{{ workstation_manager_gnome_use_become_user }}"
@@ -95,11 +97,10 @@
       }}
   when: workstation_manager_resolved.desktop.gnome.favorites is not none
 
-- name: Apply Ubuntu Dock trash visibility
+- name: Show Trash in Ubuntu Dock
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   community.general.dconf:
     key: /org/gnome/shell/extensions/dash-to-dock/show-trash
-    value: "{{ workstation_manager_resolved.desktop.gnome.show_trash | ternary('true', 'false') }}"
+    value: "true"
     state: present
-  when: workstation_manager_resolved.desktop.gnome.show_trash is not none

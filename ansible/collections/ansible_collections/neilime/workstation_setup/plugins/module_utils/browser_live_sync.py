@@ -11,6 +11,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     BrowserPipe,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
+    BrowserLifecycleBlocked,
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
@@ -148,6 +149,10 @@ def sync_browser_recovery(
     issues = []
     vault.run("sync")
     with closed_browser(user_data_dir) as (executable, environment):
+        if not (environment.get("DISPLAY") or environment.get("WAYLAND_DISPLAY")):
+            raise BrowserLifecycleBlocked(
+                "The desktop session is unavailable; log in to GNOME and retry browser recovery"
+            )
         # Re-read preferences after a graceful exit flushes changes to disk.
         inspection = inspect_browser_profiles(user_data_dir, profiles)
         observed = {profile["directory"]: profile for profile in inspection["profiles"]}

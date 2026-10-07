@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import json
-import os
 import pathlib
-import pwd
 import subprocess
-import sys
 
 import pytest
+from ansible_test_helpers import (
+    ansible_environment,
+    managed_user,
+    run_playbook,
+    write_local_playbook,
+)
+
+pytestmark = pytest.mark.integration
 
 TASK_FILE = (
     pathlib.Path(__file__).parents[2]
@@ -26,40 +30,18 @@ def fixture_git_signing(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str,
     home.mkdir()
     (home / ".config").mkdir(mode=0o700)
     (home / ".gitconfig").write_text("# managed by Chezmoi\n[user]\n\tname = Fixture\n")
-    config = tmp_path / "ansible.cfg"
-    config.write_text("[defaults]\n")
-    (tmp_path / "playbook.json").write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "connection": "local",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_manager_use_become": False,
-                        "workstation_manager_resolved": {
-                            "user": {"name": pwd.getpwuid(os.getuid()).pw_name, "home": str(home)},
-                        },
-                        "gpg_keys_signing_fingerprint": FINGERPRINT,
-                    },
-                    "tasks": [{"ansible.builtin.import_tasks": str(TASK_FILE)}],
-                }
-            ]
-        )
+    write_local_playbook(
+        tmp_path / "playbook.json",
+        [{"ansible.builtin.import_tasks": str(TASK_FILE)}],
+        {
+            "workstation_manager_use_become": False,
+            "workstation_manager_resolved": {
+                "user": managed_user(home),
+            },
+            "gpg_keys_signing_fingerprint": FINGERPRINT,
+        },
     )
-    env = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(home),
-        "XDG_CONFIG_HOME": str(home / ".config"),
-        "LC_ALL": "C.UTF-8",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "ANSIBLE_CONFIG": str(config),
-        "ANSIBLE_HOME": str(tmp_path / ".ansible"),
-        "ANSIBLE_COLLECTIONS_PATH": os.environ.get(
-            "ANSIBLE_COLLECTIONS_PATH", str(pathlib.Path.home() / ".ansible/collections")
-        ),
-    }
+    env = ansible_environment(tmp_path, HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"), GIT_CONFIG_NOSYSTEM="1")
     return tmp_path, env
 
 
@@ -71,7 +53,7 @@ def apply_signing(
     command = ["ansible-playbook", "-i", "localhost,", str(root / "playbook.json")]
     if check:
         command.append("--check")
-    return subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=60)
+    return run_playbook(command, env)
 
 
 @pytest.mark.parametrize("existing_config", [False, True])
@@ -91,7 +73,7 @@ def test_signing_preserves_dotfiles_and_other_git_settings(git_signing, existing
     assert (home / ".gitconfig").read_bytes() == original
     assert (home / ".config").stat().st_mode & 0o777 == 0o700
     assert git_config.stat().st_mode & 0o777 == 0o600
-    # Use the query syntax supported by Ubuntu 24.04's Git 2.43.
+    # Query the effective configuration after the role has run.
     for key, expected in {
         "user.name": "Fixture",
         "user.signingkey": FINGERPRINT,

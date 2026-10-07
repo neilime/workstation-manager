@@ -11,7 +11,11 @@ import tarfile
 import tempfile
 import unittest
 
+import pytest
+from ansible_test_helpers import ansible_environment
 from backup_prompt_helpers import run_interactive
+
+pytestmark = pytest.mark.integration
 
 WORKSPACE = pathlib.Path(__file__).parents[2]
 
@@ -24,23 +28,9 @@ class BackupRecoverySkipTests(unittest.TestCase):
     def setUp(self) -> None:
         # pylint: disable-next=consider-using-with
         self.fixture = pathlib.Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.environment = {
-            "PATH": f"{self.fixture / 'bin'}:{os.environ['PATH']}",
-            "HOME": str(self.fixture),
-            "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-            "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
-            "ANSIBLE_COLLECTIONS_PATH": ":".join(
-                [
-                    str(self.fixture / "collections"),
-                    str(WORKSPACE / "ansible/collections"),
-                    os.environ.get(
-                        "ANSIBLE_COLLECTIONS_PATH", "/opt/ansible/collections:/usr/share/ansible/collections"
-                    ),
-                ]
-            ),
-            "WORKSTATION_MANAGER_INTERACTIVE": "1",
-        }
-        (self.fixture / "ansible.cfg").write_text("[defaults]\n")
+        self.environment = ansible_environment(
+            self.fixture, PATH=f"{self.fixture / 'bin'}:{os.environ['PATH']}", WORKSTATION_MANAGER_INTERACTIVE="1"
+        )
         (self.fixture / "projects").mkdir()
         (self.fixture / "projects/project.txt").write_text("project fixture\n")
         (self.fixture / "local-key").write_text("synthetic-private-key\n")

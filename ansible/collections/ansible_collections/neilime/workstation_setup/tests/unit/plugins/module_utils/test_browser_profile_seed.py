@@ -86,8 +86,8 @@ def test_setup_preserves_renames_pins_extensions_and_sync(tmp_path: Path) -> Non
     assert state_path.read_bytes() == state_bytes
 
 
-def test_registers_existing_migrated_profile_without_changing_preferences(tmp_path: Path) -> None:
-    """Native migrated directory names are retained and existing names take precedence."""
+def test_registers_existing_native_profile_without_changing_preferences(tmp_path: Path) -> None:
+    """Registration preserves native directory names and existing profile preferences."""
 
     profile = tmp_path / "Default"
     profile.mkdir()
@@ -319,8 +319,8 @@ def test_malformed_theme_settings_are_not_replaced(tmp_path: Path, preferences: 
     assert not (tmp_path / "Local State").exists()
 
 
-def test_legacy_theme_migration_must_finish_before_restore(tmp_path: Path) -> None:
-    """Brave would overwrite the declared seed from obsolete prefs on its next launch."""
+def test_theme_restore_requires_initialized_brave_preferences(tmp_path: Path) -> None:
+    """Uninitialized theme state blocks restoration before any profile can be modified."""
 
     profile = tmp_path / "managed-work"
     profile.mkdir()

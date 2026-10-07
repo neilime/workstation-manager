@@ -22,12 +22,11 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
         """Return the normalized secrets section."""
 
         secrets = self._resolver.mapping(config.get("secrets"), "workstation_manager.secrets")
-        bitwarden = self._resolver.mapping(secrets.get("bitwarden"), "workstation_manager.secrets.bitwarden")
-        if "browser_collection_id" in bitwarden:
-            raise ValueError(
-                "workstation_manager.secrets.bitwarden.browser_collection_id is no longer supported; "
-                "use browser_profiles_collection_id with complete profile notes"
-            )
+        bitwarden = self._resolver.mapping(
+            secrets.get("bitwarden"),
+            "workstation_manager.secrets.bitwarden",
+            allowed_keys={"server", "ssh_collection_id", "gpg_collection_id", "browser_profiles_collection_id"},
+        )
         default_bitwarden = self._resolver.mapping(
             defaults.get("bitwarden"), "workstation_manager.secrets.defaults.bitwarden"
         )

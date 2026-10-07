@@ -8,6 +8,7 @@ ANSIBLE_CHECKOUT_DIR="/tmp/workstation-manager-v1"
 TARGET_USER=""
 TARGET_USER_HOME=""
 COLLECTIONS_INSTALL_DIR=""
+ANSIBLE_VENV_DIR="/opt/workstation-manager/venv"
 DEFAULT_REPOSITORY_URL="https://github.com/neilime/workstation-manager.git"
 DEFAULT_REPOSITORY_BRANCH="main"
 PRIVATE_OVERRIDE_LOCAL_FILE="${WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE:-}"
@@ -15,7 +16,6 @@ PRIVATE_OVERRIDE_TEMP_DIR=""
 GITHUB_TOKEN_VALUE="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}"
 BACKUP_OUTPUT_DIR="${WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR:-}"
 RESTORE_ARCHIVE_PATH="${WORKSTATION_MANAGER_RESTORE_ARCHIVE:-}"
-PROMPTED_BACKUP_OUTPUT_DIR=""
 PROMPTED_BITWARDEN_EMAIL=""
 BITWARDEN_CLIENT_ID_VALUE="${BITWARDEN_CLIENT_ID:-}"
 BITWARDEN_CLIENT_SECRET_VALUE="${BITWARDEN_CLIENT_SECRET:-}"
@@ -178,6 +178,12 @@ require_sudo() {
 	sudo -v || fail "sudo access is required"
 }
 
+install_bootstrap_packages() {
+	require_sudo
+	sudo apt-get update || return 1
+	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"
+}
+
 resolve_target_user_home() {
 	resolved_target_user="$1"
 
@@ -207,29 +213,56 @@ initialize_target_context() {
 	COLLECTIONS_INSTALL_DIR="$TARGET_USER_HOME/.ansible/collections"
 }
 
-install_ansible_packages() {
-	if command -v ansible-playbook >/dev/null 2>&1 &&
-		command -v ansible-pull >/dev/null 2>&1; then
-		return
-	fi
-
-	require_sudo
+install_ansible_packages() (
+	bootstrap_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-bootstrap-XXXXXX")" || return 1
+	trap 'rm -rf "$bootstrap_dir"' EXIT
+	trap 'exit 1' HUP INT TERM
+	download_repository_file ansible/ubuntu-version "$bootstrap_dir/ubuntu-version" || return 1
+	download_repository_file ansible/requirements.txt "$bootstrap_dir/requirements.txt" || return 1
+	validate_supported_ubuntu "$bootstrap_dir/ubuntu-version" || return 1
 	info "Installing bootstrap packages"
-	sudo apt-get update
-	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-		ansible-core \
-		ca-certificates
-}
+	install_bootstrap_packages python3 python3-venv ca-certificates || return 1
+	# Use the OS interpreter for host modules and an isolated, shared controller pin.
+	# The managed user runs ansible-galaxy from this root-owned environment.
+	# Scope the public permissions to this subshell, preserving private callers' umask.
+	umask 022
+	sudo python3 -m venv "$ANSIBLE_VENV_DIR" || return 1
+	sudo "$ANSIBLE_VENV_DIR/bin/python" -m pip install --disable-pip-version-check \
+		-r "$bootstrap_dir/requirements.txt" || return 1
+	sudo "$ANSIBLE_VENV_DIR/bin/python" -m pip check
+)
+
+validate_supported_ubuntu() (
+	expected_ubuntu="$(cat "$1")"
+	case "$expected_ubuntu" in
+	[0-9][0-9].[0-9][0-9]) ;;
+	*) fail "Invalid supported Ubuntu release in ansible/ubuntu-version" ;;
+	esac
+	# The operating system owns this file; do not source downloaded shell fragments.
+	. /etc/os-release
+	[ "${ID:-}" = ubuntu ] && [ "${VERSION_ID:-}" = "$expected_ubuntu" ] ||
+		fail "This revision requires Ubuntu $expected_ubuntu. Upgrade Ubuntu before running setup, backup, or cleanup."
+)
+
+download_repository_file() (
+	requested_file="$1"
+	requested_destination="$2"
+	if source_path="$(resolve_github_repository_path "$REPOSITORY_URL")"; then
+		download_github_file "$source_path" "$REPOSITORY_BRANCH" "$requested_file" "$requested_destination"
+	else
+		source_root="$(resolve_local_repository_path "$REPOSITORY_URL")" ||
+			fail "REPOSITORY_URL must point to a GitHub repository or local checkout"
+		cp "$source_root/$requested_file" "$requested_destination"
+	fi
+)
 
 install_git() {
 	if command -v git >/dev/null 2>&1; then
 		return
 	fi
 
-	require_sudo
 	info "Installing git (required for ansible-pull)"
-	sudo apt-get update
-	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
+	install_bootstrap_packages git
 }
 
 install_github_cli() {
@@ -237,10 +270,8 @@ install_github_cli() {
 		return
 	fi
 
-	require_sudo
 	info "Installing GitHub CLI for private repository authentication"
-	sudo apt-get update
-	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gh ||
+	install_bootstrap_packages gh ||
 		fail "Failed to install GitHub CLI. Install gh manually or configure Git access to $PRIVATE_OVERRIDE_REPOSITORY_URL."
 }
 
@@ -370,52 +401,37 @@ is_full_git_commit_sha() {
 	return 0
 }
 
-download_github_file() {
+download_github_file() (
 	repository_path="$1"
 	ref_name="$2"
 	repository_file="$3"
 	destination="$4"
 
-	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
-		if command -v wget >/dev/null 2>&1; then
-			wget -q -O "$destination" \
-				--header="Authorization: Bearer $GITHUB_TOKEN_VALUE" \
-				--header="Accept: application/vnd.github.raw" \
-				"https://api.github.com/repos/${repository_path}/contents/${repository_file}?ref=${ref_name}"
-			return
-		fi
-		if command -v curl >/dev/null 2>&1; then
-			curl -fsSL \
-				-H "Authorization: Bearer $GITHUB_TOKEN_VALUE" \
-				-H "Accept: application/vnd.github.raw" \
-				"https://api.github.com/repos/${repository_path}/contents/${repository_file}?ref=${ref_name}" \
-				-o "$destination"
-			return
-		fi
+	if command -v wget >/dev/null 2>&1; then
+		set -- wget -q -O "$destination"
+	elif command -v curl >/dev/null 2>&1; then
+		set -- curl -fsSL -o "$destination"
+	else
 		fail "wget or curl is required"
 	fi
 
-	if command -v wget >/dev/null 2>&1; then
-		wget -q -O "$destination" \
-			"https://raw.githubusercontent.com/${repository_path}/${ref_name}/${repository_file}"
-		return
+	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
+		set -- "$@" \
+			--header "Authorization: Bearer $GITHUB_TOKEN_VALUE" \
+			--header "Accept: application/vnd.github.raw" \
+			"https://api.github.com/repos/${repository_path}/contents/${repository_file}?ref=${ref_name}"
+	else
+		set -- "$@" "https://raw.githubusercontent.com/${repository_path}/${ref_name}/${repository_file}"
 	fi
-	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL \
-			"https://raw.githubusercontent.com/${repository_path}/${ref_name}/${repository_file}" \
-			-o "$destination"
-		return
-	fi
-
-	fail "wget or curl is required"
-}
+	"$@"
+)
 
 install_collection_requirements_file() (
 	collection_requirements_file="$1"
 	collection_install_attempt=1
 	collection_install_max_attempts=3
 
-	while ! ansible-galaxy collection install -r "$collection_requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null; do
+	while ! "$ANSIBLE_VENV_DIR/bin/ansible-galaxy" collection install -r "$collection_requirements_file" -p "$COLLECTIONS_INSTALL_DIR" >/dev/null; do
 		if [ "$collection_install_attempt" -ge "$collection_install_max_attempts" ]; then
 			return 1
 		fi
@@ -425,26 +441,19 @@ install_collection_requirements_file() (
 	done
 )
 
-install_collection_requirements() {
-	requirements_file=""
-
+install_collection_requirements() (
 	info "Installing Ansible collection dependencies"
-	if repo_path="$(resolve_github_repository_path "$REPOSITORY_URL")"; then
-		requirements_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-requirements-XXXXXX.yml")"
-		download_github_file "$repo_path" "$REPOSITORY_BRANCH" "ansible/collections/requirements.yml" "$requirements_file"
-		collection_install_status=0
-		install_collection_requirements_file "$requirements_file" || collection_install_status=$?
-		rm -f "$requirements_file"
-		[ "$collection_install_status" -eq 0 ] || return "$collection_install_status"
-		return
+	if repository_root="$(resolve_local_repository_path "$REPOSITORY_URL")"; then
+		requirements_file="$repository_root/ansible/collections/requirements.yml"
+		[ -f "$requirements_file" ] || fail "Collection requirements were not found in $repository_root"
+	else
+		requirements_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-requirements-XXXXXX.yml")" || return 1
+		trap 'rm -f "$requirements_file"' EXIT
+		trap 'exit 1' HUP INT TERM
+		download_repository_file ansible/collections/requirements.yml "$requirements_file" || return 1
 	fi
-
-	repository_root="$(resolve_local_repository_path "$REPOSITORY_URL")" ||
-		fail "REPOSITORY_URL must point to a GitHub repository or local checkout"
-	requirements_file="$repository_root/ansible/collections/requirements.yml"
-	[ -f "$requirements_file" ] || fail "Collection requirements were not found in $repository_root"
 	install_collection_requirements_file "$requirements_file"
-}
+)
 
 prepare_private_override_file() {
 	command_name="$1"
@@ -495,11 +504,14 @@ prompt_for_bitwarden_credentials_if_needed() {
 		fail "$action_name requires interactive Bitwarden login for end users, or BITWARDEN_CLIENT_ID, BITWARDEN_CLIENT_SECRET, and BITWARDEN_PASSWORD in CI"
 
 	info "$action_purpose requires Bitwarden access; prompting for credentials"
+	prompt_for_bitwarden_login
+}
+
+prompt_for_bitwarden_login() {
 	PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value "BITWARDEN_EMAIL" "Bitwarden email: " 0)"
 	BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
 	BITWARDEN_CLIENT_ID_VALUE=""
 	BITWARDEN_CLIENT_SECRET_VALUE=""
-	return
 }
 
 reprompt_for_bitwarden_credentials() {
@@ -510,20 +522,14 @@ reprompt_for_bitwarden_credentials() {
 	case "$failure_marker" in
 	"$BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER")
 		info "Bitwarden rejected the supplied email or password; prompting again"
-		PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value "BITWARDEN_EMAIL" "Bitwarden email: " 0)"
-		BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
-		BITWARDEN_CLIENT_ID_VALUE=""
-		BITWARDEN_CLIENT_SECRET_VALUE=""
-		return
+		prompt_for_bitwarden_login
 		;;
 	"$BITWARDEN_PASSWORD_REJECTED_MARKER")
 		info "Bitwarden rejected the supplied vault password; prompting again"
 		BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value "BITWARDEN_PASSWORD" "Bitwarden vault password: " 1)"
-		return
 		;;
+	*) return 1 ;;
 	esac
-
-	return 1
 }
 
 prompt_for_backup_output_dir_if_needed() {
@@ -534,8 +540,7 @@ prompt_for_backup_output_dir_if_needed() {
 	has_interactive_terminal ||
 		fail "backup requires an interactive terminal for the output directory, or WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR in CI"
 
-	PROMPTED_BACKUP_OUTPUT_DIR="$(prompt_for_required_value "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR" "Backup output directory: " 0)"
-	BACKUP_OUTPUT_DIR="$PROMPTED_BACKUP_OUTPUT_DIR"
+	BACKUP_OUTPUT_DIR="$(prompt_for_required_value "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR" "Backup output directory: " 0)"
 }
 
 prepare_action_dependencies() {
@@ -543,12 +548,35 @@ prepare_action_dependencies() {
 
 	initialize_target_context
 	require_sudo
-	install_ansible_packages
 	install_git
 	initialize_repository_source
+	install_ansible_packages
 	prepare_private_override_file "$command_name"
 	install_collection_requirements
 }
+
+run_with_session_environment() (
+	# Empty DISPLAY/GPG_TTY values make GPGME construct invalid GnuPG options.
+	# Isolate unsets so the caller retains its original session environment.
+	for session_assignment in \
+		"DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}" \
+		"XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}" \
+		"DISPLAY=${DISPLAY:-}" \
+		"WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" \
+		"GPG_TTY=${GPG_TTY:-}" \
+		"SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}"; do
+		if [ -n "${session_assignment#*=}" ]; then
+			set -- "$session_assignment" "$@"
+		else
+			unset "${session_assignment%%=*}"
+		fi
+	done
+	set -- env "$@"
+	if [ "${WORKSTATION_MANAGER_SKIP_SUDO:-0}" != "1" ]; then
+		set -- sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD "$@"
+	fi
+	"$@"
+)
 
 run_ansible_pull() {
 	playbook_path="$1"
@@ -573,91 +601,52 @@ run_ansible_pull() {
 		set -- "WORKSTATION_MANAGER_TTY=$interactive_tty_path" "$@"
 	fi
 
-	# Preserve the target desktop session for GPG and interactive application setup.
-	set -- \
-		"DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}" \
-		"XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}" \
-		"DISPLAY=${DISPLAY:-}" \
-		"WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" \
-		"GPG_TTY=${GPG_TTY:-}" \
-		"SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}" \
+	# ansible-pull relays playbook output; flush prompts before waiting for input.
+	set -- env \
+		PYTHONUNBUFFERED=1 \
+		ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
 		"WORKSTATION_MANAGER_USER=$TARGET_USER" \
 		"WORKSTATION_MANAGER_USER_HOME=$TARGET_USER_HOME" \
 		"WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=$PRIVATE_OVERRIDE_LOCAL_FILE" \
 		"WORKSTATION_MANAGER_INTERACTIVE=$(interactive_terminal_flag)" "$@"
 
-	# ansible-pull relays playbook output; flush prompts before waiting for input.
-	if [ "${WORKSTATION_MANAGER_SKIP_SUDO:-0}" = "1" ]; then
-		set -- \
-			env \
-			PYTHONUNBUFFERED=1 \
-			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
-			"$@"
-	else
-		set -- \
-			sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD env \
-			PYTHONUNBUFFERED=1 \
-			ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
-			"$@"
-	fi
-
 	if [ -n "$local_repository_root" ]; then
-		set -- "$@" \
-			ansible-playbook \
-			-i "localhost," \
-			-c local \
-			"$local_repository_root/$playbook_path"
-
-		if [ "$dry_run" = "1" ]; then
-			set -- "$@" --check --diff
+		set -- "$@" "$ANSIBLE_VENV_DIR/bin/ansible-playbook"
+		playbook_file="$local_repository_root/$playbook_path"
+	else
+		if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
+			# Fetch exact commits, including PR merge commits outside branches/tags.
+			run_with_session_environment "$@" env ANSIBLE_NO_LOG=true "$ANSIBLE_VENV_DIR/bin/ansible" localhost -i "localhost," -c local \
+				-m ansible.builtin.git \
+				-a "repo=$authenticated_repository_url dest=$ANSIBLE_CHECKOUT_DIR version=$REPOSITORY_BRANCH refspec=$REPOSITORY_BRANCH" \
+				>/dev/null || fail "Failed to fetch the pinned repository commit. Check repository access and the commit SHA."
 		fi
-
-		if has_interactive_terminal; then
-			(
-				cd "$local_repository_root"
-				"$@" </dev/tty
-			)
-		else
-			(
-				cd "$local_repository_root"
-				"$@"
-			)
+		set -- "$@" "$ANSIBLE_VENV_DIR/bin/ansible-pull" \
+			--purge -U "$authenticated_repository_url" -C "$REPOSITORY_BRANCH" -d "$ANSIBLE_CHECKOUT_DIR"
+		if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
+			set -- "$@" --full
 		fi
-		return
+		playbook_file="$playbook_path"
 	fi
-
-	if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
-		# ansible-pull cannot supply the refspec needed for commits outside branches/tags,
-		# including GitHub PR merge commits. Fetch the exact object before its checkout.
-		"$@" env ANSIBLE_NO_LOG=true ansible localhost -i "localhost," -c local \
-			-m ansible.builtin.git \
-			-a "repo=$authenticated_repository_url dest=$ANSIBLE_CHECKOUT_DIR version=$REPOSITORY_BRANCH refspec=$REPOSITORY_BRANCH" \
-			>/dev/null || fail "Failed to fetch the pinned repository commit. Check repository access and the commit SHA."
-	fi
-
 	set -- "$@" \
-		ansible-pull \
-		--purge \
-		-U "$authenticated_repository_url" \
-		-C "$REPOSITORY_BRANCH" \
-		-d "$ANSIBLE_CHECKOUT_DIR" \
 		-i "localhost," \
 		-c local \
-		"$playbook_path"
-
-	if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
-		set -- "$@" --full
-	fi
-
+		-e ansible_python_interpreter=/usr/bin/python3 \
+		"$playbook_file"
 	if [ "$dry_run" = "1" ]; then
 		set -- "$@" --check --diff
 	fi
 
-	if has_interactive_terminal; then
-		"$@" </dev/tty
-	else
-		"$@"
-	fi
+	(
+		if [ -n "$local_repository_root" ]; then
+			cd "$local_repository_root" || exit 1
+		fi
+		if has_interactive_terminal; then
+			run_with_session_environment "$@" </dev/tty
+		else
+			run_with_session_environment "$@"
+		fi
+	)
 }
 
 resolve_entrypoint_source() {
@@ -679,13 +668,8 @@ prepare_entrypoint_definitions() {
 	definitions_file="$1"
 	if ! entrypoint_source="$(resolve_entrypoint_source)"; then
 		initialize_repository_source
-		if repository_root="$(resolve_local_repository_path "$REPOSITORY_URL")"; then
-			entrypoint_source="$repository_root/workstation.sh"
-		else
-			repository_path="$(resolve_github_repository_path "$REPOSITORY_URL")" || return 1
-			entrypoint_source="${definitions_file}.source"
-			download_github_file "$repository_path" "$REPOSITORY_BRANCH" workstation.sh "$entrypoint_source" || return 1
-		fi
+		entrypoint_source="${definitions_file}.source"
+		download_repository_file workstation.sh "$entrypoint_source" || return 1
 	fi
 
 	grep -q '^run_ansible_pull() {' "$entrypoint_source" || return 1
@@ -700,27 +684,25 @@ prepare_entrypoint_definitions() {
 	/bin/sh -n "$definitions_file"
 }
 
-run_ansible_pull_captured_with_fifo() {
+run_ansible_pull_captured_with_fifo() (
 	playbook_path="$1"
 	dry_run="$2"
 	output_file="$3"
 	shift 3
 
-	output_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-ansible-XXXXXX")"
+	output_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-ansible-XXXXXX")" || return 1
+	trap 'rm -rf "$output_dir"' EXIT
+	trap 'exit 1' HUP INT TERM
 	output_pipe="$output_dir/output.pipe"
 	mkfifo "$output_pipe" || fail "Failed to create a relay for Ansible output"
 	tee "$output_file" <"$output_pipe" &
 	tee_pid="$!"
 
-	if run_ansible_pull "$playbook_path" "$dry_run" "$@" >"$output_pipe" 2>&1; then
-		exit_code=0
-	else
-		exit_code="$?"
-	fi
-	wait "$tee_pid"
-	rm -rf "$output_dir"
+	exit_code=0
+	run_ansible_pull "$playbook_path" "$dry_run" "$@" >"$output_pipe" 2>&1 || exit_code=$?
+	wait "$tee_pid" || fail "Failed to capture Ansible output"
 	return "$exit_code"
-}
+)
 
 prepare_ansible_prompt_terminal() {
 	# script allocates this private relay after sudo, so its initial owner is root.
@@ -731,24 +713,21 @@ prepare_ansible_prompt_terminal() {
 		fail "Failed to make the interactive relay terminal accessible to $TARGET_USER"
 }
 
-run_ansible_pull_captured_with_script() {
+run_ansible_pull_captured_with_script() (
 	playbook_path="$1"
 	dry_run="$2"
 	output_file="$3"
 	shift 3
 
-	runner_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-script-XXXXXX")"
+	runner_dir="$(mktemp -d "${TMPDIR:-/tmp}/workstation-manager-script-XXXXXX")" || return 1
+	tmp_output_dir=""
+	trap 'rm -rf "$runner_dir"; if [ -n "$tmp_output_dir" ]; then sudo rm -rf "$tmp_output_dir"; fi' EXIT
+	trap 'exit 1' HUP INT TERM
 	definitions_file="$runner_dir/entrypoint-definitions.sh"
 	runner_script="$runner_dir/run-ansible-pull.sh"
-	runner_command=""
-	tmp_output_dir=""
-	tmp_output_file=""
 
-	prepare_entrypoint_definitions "$definitions_file" || {
-		rm -rf "$runner_dir"
-		printf '%s\n' "x Failed to prepare the entrypoint for interactive Ansible execution. Check repository access and workstation.sh at $REPOSITORY_URL#$REPOSITORY_BRANCH." >&2
-		return 1
-	}
+	prepare_entrypoint_definitions "$definitions_file" ||
+		fail "Failed to prepare the entrypoint for interactive Ansible execution. Check repository access and workstation.sh at $REPOSITORY_URL#$REPOSITORY_BRANCH."
 
 	{
 		printf '. %s\n' "$(shell_quote "$definitions_file")"
@@ -765,6 +744,7 @@ run_ansible_pull_captured_with_script() {
 		printf 'REPOSITORY_URL=%s\n' "$(shell_quote "$REPOSITORY_URL")"
 		printf 'REPOSITORY_BRANCH=%s\n' "$(shell_quote "$REPOSITORY_BRANCH")"
 		printf 'ANSIBLE_CHECKOUT_DIR=%s\n' "$(shell_quote "$ANSIBLE_CHECKOUT_DIR")"
+		printf 'ANSIBLE_VENV_DIR=%s\n' "$(shell_quote "$ANSIBLE_VENV_DIR")"
 		printf 'set --'
 		for extra_arg in "$@"; do
 			printf ' %s' "$(shell_quote "$extra_arg")"
@@ -774,39 +754,22 @@ run_ansible_pull_captured_with_script() {
 		printf 'run_ansible_pull %s %s "$@"\n' \
 			"$(shell_quote "$playbook_path")" \
 			"$(shell_quote "$dry_run")"
-	} >"$runner_script"
-	chmod 700 "$runner_script"
+	} >"$runner_script" || return 1
+	chmod 700 "$runner_script" || return 1
 	runner_command="/bin/sh $(shell_quote "$runner_script")"
-	tmp_output_dir="$(sudo mktemp -d "${TMPDIR:-/tmp}/workstation-manager-script-output-XXXXXX")" || {
-		rm -rf "$runner_dir"
-		return 1
-	}
+	tmp_output_dir="$(sudo mktemp -d "${TMPDIR:-/tmp}/workstation-manager-script-output-XXXXXX")" || return 1
 	tmp_output_file="$tmp_output_dir/typescript"
 
 	# The invoking user's terminal supplies input before sudo starts the relay.
+	exit_code=0
+	run_with_session_environment script --quiet --return --command "$runner_command" "$tmp_output_file" </dev/tty || exit_code=$?
+	# Redirection runs as the caller; only reading the root-owned log needs sudo.
 	# shellcheck disable=SC2024
-	if sudo \
-		--preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD \
-		env \
-		DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
-		XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
-		DISPLAY="${DISPLAY:-}" \
-		WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
-		GPG_TTY="${GPG_TTY:-}" \
-		SSH_AUTH_SOCK="${SSH_AUTH_SOCK:-}" \
-		script --quiet --return --command "$runner_command" "$tmp_output_file" </dev/tty; then
-		exit_code=0
-	else
-		exit_code="$?"
-	fi
-	sudo cat "$tmp_output_file" 2>/dev/null | cat >"$output_file" || :
-	sudo rm -rf "$tmp_output_dir" 2>/dev/null || :
-
-	rm -rf "$runner_dir"
+	sudo cat "$tmp_output_file" >"$output_file" || fail "Failed to read captured Ansible output"
 	return "$exit_code"
-}
+)
 
-run_ansible_pull_with_bitwarden_retry() {
+run_ansible_pull_with_bitwarden_retry() (
 	playbook_path="$1"
 	dry_run="$2"
 	shift 2
@@ -816,25 +779,19 @@ run_ansible_pull_with_bitwarden_retry() {
 		return
 	fi
 
+	output_file=""
+	trap '[ -z "$output_file" ] || rm -f "$output_file"' EXIT
+	trap 'exit 1' HUP INT TERM
+	capture_function=run_ansible_pull_captured_with_fifo
+	if [ "${WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE:-0}" != "1" ] && command -v script >/dev/null 2>&1; then
+		capture_function=run_ansible_pull_captured_with_script
+	fi
 	while :; do
-		output_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-ansible-output-XXXXXX")"
-
-		if [ "${WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE:-0}" != "1" ] && command -v script >/dev/null 2>&1; then
-			if run_ansible_pull_captured_with_script "$playbook_path" "$dry_run" "$output_file" "$@"; then
-				exit_code=0
-			else
-				exit_code="$?"
-			fi
-		else
-			if run_ansible_pull_captured_with_fifo "$playbook_path" "$dry_run" "$output_file" "$@"; then
-				exit_code=0
-			else
-				exit_code="$?"
-			fi
-		fi
+		output_file="$(mktemp "${TMPDIR:-/tmp}/workstation-manager-ansible-output-XXXXXX")" || return 1
+		exit_code=0
+		"$capture_function" "$playbook_path" "$dry_run" "$output_file" "$@" || exit_code=$?
 
 		if [ "$exit_code" -eq 0 ]; then
-			rm -f "$output_file"
 			return 0
 		fi
 
@@ -845,6 +802,7 @@ run_ansible_pull_with_bitwarden_retry() {
 			failure_marker="$BITWARDEN_PASSWORD_REJECTED_MARKER"
 		fi
 		rm -f "$output_file"
+		output_file=""
 
 		if [ -n "$failure_marker" ] && reprompt_for_bitwarden_credentials "$failure_marker"; then
 			continue
@@ -852,49 +810,37 @@ run_ansible_pull_with_bitwarden_retry() {
 
 		return "$exit_code"
 	done
-}
+)
 
-run_setup() {
-	dry_run="$1"
-	prepare_action_dependencies setup
-	prompt_for_bitwarden_credentials_if_needed "setup" "Bitwarden-backed secrets restore"
-
-	info "Running workstation setup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
+run_action() {
+	action_name="$1"
+	dry_run="$2"
 	set --
-
-	if [ -n "$RESTORE_ARCHIVE_PATH" ]; then
-		set -- "$@" \
-			WORKSTATION_MANAGER_RESTORE_ARCHIVE="$RESTORE_ARCHIVE_PATH"
-	fi
-
-	run_ansible_pull_with_bitwarden_retry ansible/setup.yml "$dry_run" "$@"
-}
-
-run_backup() {
-	dry_run="$1"
-	prompt_for_backup_output_dir_if_needed
-	prepare_action_dependencies backup
-	prompt_for_bitwarden_credentials_if_needed "backup" "Backup-time key and browser recovery synchronization"
-
-	info "Running workstation backup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
-	run_ansible_pull_with_bitwarden_retry \
-		ansible/backup.yml \
-		"$dry_run" \
-		WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR="$BACKUP_OUTPUT_DIR" \
-		WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS="${WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS:-}" \
-		WORKSTATION_MANAGER_BACKUP_ARCHIVE="${WORKSTATION_MANAGER_BACKUP_ARCHIVE:-}" \
-		WORKSTATION_MANAGER_BACKUP_MANIFEST="${WORKSTATION_MANAGER_BACKUP_MANIFEST:-}" \
-		WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY="${WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY:-}" \
-		WORKSTATION_MANAGER_BACKUP_DRY_RUN="${WORKSTATION_MANAGER_BACKUP_DRY_RUN:-0}"
-}
-
-run_cleanup() {
-	dry_run="$1"
-	prepare_action_dependencies cleanup
-	prompt_for_bitwarden_credentials_if_needed "cleanup" "Browser profile drift inspection"
-
-	info "Running workstation cleanup from $REPOSITORY_URL#$REPOSITORY_BRANCH"
-	run_ansible_pull_with_bitwarden_retry ansible/cleanup.yml "$dry_run"
+	case "$action_name" in
+	setup)
+		action_purpose="Bitwarden-backed secrets restore"
+		if [ -n "$RESTORE_ARCHIVE_PATH" ]; then
+			set -- WORKSTATION_MANAGER_RESTORE_ARCHIVE="$RESTORE_ARCHIVE_PATH"
+		fi
+		;;
+	backup)
+		prompt_for_backup_output_dir_if_needed
+		action_purpose="Backup-time key and browser recovery synchronization"
+		set -- \
+			WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR="$BACKUP_OUTPUT_DIR" \
+			WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS="${WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS:-}" \
+			WORKSTATION_MANAGER_BACKUP_ARCHIVE="${WORKSTATION_MANAGER_BACKUP_ARCHIVE:-}" \
+			WORKSTATION_MANAGER_BACKUP_MANIFEST="${WORKSTATION_MANAGER_BACKUP_MANIFEST:-}" \
+			WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY="${WORKSTATION_MANAGER_BACKUP_GIT_INVENTORY:-}" \
+			WORKSTATION_MANAGER_BACKUP_DRY_RUN="${WORKSTATION_MANAGER_BACKUP_DRY_RUN:-0}"
+		;;
+	cleanup) action_purpose="Browser profile drift inspection" ;;
+	*) fail "unsupported command: $action_name" ;;
+	esac
+	prepare_action_dependencies "$action_name"
+	prompt_for_bitwarden_credentials_if_needed "$action_name" "$action_purpose"
+	info "Running workstation $action_name from $REPOSITORY_URL#$REPOSITORY_BRANCH"
+	run_ansible_pull_with_bitwarden_retry "ansible/$action_name.yml" "$dry_run" "$@"
 }
 
 main() {
@@ -933,17 +879,7 @@ main() {
 
 	[ "$#" -eq 0 ] || fail "too many arguments for $command_name"
 
-	case "$command_name" in
-	setup)
-		run_setup "$dry_run"
-		;;
-	backup)
-		run_backup "$dry_run"
-		;;
-	cleanup)
-		run_cleanup "$dry_run"
-		;;
-	esac
+	run_action "$command_name" "$dry_run"
 
 	info "Workstation command completed"
 }

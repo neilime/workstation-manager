@@ -3,21 +3,24 @@
 import json
 
 
-def test_setup_installs_and_configures_orca(host) -> None:
-    """Orca should be installed with a launcher and usable initial settings."""
+def test_setup_installs_and_configures_orca(host, workstation_config) -> None:
+    """Orca must match the configured release and seed usable initial settings."""
 
     user_home = host.check_output("printf '%s' \"$HOME\"")
     data_file = host.file(f"{user_home}/.config/orca/orca-data.json")
+    config = workstation_config["development"]["orca"]
 
     assert host.package("orca-ide").is_installed
+    assert host.package("orca-ide").version == config["version"]
     assert host.run("command -v orca-ide").succeeded
     assert host.file("/usr/share/applications/orca-ide.desktop").exists
     assert data_file.is_file
     assert data_file.mode == 0o600
     settings = json.loads(data_file.content_string)["settings"]
-    assert settings["theme"] == "system"
-    assert settings["terminalFontFamily"] == "Fira Code"
-    assert settings["workspaceDir"] == f"{user_home}/Documents/dev-projects/workspaces/orca"
+    for name, value in config["settings"].items():
+        if name != "workspaceDir":
+            assert settings[name] == value
+    assert settings["workspaceDir"] == workstation_config["user"]["projects_directory"] + "/workspaces/orca"
     assert host.file(settings["workspaceDir"]).is_directory
 
 
@@ -40,8 +43,8 @@ def test_setup_bootstrap_tools_are_available(host) -> None:
     assert git_result.succeeded
 
 
-def test_setup_manages_weekly_bleachbit_schedule(host) -> None:
-    """Setup should install the weekly BleachBit preset-clean timer assets."""
+def test_setup_enables_weekly_bleachbit_cleanup(host) -> None:
+    """The weekly user timer is enabled and active while the manual command remains available."""
 
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
@@ -58,20 +61,23 @@ def test_setup_manages_weekly_bleachbit_schedule(host) -> None:
     timer_link_result = host.run("test -L %s", timer_link)
 
     # Assert
-    for installed_file, expected_mode in ((helper_script, 0o644), (activator_script, 0o755)):
-        assert installed_file.exists
-        assert installed_file.mode == expected_mode
-    assert service_unit.exists
+    assert helper_script.exists
+    assert helper_script.mode == 0o644
+    assert clean_result.succeeded
+    assert activator_script.is_file
+    assert activator_script.mode == 0o755
     assert service_unit.contains(r"^ExecStart=%h/\.local/bin/workstation-manager-bleachbit-clean$")
-    assert timer_unit.exists
     assert timer_unit.contains(r"^OnCalendar=weekly$")
     assert timer_unit.contains(r"^Persistent=true$")
     assert timer_link_result.succeeded
-    assert autostart_file.exists
-    assert autostart_file.contains(
-        rf"^Exec={user_home}/\.local/bin/workstation-manager-bleachbit-clean-activate-timer$"
+    assert autostart_file.contains(r"^X-GNOME-Autostart-enabled=true$")
+    environment = (
+        f"XDG_RUNTIME_DIR=/run/user/{host.user().uid} "
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{host.user().uid}/bus"
     )
-    assert clean_result.succeeded
+    timer_name = "workstation-manager-bleachbit-clean.timer"
+    assert host.run(f"env {environment} systemctl --user is-enabled %s", timer_name).succeeded
+    assert host.run(f"env {environment} systemctl --user is-active %s", timer_name).succeeded
 
 
 def test_setup_reattaches_restored_git_project(host) -> None:

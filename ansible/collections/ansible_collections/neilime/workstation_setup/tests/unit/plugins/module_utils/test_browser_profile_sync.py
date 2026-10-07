@@ -113,7 +113,8 @@ def test_remote_sync_restores_metadata_and_preserves_browser_data(fixture: tuple
     assert preferences["profile"]["name"] == "Remote"
     assert preferences["brave_sync_v2"]["seed"] == "synthetic-seed"
     assert preferences["pinned_tabs"] == [{"url": "https://example.invalid"}]
-    assert sync.inspect_browser_profiles(str(root), profiles)["drift"] == []
+    drift = sync.inspect_browser_profiles(str(root), profiles)["drift"]
+    assert isinstance(drift, list) and not drift
     assert not vault.calls
     assert not sync.sync_browser_profiles(str(root), profiles, "restore", vault)
 
@@ -191,7 +192,8 @@ def test_browser_starting_during_restore_is_a_fatal_failure(sync_only: tuple, mo
 def test_sync_pairing_and_unrecorded_profiles_are_not_guessed() -> None:
     """Directions cannot manufacture recovery words or claim chain enrollment."""
 
-    assert sync.browser_sync_directions({"drift": [{"kind": "undeclared"}], "sync_issues": [{}]}) == {}
+    directions = sync.browser_sync_directions({"drift": [{"kind": "undeclared"}], "sync_issues": [{}]})
+    assert isinstance(directions, dict) and not directions
     assert list(sync.browser_sync_directions({"drift": [{"kind": "missing", "id": "missing"}]})) == ["restore"]
 
 
@@ -271,7 +273,7 @@ def test_sync_only_restore_is_explicit_verified_and_idempotent(sync_only: tuple)
     path = root / "Default/Preferences"
     before = path.read_bytes()
     inspection = sync.inspect_browser_profiles(str(root), profiles)
-    assert inspection["drift"] == []
+    assert isinstance(inspection["drift"], list) and not inspection["drift"]
     assert sync.browser_sync_directions(inspection) == {
         "restore": "Enable Sync everything. Brave closes and reopens automatically."
     }
@@ -284,7 +286,8 @@ def test_sync_only_restore_is_explicit_verified_and_idempotent(sync_only: tuple)
     expected["sync"]["keep_everything_synced"] = True
     assert json.loads(path.read_text()) == expected
     assert path.stat().st_mode & 0o777 == 0o600
-    assert sync.inspect_browser_profiles(str(root), profiles)["sync_issues"] == []
+    sync_issues = sync.inspect_browser_profiles(str(root), profiles)["sync_issues"]
+    assert isinstance(sync_issues, list) and not sync_issues
     assert not sync.sync_browser_profiles(str(root), profiles, "restore", vault)
     assert not vault.calls
 
@@ -323,7 +326,8 @@ def test_sync_restore_does_not_invent_pairing_or_bypass_manual_checks(
     assert json.loads(path.read_text()) == before
     inspection = sync.inspect_browser_profiles(str(root), profiles)
     assert inspection["sync_issues"] == [{"directory": "Default", "issues": [issue]}]
-    assert sync.browser_sync_directions(inspection) == {}
+    directions = sync.browser_sync_directions(inspection)
+    assert isinstance(directions, dict) and not directions
 
 
 @pytest.mark.parametrize("guard", ["lock", "process", "symlink"])
@@ -369,7 +373,8 @@ def test_sync_restore_does_not_change_undeclared_profiles(sync_only: tuple) -> N
     assert sync.sync_browser_profiles(str(root), profiles, "restore", vault)
     assert other.read_bytes() == before
     inspection = sync.inspect_browser_profiles(str(root), profiles)
-    assert sync.browser_sync_directions(inspection) == {}
+    directions = sync.browser_sync_directions(inspection)
+    assert isinstance(directions, dict) and not directions
     assert any(record["directory"] == "Profile 9" for record in inspection["sync_issues"])
 
 

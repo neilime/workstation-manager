@@ -9,7 +9,10 @@ import tempfile
 import unittest
 
 from backup_prompt_helpers import run_interactive
-from entrypoint_test_helpers import sudo_passthrough_script
+from entrypoint_test_helpers import (
+    entrypoint_source_with_mock_controller,
+    sudo_passthrough_script,
+)
 
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
 
@@ -24,7 +27,10 @@ class PipedBackupTests(unittest.TestCase):
         commands.mkdir()
         (fixture / "private.override.yml").write_text("{}\n")
         scripts = {
-            "sudo": sudo_passthrough_script('if [ "$1" = "-v" ]; then exit 0; fi\n'),
+            "sudo": sudo_passthrough_script(
+                'if [ "$1" = "-v" ]; then exit 0; fi\n'
+                'if [ "${TEST_CAPTURE_READ_FAILURE:-0}" = 1 ] && [ "$1" = cat ]; then exit 23; fi\n'
+            ),
             "chown": (
                 "#!/bin/sh\n"
                 'if [ "${TEST_TERMINAL_OWNER_FAILURE:-0}" = "1" ]; then exit 1; fi\n'
@@ -139,6 +145,10 @@ class PipedBackupTests(unittest.TestCase):
             command = commands / name
             command.write_text(content)
             command.chmod(0o700)
+        entrypoint = fixture / "workstation.sh"
+        source = entrypoint_source_with_mock_controller().rsplit('main "$@"', 1)[0]
+        # Bootstrap dependency installation is covered separately; these tests exercise the terminal relay.
+        entrypoint.write_text(source + '\ninstall_ansible_packages() { :; }\nmain "$@"\n')
         return {
             "PATH": f"{commands}:/usr/bin:/bin",
             "HOME": str(fixture),
@@ -151,7 +161,7 @@ class PipedBackupTests(unittest.TestCase):
             "BITWARDEN_CLIENT_ID": "fixture-client",
             "BITWARDEN_CLIENT_SECRET": "fixture-secret",
             "BITWARDEN_PASSWORD": "fixture'password $HOME `false` $(false)",
-            "TEST_ENTRYPOINT_FILE": str(ENTRYPOINT_PATH),
+            "TEST_ENTRYPOINT_FILE": str(entrypoint),
             "TEST_DOWNLOAD_LOG": str(fixture / "downloads.txt"),
             "TEST_INVOCATION_FILE": str(fixture / "invocation.json"),
             "TEST_TERMINAL_OWNER_FILE": str(fixture / "terminal-owner.txt"),
@@ -241,6 +251,23 @@ class PipedBackupTests(unittest.TestCase):
             self.assertNotEqual(returncode, 0)
             self.assertIn("Failed to make the interactive relay terminal accessible", output)
             self.assertFalse((fixture / "invocation.json").exists())
+
+    def test_unreadable_capture_fails_and_removes_temporary_files(self) -> None:
+        """Missing retry evidence must fail rather than silently report success."""
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            fixture = pathlib.Path(temporary_dir)
+            environment = self._prepare_fixture(fixture)
+            environment["TEST_CAPTURE_READ_FAILURE"] = "1"
+            returncode, output = run_interactive(
+                ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'],
+                fixture,
+                environment,
+                [("Fixture recovery confirmation: ", "continue")],
+            )
+            self.assertNotEqual(returncode, 0, output)
+            self.assertIn("Failed to read captured Ansible output", output)
+            self.assertNotIn("Workstation command completed", output)
+            self.assertEqual(list(fixture.glob("workstation-manager-*")), [])
 
     def test_unavailable_or_invalid_runner_source_stops_before_ansible(self) -> None:
         """Download and parsing failures must fail clearly and remove temporary source files."""

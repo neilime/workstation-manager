@@ -1,24 +1,28 @@
 """Exercise Bitwarden collection authentication fallbacks with a local CLI fixture."""
 
-# This fixture intentionally mirrors the Bitwarden CLI prompt flows exercised in
-# lower-level auth tests so the production role can be verified end-to-end.
-# pylint: disable=duplicate-code
-
 from __future__ import annotations
 
 import json
 import os
 import pathlib
-import pwd
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from typing import Any
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import (
+    ansible_environment,
+    managed_user,
+    run_playbook,
+    write_local_playbook,
+)
+from entrypoint_test_helpers import terminal_command
+
+pytestmark = pytest.mark.integration
 
 TASK_FILE = (
     pathlib.Path(__file__).parents[2]
@@ -106,18 +110,12 @@ if args == ["login", "fixture@example.com", "--passwordenv", "BITWARDEN_PASSWORD
     if os.environ["BITWARDEN_PASSWORD"] != "fixture-password":
         print("Invalid master password.", file=sys.stderr)
         sys.exit(1)
-    if email_login_scenario == "code-required":
+    if email_login_scenario == "code-required" or not sys.stdin.isatty():
         print("Code is required.")
         sys.exit(1)
     if email_login_scenario == "interactive-code":
-        if not sys.stdin.isatty():
-            print("Code is required.")
-            sys.exit(1)
         print("Two-step login code:", end="", flush=True)
-        code = sys.stdin.readline().strip()
-        if code != "123456":
-            print("\\nInvalid verification code.")
-            sys.exit(1)
+        assert sys.stdin.readline().strip() == "123456", "Verification code was not relayed to Bitwarden"
         state["authenticated"] = True
         save_state()
         print("\\nfixture-login-session")
@@ -188,38 +186,28 @@ sys.exit(99)
     (bin_dir / "bw").chmod(0o755)
 
     playbook = fixture / "playbook.json"
-    playbook.write_text(
-        json.dumps(
-            [
-                {
-                    "name": "Exercise Bitwarden collection auth",
-                    "hosts": "localhost",
-                    "connection": "local",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_manager_use_become": False,
-                        "bitwarden_collection_id": "fixture-collection",
-                        "bitwarden_collection_purpose": "Bitwarden SSH restore",
-                        "workstation_manager_resolved": {
-                            "user": {"name": pwd.getpwuid(os.getuid()).pw_name, "home": str(fixture)},
-                            "secrets": {"bitwarden": {"server": "https://vault.example.invalid"}},
-                            "system": {"packages": {"cache_valid_time": 3600}},
-                        },
-                    },
-                    "tasks": [
-                        {"ansible.builtin.import_role": {"name": "neilime.workstation_setup.bitwarden_collection"}},
-                        {
-                            "name": "Verify collection results without printing secrets",
-                            "ansible.builtin.assert": {"that": "bitwarden_collection_items == fixture_expected_items"},
-                            "vars": {"fixture_expected_items": collection_items or []},
-                            "no_log": True,
-                        },
-                    ],
-                }
-            ]
-        ),
-        encoding="utf-8",
+    write_local_playbook(
+        playbook,
+        [
+            {"ansible.builtin.import_role": {"name": "neilime.workstation_setup.bitwarden_collection"}},
+            {
+                "name": "Verify collection results without printing secrets",
+                "ansible.builtin.assert": {"that": "bitwarden_collection_items == fixture_expected_items"},
+                "vars": {"fixture_expected_items": collection_items or []},
+                "no_log": True,
+            },
+        ],
+        {
+            "workstation_manager_use_become": False,
+            "bitwarden_collection_id": "fixture-collection",
+            "bitwarden_collection_purpose": "Bitwarden SSH restore",
+            "workstation_manager_resolved": {
+                "user": managed_user(fixture),
+                "secrets": {"bitwarden": {"server": "https://vault.example.invalid"}},
+                "system": {"packages": {"cache_valid_time": 3600}},
+            },
+        },
+        name="Exercise Bitwarden collection auth",
     )
     return audit_path, playbook
 
@@ -241,22 +229,17 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
             audit_path, playbook = prepare_fixture(fixture, **fixture_options)
-            (fixture / "ansible.cfg").write_text("[defaults]\n", encoding="utf-8")
-            environment = {
-                "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
-                "HOME": str(fixture),
-                "LC_ALL": "C.UTF-8",
-                "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-                "ANSIBLE_HOME": str(fixture / ".ansible"),
-                "ANSIBLE_LOG_PATH": str(fixture / "ansible.log"),
-                "ANSIBLE_COLLECTIONS_PATH": os.environ["ANSIBLE_COLLECTIONS_PATH"],
-                "AUDIT_PATH": str(audit_path),
-                "EXPECTED_SERVER": "https://vault.example.invalid",
-                "EXPECTED_COLLECTION_ID": "fixture-collection",
-                "BITWARDEN_EMAIL": "fixture@example.com",
-                "BITWARDEN_PASSWORD": "fixture-password",
-                "WORKSTATION_MANAGER_INTERACTIVE": "1" if interactive else "0",
-            }
+            environment = ansible_environment(
+                fixture,
+                PATH=f"{fixture / 'bin'}:{os.environ['PATH']}",
+                ANSIBLE_LOG_PATH=str(fixture / "ansible.log"),
+                AUDIT_PATH=str(audit_path),
+                EXPECTED_SERVER="https://vault.example.invalid",
+                EXPECTED_COLLECTION_ID="fixture-collection",
+                BITWARDEN_EMAIL="fixture@example.com",
+                BITWARDEN_PASSWORD="fixture-password",
+                WORKSTATION_MANAGER_INTERACTIVE="1" if interactive else "0",
+            )
             if include_api_key:
                 environment["BITWARDEN_CLIENT_ID"] = "fixture-client"
                 environment["BITWARDEN_CLIENT_SECRET"] = "fixture-secret"
@@ -264,7 +247,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
             environment.update(environment_overrides or {})
 
             if interactive:
-                command = shlex.join(
+                command = terminal_command(
                     [
                         "/bin/sh",
                         "-c",
@@ -276,14 +259,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                     ]
                 )
                 result = subprocess.run(
-                    [
-                        shutil.which("script") or "script",
-                        "--quiet",
-                        "--return",
-                        "--command",
-                        command,
-                        os.devnull,
-                    ],
+                    command,
                     cwd=fixture,
                     env=environment,
                     input="123456\n",
@@ -293,14 +269,10 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                     timeout=60,
                 )
             else:
-                result = subprocess.run(
+                result = run_playbook(
                     ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook), *playbook_arguments],
+                    environment,
                     cwd=fixture,
-                    env=environment,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
                 )
             calls = (
                 [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
@@ -370,8 +342,6 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 "fields": [{"name": "id", "value": "fixture"}, {"name": "directory", "value": "Default"}],
             }
             audit_path, playbook = prepare_fixture(fixture, collection_items=[item])
-            config = fixture / "ansible.cfg"
-            config.write_text("[defaults]\n", encoding="utf-8")
             collection_root = TASK_FILE.parents[3]
             probe = fixture / "read_browser_record.py"
             probe.write_text(
@@ -388,10 +358,7 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 encoding="utf-8",
             )
             content = json.loads(playbook.read_text(encoding="utf-8"))
-            content[0]["vars"]["workstation_manager_resolved"]["user"] = {
-                "name": pwd.getpwuid(os.getuid()).pw_name,
-                "home": str(managed_home),
-            }
+            content[0]["vars"]["workstation_manager_resolved"]["user"] = managed_user(managed_home)
             content[0]["vars"]["workstation_manager_resolved"]["secrets"]["bitwarden"][
                 "browser_profiles_collection_id"
             ] = "fixture-collection"
@@ -414,33 +381,23 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
                 }
             )
             playbook.write_text(json.dumps(content), encoding="utf-8")
-            environment = {
-                "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
-                "HOME": str(fixture),
-                "XDG_CONFIG_HOME": str(fixture / "bootstrap-config"),
-                "LC_ALL": "C.UTF-8",
-                "ANSIBLE_CONFIG": str(config),
-                "ANSIBLE_HOME": str(fixture / ".ansible"),
-                "ANSIBLE_LOG_PATH": str(fixture / "ansible.log"),
-                "ANSIBLE_COLLECTIONS_PATH": os.environ["ANSIBLE_COLLECTIONS_PATH"],
-                "PYTHONPATH": str(collection_root.parents[2]),
-                "AUDIT_PATH": str(audit_path),
-                "EXPECTED_SERVER": "https://vault.example.invalid",
-                "EXPECTED_COLLECTION_ID": "fixture-collection",
-                "BITWARDEN_EMAIL": "fixture@example.com",
-                "BITWARDEN_PASSWORD": "fixture-password",
-                "BITWARDEN_CLIENT_ID": "fixture-client",
-                "BITWARDEN_CLIENT_SECRET": "fixture-secret",
-                "WORKSTATION_MANAGER_INTERACTIVE": "0",
-            }
-            result = subprocess.run(
-                ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
-                cwd=fixture,
-                env=environment,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
+            environment = ansible_environment(
+                fixture,
+                PATH=f"{fixture / 'bin'}:{os.environ['PATH']}",
+                XDG_CONFIG_HOME=str(fixture / "bootstrap-config"),
+                ANSIBLE_LOG_PATH=str(fixture / "ansible.log"),
+                PYTHONPATH=str(collection_root.parents[2]),
+                AUDIT_PATH=str(audit_path),
+                EXPECTED_SERVER="https://vault.example.invalid",
+                EXPECTED_COLLECTION_ID="fixture-collection",
+                BITWARDEN_EMAIL="fixture@example.com",
+                BITWARDEN_PASSWORD="fixture-password",
+                BITWARDEN_CLIENT_ID="fixture-client",
+                BITWARDEN_CLIENT_SECRET="fixture-secret",
+                WORKSTATION_MANAGER_INTERACTIVE="0",
+            )
+            result = run_playbook(
+                ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)], environment, cwd=fixture
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue((managed_home / ".config/Bitwarden CLI/state.json").exists())

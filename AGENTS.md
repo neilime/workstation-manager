@@ -78,6 +78,18 @@ more specific `AGENTS.md` files when working in their directories.
 - Keep upgrades reproducible: follow the repository's version constraints and
   GitHub Actions commit-SHA pins. Using current technology does not mean replacing
   controlled versions with unbounded `latest` references.
+- Declare dependency versions and commit pins only in configuration or dependency
+  manifests. Use `ansible/group_vars/all.yml` for workstation tool versions;
+  Python, shell scripts, role tasks, and templates must consume configured values
+  without hardcoded release fallbacks. Reject missing or invalid required pins.
+- Give every pin an appropriate Dependabot or Renovate handler in the same change.
+  Prefer Dependabot when it supports the complete update; use Renovate for custom
+  configuration, release filtering, or coordinated updates. Verify extraction at
+  the actual configuration path and remove obsolete handlers when moving pins.
+- Keep examples inheriting public pins instead of duplicating them. Tests should
+  use configuration or synthetic version inputs, never duplicate current release
+  pins that need editing on each upgrade. Document update ownership in the
+  [dependency update guide](docs/development/README.md#dependency-updates).
 - Coordinate runtime upgrades across `docker/tooling/Dockerfile`,
   `docker/tooling/requirements.txt`, `e2e-tests/requirements.txt`, collection
   metadata, `Makefile`, and CI wherever affected. The test Python version must
@@ -88,6 +100,11 @@ more specific `AGENTS.md` files when working in their directories.
 
 ## Remove dead and unnecessary code
 
+- Implement only the current workstation baseline. Do not keep old configuration
+  aliases, one-time data imports, package transitions, or retirement tasks for
+  removed services and tools unless explicitly requested. Remove their callers,
+  tests, and documentation together. Preserve current backup/restore contracts,
+  input validation, and data/credential safety checks.
 - With every change, actively look for unused imports, variables, helpers, roles,
   obsolete configuration, redundant branches, duplicate logic, stale comments,
   and outdated tests or documentation in the affected area. Remove verified dead
@@ -137,6 +154,14 @@ more specific `AGENTS.md` files when working in their directories.
 - Document current, implemented behavior only. Remove obsolete options, deleted
   features, migration history, stale examples, and descriptions of dead code.
   Do not retain old documentation as compatibility stubs after moving a guide.
+- Apply this rule to ADRs, development guides, comments, and tests as well as user
+  guides. Explain the current decision and its rationale; never narrate project
+  history, completed migrations, or before/after implementation stories. Keep
+  validation requirements distinct from checks actually completed.
+- In each change, check affected documentation and tests against the current
+  implementation. Update file links, anchors, examples, test targets, and fixtures
+  together. Delete obsolete material instead of relabeling it as current behavior.
+  Follow the [documentation and test review checklist](docs/development/README.md#documentation-and-test-contract).
 - Write directly: state prerequisites, show the command or configuration, and
   explain the result. Include limitations only when they affect a user's action
   or expectations. Avoid filler, marketing language, repetitive disclaimers,
@@ -160,12 +185,33 @@ more specific `AGENTS.md` files when working in their directories.
   make setup
   make lint
   make check-ansible
+  make check-collections
   make test
   ```
 
-- `make test` runs host-tool unit tests plus first-party collection sanity and
-  unit checks. Add meaningful regression tests for changed behavior in the
-  relevant collection's `tests/unit/` or `e2e-tests/unit/`.
+- `make test` runs fast unit tests and isolated integration tests;
+  `make check-collections` owns collection sanity checks. Start with
+  `make test-unit` or `make test-integration` and a focused `TEST_ARGS="-k ..."`
+  selection during development. CI runs each layer once.
+- Add regression coverage at the cheapest layer that can detect the failure.
+  Keep parsing and normalization cases in collection unit tests. Mark tests that
+  run real Ansible as `integration`; reuse the isolated playbook and environment
+  helpers in `e2e-tests/unit/ansible_test_helpers.py`. Reserve VM assertions for
+  installed behavior and external integration.
+- Every test must protect a currently supported contract. Describe that contract
+  in its name and docstring; do not encode removed implementations, one-time
+  transitions, or historical package/file layouts. Remove obsolete scenarios and
+  their helpers, not just historical wording. Negative tests remain appropriate
+  for constraints the current code enforces.
+- Existing user data, application history, and saved recovery state are valid
+  fixtures for current safety contracts. Preserve those checks with synthetic
+  inputs; do not confuse data preservation with support for project history.
+- Do not snapshot current versions, package lists, task names, or source layout
+  when the contract can be checked through behavior. Use synthetic unit inputs
+  and maintained configuration for integration expectations. Consolidate repeated
+  setup and overlapping assertions; avoid Cartesian products of independent
+  scenarios. Preserve distinct archive-safety, recovery, permissions, check-mode,
+  credential-redaction, and user-data preservation checks.
 - For changes to installation, backup, restoration, or cleanup behavior, run the
   relevant VM assertions in `e2e-tests/`. The complete flow is `make e2e-up`,
   `make e2e-test`, then `make e2e-down`; it tests backup, setup, and cleanup in

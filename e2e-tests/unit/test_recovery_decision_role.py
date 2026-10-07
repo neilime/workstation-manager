@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import json
-import os
 import pathlib
 import sys
 import tempfile
 import unittest
 
+import pytest
+from ansible_test_helpers import ansible_environment, write_local_playbook
 from backup_prompt_helpers import run_interactive
 
-WORKSPACE = pathlib.Path(__file__).parents[2]
+pytestmark = pytest.mark.integration
 
 
 def decision(identifier="fixture", *, needed=True, scope="ssh-keys") -> dict:
@@ -44,26 +44,16 @@ class RecoveryDecisionRoleTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             fixture = pathlib.Path(temporary)
-            (fixture / "ansible.cfg").write_text("[defaults]\n")
             playbook = fixture / "playbook.json"
             variables = {
                 "ansible_python_interpreter": sys.executable,
                 "workstation_backup_dry_run": "{{ ansible_check_mode }}",
                 "workstation_backup_recovery_choices": {"fixture": "proceed"},
             }
-            playbook.write_text(
-                json.dumps(
-                    [
-                        {
-                            "hosts": "localhost",
-                            "connection": "local",
-                            "gather_facts": False,
-                            "vars": variables,
-                            "tasks": tasks
-                            + ([{"ansible.builtin.assert": {"that": list(assertions)}}] if assertions else []),
-                        }
-                    ]
-                )
+            write_local_playbook(
+                playbook,
+                tasks + ([{"ansible.builtin.assert": {"that": list(assertions)}}] if assertions else []),
+                variables,
             )
             command = ["ansible-playbook", "-i", "localhost,", str(playbook)]
             if check:
@@ -71,14 +61,7 @@ class RecoveryDecisionRoleTests(unittest.TestCase):
             return run_interactive(
                 command,
                 fixture,
-                {
-                    "PATH": os.environ["PATH"],
-                    "HOME": str(fixture),
-                    "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-                    "ANSIBLE_HOME": str(fixture / ".ansible"),
-                    "ANSIBLE_COLLECTIONS_PATH": str(WORKSPACE / "ansible/collections"),
-                    "WORKSTATION_MANAGER_INTERACTIVE": "1" if self.interactive else "0",
-                },
+                ansible_environment(fixture, WORKSTATION_MANAGER_INTERACTIVE="1" if self.interactive else "0"),
                 answers,
             )
 

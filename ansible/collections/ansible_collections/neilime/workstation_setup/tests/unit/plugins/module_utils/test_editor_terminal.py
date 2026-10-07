@@ -10,47 +10,12 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.editor_t
 )
 
 
-def test_new_settings_select_the_host_zsh_profile() -> None:
-    """The profile must execute the host's installed Zsh through the Flatpak bridge."""
-
+def test_new_settings_select_native_zsh() -> None:
+    """A native terminal uses the configured host executable."""
     settings = json.loads(EditorTerminalSettings().configure("{}\n"))
-    assert settings["terminal.integrated.defaultProfile.linux"] == "zsh (host)"
-    assert settings["terminal.integrated.profiles.linux"]["zsh (host)"] == {
-        "path": "/app/bin/host-spawn",
-        "args": ["/usr/bin/zsh", "-l"],
-        "overrideName": True,
-    }
-    assert settings["settingsSync.ignoredSettings"] == [
-        "terminal.integrated.profiles.linux",
-        "terminal.integrated.defaultProfile.linux",
-    ]
-
-
-def test_sync_exclusions_preserve_personal_choices_and_remove_terminal_opt_ins() -> None:
-    """Host-specific terminal settings must stay local even after explicitly opting into sync."""
-
-    existing = json.dumps(
-        {
-            "settingsSync.ignoredSettings": [
-                "editor.fontSize",
-                "-window.zoomLevel",
-                "-terminal.integrated.profiles.linux",
-                "terminal.integrated.defaultProfile.linux",
-                "-terminal.integrated.defaultProfile.linux",
-            ],
-            "settingsSync.ignoredExtensions": ["fixture.personal"],
-        }
-    )
-    result = EditorTerminalSettings().configure(existing)
-    settings = json.loads(result)
-    assert settings["settingsSync.ignoredSettings"] == [
-        "editor.fontSize",
-        "-window.zoomLevel",
-        "terminal.integrated.defaultProfile.linux",
-        "terminal.integrated.profiles.linux",
-    ]
-    assert settings["settingsSync.ignoredExtensions"] == ["fixture.personal"]
-    assert EditorTerminalSettings().configure(result) == result
+    assert settings["terminal.integrated.defaultProfile.linux"] == "zsh"
+    assert settings["terminal.integrated.profiles.linux"]["zsh"] == {"path": "/usr/bin/zsh", "args": ["-l"]}
+    assert "settingsSync.ignoredSettings" not in settings
 
 
 def test_existing_sync_exclusions_retain_jsonc_comments_when_already_configured() -> None:
@@ -102,24 +67,24 @@ def test_empty_and_compact_settings_are_supported(content: str) -> None:
     """VS Code settings do not need pre-existing multiline objects or terminal profiles."""
 
     result = EditorTerminalSettings().configure(content)
-    assert '"/app/bin/host-spawn"' in result
+    assert '"/usr/bin/zsh"' in result
     assert EditorTerminalSettings().configure(result) == result
 
 
 def test_existing_managed_profile_is_repaired_without_changing_other_profiles() -> None:
-    """A restored profile pointing at the sandbox's missing Zsh must use the host bridge."""
+    """The managed profile is repaired while personal profiles remain unchanged."""
 
     existing = json.dumps(
         {
-            "terminal.integrated.defaultProfile.linux": "zsh (host)",
+            "terminal.integrated.defaultProfile.linux": "personal",
             "terminal.integrated.profiles.linux": {
-                "zsh (host)": {"path": "/usr/bin/zsh"},
+                "zsh": {"path": "/bin/sh"},
                 "personal": {"path": "/bin/bash"},
             },
         }
     )
     result = json.loads(EditorTerminalSettings().configure(existing))
-    assert result["terminal.integrated.profiles.linux"]["zsh (host)"]["path"] == "/app/bin/host-spawn"
+    assert result["terminal.integrated.profiles.linux"]["zsh"] == {"path": "/usr/bin/zsh", "args": ["-l"]}
     assert result["terminal.integrated.profiles.linux"]["personal"] == {"path": "/bin/bash"}
 
 
@@ -141,9 +106,6 @@ def test_bom_crlf_and_unicode_settings_are_preserved() -> None:
         '{"broken":',
         "{/* unterminated",
         '{"terminal.integrated.profiles.linux": []}',
-        '{"settingsSync.ignoredSettings": "synthetic-private-marker"}',
-        '{"settingsSync.ignoredSettings": ["synthetic-private-marker", 42]}',
-        '{"settingsSync.ignoredSettings": null}',
     ],
 )
 def test_invalid_settings_fail_without_exposing_their_contents(content: str) -> None:

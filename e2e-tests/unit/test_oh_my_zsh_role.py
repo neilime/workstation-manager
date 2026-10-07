@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import os
 import pathlib
 import subprocess
-import sys
 import tempfile
 import unittest
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
+
+pytestmark = pytest.mark.integration
 
 TASK_FILE = (
     pathlib.Path(__file__).parents[2]
@@ -33,20 +35,16 @@ class OhMyZshRoleTests(unittest.TestCase):
         self.origin = self.fixture / "origin"
         self.origin.mkdir()
         self.checkout = self.home / ".oh-my-zsh"
-        (self.fixture / "ansible.cfg").write_text("[defaults]\n")
-        self.env = {
-            "PATH": os.environ["PATH"],
-            "HOME": str(self.home),
-            "LC_ALL": "C.UTF-8",
-            "GIT_CONFIG_GLOBAL": "/dev/null",
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_AUTHOR_NAME": "Fixture",
-            "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
-            "GIT_COMMITTER_NAME": "Fixture",
-            "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
-            "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
-            "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-        }
+        self.env = ansible_environment(
+            self.fixture,
+            HOME=str(self.home),
+            GIT_CONFIG_GLOBAL="/dev/null",
+            GIT_CONFIG_NOSYSTEM="1",
+            GIT_AUTHOR_NAME="Fixture",
+            GIT_AUTHOR_EMAIL="fixture@example.invalid",
+            GIT_COMMITTER_NAME="Fixture",
+            GIT_COMMITTER_EMAIL="fixture@example.invalid",
+        )
         self.git("init", "--quiet")
         (self.origin / "oh-my-zsh.sh").write_text("# first revision\n")
         self.git("add", ".")
@@ -63,48 +61,23 @@ class OhMyZshRoleTests(unittest.TestCase):
     def apply(self, version: str, *, check: bool = False) -> subprocess.CompletedProcess[str]:
         """Run the production task with an isolated upstream and fixture revision."""
         # Account changes are exercised in the VM; this fixture owns only a home.
-        # Isolated role fixtures repeat Ansible play and environment declarations.
-        # pylint: disable=duplicate-code
         tasks = [task for task in DataLoader().load_from_file(str(TASK_FILE)) if "ansible.builtin.git" in task]
         tasks[0]["ansible.builtin.git"]["repo"] = str(self.origin)
-        tasks[0]["ansible.builtin.git"]["version"] = version
         playbook = self.fixture / "playbook.json"
-        playbook.write_text(
-            json.dumps(
-                [
-                    {
-                        "name": "Exercise isolated Oh My Zsh installation",
-                        "hosts": "localhost",
-                        "connection": "local",
-                        "gather_facts": False,
-                        "vars": {
-                            "ansible_python_interpreter": sys.executable,
-                            "workstation_manager_use_become": False,
-                            "workstation_manager_resolved": {
-                                "user": {
-                                    "name": "fixture-user",
-                                    "home": str(self.home),
-                                },
-                            },
-                        },
-                        "tasks": tasks,
-                    }
-                ]
-            )
+        write_local_playbook(
+            playbook,
+            tasks,
+            {
+                "workstation_manager_use_become": False,
+                "workstation_manager_oh_my_zsh_revision": version,
+                "workstation_manager_resolved": {"user": {"name": "fixture-user", "home": str(self.home)}},
+            },
+            name="Exercise isolated Oh My Zsh installation",
         )
         command = ["ansible-playbook", "--inventory", "localhost,", str(playbook)]
         if check:
             command.append("--check")
-        return subprocess.run(
-            command,
-            cwd=self.fixture,
-            env=self.env,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-        )
-        # pylint: enable=duplicate-code
+        return run_playbook(command, self.env, cwd=self.fixture)
 
     def assert_succeeded(self, result: subprocess.CompletedProcess[str]) -> None:
         """Report complete Ansible output when a scenario fails."""

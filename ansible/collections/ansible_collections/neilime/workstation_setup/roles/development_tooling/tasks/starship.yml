@@ -1,0 +1,34 @@
+---
+- name: Resolve the pinned Starship executable through mise
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+      - which
+      - starship
+      - --tool
+      - "aqua:starship/starship@{{ workstation_manager_resolved.development.mise.tools['aqua:starship/starship'] }}"
+    chdir: "{{ workstation_manager_resolved.user.home }}"
+  register: workstation_manager_development_starship_binary
+  changed_when: false
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+
+- name: Link the resolved Starship executable
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    src: "{{ workstation_manager_development_starship_binary.stdout | trim }}"
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/starship"
+    state: link
+
+- name: Verify Starship is available without shell activation
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.user.home }}/.local/bin/starship"
+      - --version
+  changed_when: false

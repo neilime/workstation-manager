@@ -10,14 +10,21 @@ import pty
 import pwd
 import select
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
-from entrypoint_test_helpers import controlling_tty_exec_python, sudo_passthrough_script
+from ansible_test_helpers import ansible_environment, write_local_playbook
+from entrypoint_test_helpers import (
+    controlling_tty_exec_python,
+    entrypoint_source_with_mock_controller,
+    sudo_passthrough_script,
+)
 
 WORKSPACE = pathlib.Path(__file__).parents[2]
 CHEZMOI_RECONCILE_TASKS = (
@@ -143,10 +150,15 @@ def bootstrap_fixture(fixture: pathlib.Path) -> str:
     """Load the entrypoint with isolated target paths and a non-privileged sudo stub."""
 
     (fixture / "bin").mkdir()
+    for executable in ("ansible", "ansible-pull", "ansible-playbook"):
+        installed = shutil.which(executable)
+        if installed is None:
+            raise AssertionError(f"The tooling image must provide {executable}")
+        (fixture / "bin" / executable).symlink_to(installed)
     sudo = fixture / "bin/sudo"
     sudo.write_text(sudo_passthrough_script("unset PYTHONUNBUFFERED\n"))
     sudo.chmod(0o755)
-    definitions = (WORKSPACE / "workstation.sh").read_text().splitlines()
+    definitions = entrypoint_source_with_mock_controller().splitlines()
     if definitions.pop() != 'main "$@"':
         raise AssertionError("The entrypoint must end with its main invocation")
     (fixture / "entrypoint.sh").write_text("\n".join(definitions) + "\n")
@@ -170,38 +182,29 @@ def load_chezmoi_retry_task() -> dict[str, object]:
 def write_retry_playbook(repository: pathlib.Path, decision_task: dict[str, object]) -> None:
     """Create a minimal playbook that exercises the real drift decision prompt."""
 
-    (repository / "check.yml").write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "gather_facts": False,
-                    "vars": {
-                        "workstation_backup_chezmoi_source_dir": "/fixture/chezmoi",
-                        "workstation_backup_chezmoi_git_preflight": {
-                            "state": {
-                                "ahead": 0,
-                                "behind": 2,
-                                "upstream": "origin/main",
-                                "status": "M  README.md\n D home/dot_bashrc",
-                            }
-                        },
-                        "workstation_backup_chezmoi_git_needs_decision": True,
-                        "workstation_backup_dry_run": False,
-                    },
-                    "tasks": [
-                        decision_task,
-                        {
-                            "name": "Verify the answer",
-                            "ansible.builtin.assert": {
-                                "that": "workstation_backup_recovery_choices['chezmoi-git'] == 'skip'"
-                            },
-                        },
-                        {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
-                    ],
+    write_local_playbook(
+        repository / "check.yml",
+        [
+            decision_task,
+            {
+                "name": "Verify the answer",
+                "ansible.builtin.assert": {"that": "workstation_backup_recovery_choices['chezmoi-git'] == 'skip'"},
+            },
+            {"ansible.builtin.debug": {"msg": "FIXTURE_COMPLETED"}},
+        ],
+        {
+            "workstation_backup_chezmoi_source_dir": "/fixture/chezmoi",
+            "workstation_backup_chezmoi_git_preflight": {
+                "state": {
+                    "ahead": 0,
+                    "behind": 2,
+                    "upstream": "origin/main",
+                    "status": "M  README.md\n D home/dot_bashrc",
                 }
-            ]
-        )
+            },
+            "workstation_backup_chezmoi_git_needs_decision": True,
+            "workstation_backup_dry_run": False,
+        },
     )
 
 
@@ -222,6 +225,7 @@ def initialize_git_repository(repository: pathlib.Path, environment: dict[str, s
         )
 
 
+@pytest.mark.integration
 class PinnedCommitBootstrapTests(unittest.TestCase):
     """Exercise the real Git module and ansible-pull with a commit reachable only via a PR ref."""
 
@@ -295,6 +299,7 @@ class PinnedCommitBootstrapTests(unittest.TestCase):
             self.assertFalse((fixture / "checkout").exists(), "ansible-pull must still purge its checkout")
 
 
+@pytest.mark.integration
 class InteractiveBootstrapTests(unittest.TestCase):
     """Exercise prompt answers and keyboard cancellation with an isolated repository."""
 
@@ -306,20 +311,17 @@ class InteractiveBootstrapTests(unittest.TestCase):
         repository = fixture / "repository"
         repository.mkdir()
         write_retry_playbook(repository, load_chezmoi_retry_task())
-        environment = {
-            "PATH": f"{fixture / 'bin'}:{os.environ['PATH']}",
-            "HOME": str(fixture),
-            "USER": pwd.getpwuid(os.getuid()).pw_name,
-            "ANSIBLE_HOME": str(fixture / ".ansible"),
-            "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "REPOSITORY_URL": repository.as_uri(),
-            "WORKSTATION_MANAGER_INTERACTIVE": "1",
-        }
+        environment = ansible_environment(
+            fixture,
+            PATH=f"{fixture / 'bin'}:{os.environ['PATH']}",
+            USER=pwd.getpwuid(os.getuid()).pw_name,
+            GIT_CONFIG_GLOBAL=os.devnull,
+            GIT_CONFIG_NOSYSTEM="1",
+            REPOSITORY_URL=repository.as_uri(),
+            WORKSTATION_MANAGER_INTERACTIVE="1",
+        )
         if disable_script_capture:
             environment["WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE"] = "1"
-        (fixture / "ansible.cfg").write_text("[defaults]\n")
         initialize_git_repository(repository, environment)
         bootstrap = bootstrap_fixture(fixture)
         environment["WORKSTATION_MANAGER_ENTRYPOINT_SOURCE"] = str(fixture / "entrypoint.sh")
@@ -405,14 +407,7 @@ class InteractiveBootstrapTests(unittest.TestCase):
             for interrupt in (False, True):
                 with self.subTest(interrupt=interrupt):
                     with subprocess.Popen(
-                        [
-                            "script",
-                            "--quiet",
-                            "--return",
-                            "--command",
-                            command,
-                            os.devnull,
-                        ],
+                        ["script", "--quiet", "--return", "--command", command, os.devnull],
                         cwd=fixture,
                         env=environment,
                         stdin=subprocess.PIPE,

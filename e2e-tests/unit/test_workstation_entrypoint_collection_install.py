@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 import unittest
 
+from entrypoint_test_helpers import entrypoint_source_with_mock_controller
+
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
 
 
@@ -20,7 +22,7 @@ class CollectionInstallRetryTests(unittest.TestCase):
     def test_collection_install_retries_after_transient_failure(self) -> None:
         """Collection bootstrap should retry transient ansible-galaxy failures."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -97,7 +99,7 @@ class CollectionInstallRetryTests(unittest.TestCase):
     ) -> None:
         """A failed remote collection install should still remove its temporary manifest."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)

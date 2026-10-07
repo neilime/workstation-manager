@@ -82,8 +82,54 @@ _SNAPSHOT = r"""(async () => {
 })()"""
 
 
+# Settings bundles cr.js, whose standalone module rejects a second initialization.
+# Use the page's existing native callbacks and forward traffic owned by its UI.
+_SETTINGS_BRIDGE = r"""(() => {
+  if (window.workstationSyncSettings) return true;
+  const callbacks = window.cr;
+  if (typeof callbacks?.webUIResponse !== 'function'
+      || typeof callbacks?.webUIListenerCallback !== 'function'
+      || typeof window.chrome?.send !== 'function') return false;
+  const pending = new Map();
+  const listeners = new Set();
+  let sequence = 0;
+  const respond = callbacks.webUIResponse;
+  const notify = callbacks.webUIListenerCallback;
+  callbacks.webUIResponse = (id, success, value) => {
+    const request = pending.get(id);
+    if (!request) return respond(id, success, value);
+    pending.delete(id);
+    if (success) request.resolve(value);
+    else request.reject(new Error('Native Sync request rejected'));
+  };
+  callbacks.webUIListenerCallback = (event, ...args) => {
+    notify(event, ...args);
+    for (const listener of listeners) {
+      if (listener.event === event) listener.callback(...args);
+    }
+  };
+  window.workstationSyncSettings = {
+    sendWithPromise: (method, ...args) => new Promise((resolve, reject) => {
+      const id = 'workstation-manager-sync-' + ++sequence;
+      pending.set(id, {resolve, reject});
+      try { chrome.send(method, [id, ...args]); }
+      catch {
+        pending.delete(id);
+        reject(new Error('Native Sync request failed'));
+      }
+    }),
+    addWebUiListener: (event, callback) => {
+      const listener = {event, callback};
+      listeners.add(listener);
+      return listener;
+    },
+    removeWebUiListener: listener => listeners.delete(listener)
+  };
+  return true;
+})()"""
+
 _ENABLE_EVERYTHING = r"""(async () => {
-  const {addWebUiListener, removeWebUiListener, sendWithPromise} = await import('chrome://resources/js/cr.js');
+  const {addWebUiListener, removeWebUiListener, sendWithPromise} = window.workstationSyncSettings;
   return await new Promise((resolve, reject) => {
     let changing = false;
     const listener = addWebUiListener('sync-prefs-changed', prefs => {
@@ -151,13 +197,14 @@ class NativeSync:
         if matches is not True:
             raise BrowserProtocolError("Brave opened a different profile; browser synchronization stopped")
         self.settings = pipe.page("brave://settings/braveSync/setup")
+        if pipe.evaluate(self.settings, _SETTINGS_BRIDGE) is not True:
+            raise BrowserProtocolError("Brave's native Sync callbacks are unavailable")
 
     def _request(self, method: str, *arguments: object) -> object:
         encoded = ", ".join(json.dumps(value) for value in (method, *arguments))
         return self.pipe.evaluate(
             self.settings,
-            "(async () => {const {sendWithPromise} = await import('chrome://resources/js/cr.js'); "
-            f"return await sendWithPromise({encoded});" + "})()",
+            f"window.workstationSyncSettings.sendWithPromise({encoded})",
         )
 
     def code(self) -> str:

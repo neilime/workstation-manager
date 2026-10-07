@@ -17,26 +17,39 @@ cache described in the [integration guide](../../../../../docs/development/READM
 Bitwarden email login prompts privately once per challenge, ignores terminal redraws, and
 retries rejected codes with a fresh login attempt. Developer tool installation uses the GitHub credentials described in the
 [configuration guide](../../../../../docs/usage/configuration.md#automated-runs).
-CopyQ's graphical-login entry and the wallpaper asset belong to Chezmoi. Setup
-starts CopyQ hidden when its existing autostart entry is enabled and a GNOME
-session is active. GNOME appearance values come from private overrides;
-unset values preserve existing preferences, and wallpaper settings are applied
-only when the dotfiles-managed image exists. CopyQ's Flatpak uses the XWayland clipboard workaround; an
-already running instance needs a restart after that setting changes. See the
-[configuration guide](../../../../../docs/usage/configuration.md) for verification
-and limitations.
-Developer tooling configures a system service for mise's Docker runtime bundle
-on fresh installations and reruns, and grants the managed user immediate socket
-access through a per-user ACL that is reapplied on every service start.
-Compose and Buildx use mise-managed
-CLI plugin binaries linked under Docker's expected plugin filenames. See
-[developer tools](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
-for access verification and version updates.
-The managed Visual Studio Code Flatpak also exposes a `code` terminal launcher, preserving
-an existing `/usr/local/bin/code`. Its integrated terminal uses host Zsh through
-`host-spawn`; setup preserves unrelated JSONC settings and terminal profiles,
-and excludes Linux terminal profiles and their default selection from Settings
-Sync so cloud preferences cannot replace the host-shell configuration.
+Chezmoi owns the wallpaper asset and Clipboard Indicator preferences. Setup
+installs and enables the checksum-pinned GNOME extension, applies the companion
+profile, and removes CopyQ applications while preserving their history.
+Setup always enables GNOME dark mode, dock Trash, and GNOME Software updates.
+Browser automation discovers the managed user's live desktop environment,
+including when setup runs through SSH. See the [browser adapter contract](../../../../../docs/development/browser-adapters.md).
+Dock favorites use the public defaults; null preserves existing favorites.
+Wallpaper settings are applied only when the dotfiles-managed image exists.
+Setup installs native Simple Scan/SANE and removes duplicate scanner Flatpaks
+without deleting their data. BleachBit runs saved presets weekly through a user timer and also
+provides a manual command. Setup activates the timer in the current user session
+or on the next graphical login, preserving saved cleaner preferences.
+See [desktop configuration](../../../../../docs/usage/configuration.md#clipboard-and-personal-file-backup)
+and [cleanup policy](../../../../../docs/usage/cleanup.md).
+Developer tooling installs native Docker and GitHub CLI packages, a complete system
+Node.js LTS runtime, and verified mise releases for remaining user tools. Setup
+removes Snap after verified data preservation and rejects Snap-dependent boot or
+encryption. See [application delivery](../../../../../docs/usage/configuration.md#application-delivery)
+and [developer tools](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
+for update ownership, recovery archives, and access verification.
+Visual Studio Code uses Microsoft's native APT package and native Zsh. Setup
+preserves unrelated editor settings and personal profiles.
+PHP and Composer are mandatory mise tools with
+pinned releases. Setup installs PHP build prerequisites; mise downloads and
+verifies the official Composer release.
+Setup always installs pinned Codex and GitHub Copilot CLIs, Orca, Helm, Dive,
+gh-act, and gh-stack. The default GitHub extensions use published binary release tags.
+The Starship launcher uses mise's resolved executable path for the configured release.
+The Git project report provides a manual command and daily desktop notifications.
+GitHub authentication must match the required `development.github.account` and
+persist in the managed user's OS credential store. See the
+[developer-tool configuration](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
+for selections and sign-in steps.
 SSH restoration rejects private-key material in a Bitwarden `public_key` field
 before writing the key pair. Browser inspection uses registered profile names
 before falling back to saved per-profile names. Browser backup can explicitly

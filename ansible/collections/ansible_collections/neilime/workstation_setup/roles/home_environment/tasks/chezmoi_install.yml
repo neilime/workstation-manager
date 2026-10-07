@@ -1,0 +1,50 @@
+---
+- name: Resolve Chezmoi release cache
+  ansible.builtin.set_fact:
+    workstation_manager_chezmoi_cache: >-
+      /var/cache/workstation-manager/chezmoi/{{ workstation_manager_resolved.home_environment.chezmoi.version
+      }}-{{ workstation_manager_home_environment_chezmoi_architecture }}
+
+- name: Create the root-owned Chezmoi release cache
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_chezmoi_cache }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download and verify the pinned Chezmoi archive
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: "{{ workstation_manager_home_environment_chezmoi_download_url }}"
+    dest: "{{ workstation_manager_chezmoi_cache }}/release.tar.gz"
+    checksum: >-
+      sha256:https://github.com/twpayne/chezmoi/releases/download/v{{ workstation_manager_resolved.home_environment.chezmoi.version
+      }}/chezmoi_{{ workstation_manager_resolved.home_environment.chezmoi.version }}_checksums.txt
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract the verified Chezmoi executable
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.unarchive:
+    src: "{{ workstation_manager_chezmoi_cache }}/release.tar.gz"
+    dest: "{{ workstation_manager_chezmoi_cache }}"
+    remote_src: true
+    include:
+      - chezmoi
+    owner: root
+    group: root
+  when: not ansible_check_mode
+
+- name: Install the verified Chezmoi executable
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: "{{ workstation_manager_chezmoi_cache }}/chezmoi"
+    dest: "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  when: not ansible_check_mode

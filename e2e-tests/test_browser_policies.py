@@ -20,7 +20,7 @@ def test_primary_browser_managed_policy_file_exists(host) -> None:
 
 
 def test_primary_browser_policy_leaves_extensions_and_preferences_to_sync(host) -> None:
-    """Setup must replace legacy extension and preference policies with Sync availability only."""
+    """The managed policy permits Sync without imposing extensions or preferences."""
 
     policy_file = host.file("/etc/brave/policies/managed/workstation-manager.json")
     assert json.loads(policy_file.content_string) == {"SyncDisabled": False}

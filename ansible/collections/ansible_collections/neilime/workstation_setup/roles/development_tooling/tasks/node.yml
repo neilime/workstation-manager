@@ -1,0 +1,81 @@
+---
+- name: Resolve the complete Node distribution directory
+  ansible.builtin.set_fact:
+    workstation_manager_node_distribution: >-
+      node-v{{ workstation_manager_resolved.development.node.version }}-linux-{{ workstation_manager_node_arch }}
+
+- name: Ensure root-owned Node distribution storage exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /opt/nodejs
+    - /var/cache/workstation-manager/node
+    - /usr/local/bin
+
+- name: Download and verify the official Node distribution
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: >-
+      https://nodejs.org/dist/v{{ workstation_manager_resolved.development.node.version }}/{{ workstation_manager_node_distribution }}.tar.xz
+    dest: "/var/cache/workstation-manager/node/{{ workstation_manager_node_distribution }}.tar.xz"
+    checksum: "sha256:https://nodejs.org/dist/v{{ workstation_manager_resolved.development.node.version }}/SHASUMS256.txt"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract the complete verified Node distribution
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.unarchive:
+    src: "/var/cache/workstation-manager/node/{{ workstation_manager_node_distribution }}.tar.xz"
+    dest: /opt/nodejs
+    remote_src: true
+    owner: root
+    group: root
+  when: not ansible_check_mode
+
+- name: Select the default system Node distribution
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    src: "/opt/nodejs/{{ workstation_manager_node_distribution }}"
+    dest: /opt/nodejs/current
+    state: link
+    owner: root
+    group: root
+  when: not ansible_check_mode
+
+- name: Expose Node and its bundled package commands on the standard PATH
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    src: "/opt/nodejs/current/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    owner: root
+    group: root
+  loop:
+    - node
+    - npm
+    - npx
+  when: not ansible_check_mode
+
+- name: Verify Node and bundled commands without shell activation
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - -i
+      - "HOME={{ workstation_manager_resolved.user.home }}"
+      - PATH=/usr/local/bin:/usr/bin:/bin
+      - "{{ item }}"
+      - --version
+  loop:
+    - node
+    - npm
+    - npx
+  changed_when: false
+  when: not ansible_check_mode

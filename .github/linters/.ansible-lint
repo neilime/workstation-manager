@@ -1,15 +1,16 @@
 ---
+# The packaged linter's release catalogue predates the tested controller in ansible/requirements.txt.
+supported_ansible_also:
+  - "2.21"
 
 exclude_paths:
-
-- ansible/vendor-collections/
-- vendor-collections/
-- ansible/collections/ansible_collections/community/
-- collections/ansible_collections/community/
-- ansible/collections/ansible_collections/community.general-\*.info/
-- collections/ansible_collections/community.general-\*.info/
+  - ansible/vendor-collections/
+  - vendor-collections/
+  - ansible/collections/ansible_collections/community/
+  - collections/ansible_collections/community/
+  - ansible/collections/ansible_collections/community.general-\*.info/
+  - collections/ansible_collections/community.general-\*.info/
 
 skip_list:
-
-- jinja[spacing]
-- var-naming[no-role-prefix]
+  - jinja[spacing]
+  - var-naming[no-role-prefix]

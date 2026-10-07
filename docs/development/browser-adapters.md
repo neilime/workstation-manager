@@ -117,8 +117,15 @@ Live verification uses Brave's native WebUI APIs through inherited anonymous
 DevTools pipes. It opens no debugging port and does not copy profiles, bypass
 browser policies, disable the sandbox, or change password-storage backends.
 Only the selected profile's native code reaches the vault helper, in memory.
+Settings requests use the page's existing native callbacks, preserving its own
+responses and listeners. Importing a separate `cr.js` into the bundled settings
+page would initialize Chromium's WebUI callbacks twice and fail.
 Diagnostic node contents are reduced inside Brave to boolean status; browsing
 data never reaches an Ansible result. Child environments exclude vault credentials.
+Browser automation uses a desktop-session query that reads the managed user's live
+systemd environment. GNOME's initial `/proc` environment lacks the display variables
+created later by Wayland. Only allowed desktop variables reach application children;
+raw session-manager output is never returned in task results.
 The backup-only browser export sidecar is separate: it carries local bookmarks
 and sanitized non-secret preferences, and setup does not replay it automatically.
 
@@ -134,8 +141,9 @@ The native interfaces follow
 [Brave's Sync handler](https://github.com/brave/brave-core/blob/master/browser/ui/webui/settings/brave_sync_handler.cc)
 and [Chromium's Sync diagnostics](https://github.com/chromium/chromium/blob/main/components/sync/service/sync_internals_util.cc).
 API changes fail closed. Saved preferences alone never prove server upload.
-Two call-site Ansible Pylint exceptions allow the retained CDP process and detached
-desktop restart; both need lifetimes beyond a synchronous command invocation.
+Call-site Ansible Pylint exceptions allow the retained CDP process and detached
+desktop restart, which outlive a synchronous command, and the session query's
+sanitized child environment.
 
 ## Validation
 
@@ -145,7 +153,8 @@ input, sensitive-data redaction, and read-only drift inspection. For native
 profile writes, test running-browser and symlink protections. Exercise actual
 installation and restore behavior in the test VM, not on the developer's host.
 
-Run the isolated native smoke test in the Lima VM after installing Brave:
+The end-to-end setup assertions run the isolated native smoke test through SSH. To run it
+directly in the Lima VM after installing Brave:
 
 ```sh
 limactl shell --workdir /workspace workstation-manager-v1 -- \
@@ -153,6 +162,7 @@ limactl shell --workdir /workspace workstation-manager-v1 -- \
 ```
 
 It uses a disposable profile and a disabled Sync endpoint. It exercises real
-native code access, private IPC, profile identity, tab preservation, and production
-diagnostic JavaScript with synthetic success, error, stale, upload, and deletion
-states. It does not certify connectivity to the public Sync service.
+native code access, private IPC, profile identity, tab preservation, callback
+routing, and production diagnostic JavaScript with synthetic success, error,
+stale, upload, and deletion states. It does not certify connectivity to the public
+Sync service.

@@ -11,49 +11,31 @@ import sys
 import tarfile
 
 import pytest
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
 
-WORKSPACE = pathlib.Path(__file__).parents[2]
+pytestmark = pytest.mark.integration
 
 
 def run_role(root: pathlib.Path, role: str, variables: dict, *, check: bool = False) -> subprocess.CompletedProcess:
     """Run only filesystem recovery against disposable fixtures, without workstation setup."""
 
-    # Isolated role fixtures repeat Ansible play and environment declarations.
-    # pylint: disable=duplicate-code
-    configuration = root / "ansible.cfg"
-    configuration.write_text("[defaults]\n")
     playbook = root / "playbook.json"
-    playbook.write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_restore_target_user_name": pwd.getpwuid(os.getuid()).pw_name,
-                        **variables,
-                    },
-                    "roles": [role],
-                }
-            ]
-        )
+    write_local_playbook(
+        playbook,
+        [],
+        {"workstation_restore_target_user_name": pwd.getpwuid(os.getuid()).pw_name, **variables},
+        roles=[role],
     )
-    environment = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(root),
-        "ANSIBLE_HOME": str(root / ".ansible"),
-        "ANSIBLE_CONFIG": str(configuration),
-        "ANSIBLE_COLLECTIONS_PATH": str(WORKSPACE / "ansible/collections"),
-        "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR": str(root / "backup"),
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_NOSYSTEM": "1",
-    }
+    environment = ansible_environment(
+        root,
+        WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=str(root / "backup"),
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_NOSYSTEM="1",
+    )
     arguments = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)]
     if check:
         arguments.append("--check")
-    return subprocess.run(arguments, env=environment, cwd=root, capture_output=True, text=True, timeout=60, check=False)
-    # pylint: enable=duplicate-code
+    return run_playbook(arguments, environment, cwd=root)
 
 
 @pytest.mark.parametrize("config_present", [False, True])
@@ -156,7 +138,6 @@ def test_shortened_project_archive_rejects_redirected_documents_before_extractio
 def fixture_git_archive(tmp_path, monkeypatch) -> dict:
     """Archive local changes and serve a real Git origin through an isolated SSH stub."""
     # Fixture Git identity and environment repeat across isolated repository tests.
-    # pylint: disable=duplicate-code
     origin = tmp_path / "origin"
     origin.mkdir()
     environment = {
@@ -223,7 +204,6 @@ def fixture_git_archive(tmp_path, monkeypatch) -> dict:
         "primary_remote_url": remote_url,
         "remotes": [{"name": "upstream", "url": remote_url}, {"name": "secondary", "url": str(origin)}],
     }
-    # pylint: enable=duplicate-code
 
 
 def restore_git_archive(root: pathlib.Path, repository: dict, *, check: bool = False) -> subprocess.CompletedProcess:

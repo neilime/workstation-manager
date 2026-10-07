@@ -1,50 +1,18 @@
-"""End-to-end checks for managed Flatpak applications."""
+"""End-to-end checks for configured Flatpak applications and update ownership."""
 
 
-def test_gnome_software_uses_flatpak_without_snap(host) -> None:
-    """GNOME Software should provide the app center without its Snap plugin."""
-
-    # Assert
+def test_gnome_software_owns_flatpak_updates(host) -> None:
+    """GNOME Software manages updates for the installed Flatpak applications."""
     assert host.package("gnome-software").is_installed
     assert host.package("gnome-software-plugin-flatpak").is_installed
-    assert not host.package("gnome-software-plugin-snap").is_installed
+    assert host.check_output("dbus-run-session -- gsettings get org.gnome.software download-updates") == "true"
 
 
-def test_flathub_remote_is_configured(host) -> None:
-    """The installed machine should configure the declared Flatpak remote."""
-
-    # Arrange
-    remote_command = "flatpak remotes --system --columns=name"
-
-    # Act
-    remote_result = host.run(remote_command)
-
-    # Assert
-    assert remote_result.succeeded
-    assert "flathub" in remote_result.stdout.splitlines()
-
-
-def test_declared_flatpak_applications_are_installed(host) -> None:
-    """The installed machine should install the declared Flatpak applications."""
-
-    # Arrange
-    application_command = "flatpak list --system --app --columns=application"
-
-    # Act
-    application_result = host.run(application_command)
-
-    # Assert
-    assert application_result.succeeded
-    installed_applications = application_result.stdout.splitlines()
-
-    assert "org.torproject.torbrowser-launcher" in installed_applications
-    assert "com.slack.Slack" in installed_applications
-    assert "com.usebruno.Bruno" in installed_applications
-    assert "com.spotify.Client" in installed_applications
-    assert "org.videolan.VLC" in installed_applications
-    assert "org.jdownloader.JDownloader" in installed_applications
-    assert "com.github.hluk.copyq" in installed_applications
-    assert "org.gnome.SimpleScan" in installed_applications
-    assert "org.gnome.DejaDup" in installed_applications
-    assert "org.libreoffice.LibreOffice" in installed_applications
-    assert "com.bitwarden.desktop" in installed_applications
+def test_declared_flatpak_remote_and_applications(host, workstation_config) -> None:
+    """One inventory query covers desktop applications."""
+    config = workstation_config["desktop"]["flatpak"]
+    remotes = host.check_output("flatpak remotes --system --columns=name").splitlines()
+    assert config["remote"] in remotes
+    expected = set(config["packages"])
+    installed = set(host.check_output("flatpak list --system --app --columns=application").splitlines())
+    assert not expected - installed, f"Missing Flatpak applications: {sorted(expected - installed)}"

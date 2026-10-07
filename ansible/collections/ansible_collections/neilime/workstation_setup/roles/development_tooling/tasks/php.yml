@@ -1,0 +1,44 @@
+---
+- name: Verify the managed PHP release through mise
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+      - exec
+      - --
+      - php
+      - -r
+      - echo PHP_VERSION;
+    chdir: "{{ workstation_manager_resolved.user.home }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  register: workstation_manager_development_php_version
+  changed_when: false
+  failed_when: >-
+    workstation_manager_development_php_version.rc != 0 or
+    workstation_manager_development_php_version.stdout !=
+    workstation_manager_resolved.development.mise.tools['vfox:jdx/vfox-php']
+
+- name: Verify the managed Composer release through mise
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+      - exec
+      - --
+      - composer
+      - --version
+      - --no-ansi
+    chdir: "{{ workstation_manager_resolved.user.home }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  register: workstation_manager_development_composer_version
+  changed_when: false
+  failed_when: >-
+    workstation_manager_development_composer_version.rc != 0 or
+    not workstation_manager_development_composer_version.stdout.startswith(
+      'Composer version ' ~ workstation_manager_resolved.development.mise.tools['github:composer/composer'] ~ ' ')

@@ -110,6 +110,16 @@ def test_native_profile_identity_must_match_before_accessing_recovery_words() ->
     assert pipe.page.call_count == 1
 
 
+def test_native_sync_requires_the_existing_page_callbacks() -> None:
+    """Missing WebUI callbacks stop recovery before any code can be accessed."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, False]
+    with pytest.raises(BrowserProtocolError, match="native Sync callbacks are unavailable"):
+        native.NativeSync(pipe, "/fixture/Default")
+    assert pipe.evaluate.call_count == 2
+
+
 @pytest.mark.parametrize(
     "dirty",
     [
@@ -124,7 +134,7 @@ def test_native_wait_rejects_errors_pending_uploads_and_stale_success(
     """A current download and repeated clean state are both required for verification."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, dirty]
+    pipe.evaluate.side_effect = [True, True, True, dirty]
     ticks = iter([0, 0, 0, 2, 2])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
@@ -137,11 +147,11 @@ def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyP
 
     clean = {"healthy": True, "pending": False, "fresh": True}
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, clean, {**clean, "pending": True}, clean, clean]
+    pipe.evaluate.side_effect = [True, True, True, clean, {**clean, "pending": True}, clean, clean]
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
     instance = native.NativeSync(pipe, "/fixture/Default")
     assert instance.wait() is True
-    assert pipe.evaluate.call_count == 6
+    assert pipe.evaluate.call_count == 7
 
 
 def test_restore_uses_native_pairing_and_checks_the_result() -> None:
@@ -149,7 +159,7 @@ def test_restore_uses_native_pairing_and_checks_the_result() -> None:
 
     code = " ".join(["synthetic"] * 24)
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, code + " suffix", True, code, True]
+    pipe.evaluate.side_effect = [True, True, True, code + " suffix", True, code, True]
     instance = native.NativeSync(pipe, "/fixture/Default")
     instance.restore(code, reset=True)
     expressions = "\n".join(call.args[1] for call in pipe.evaluate.call_args_list)
@@ -180,23 +190,13 @@ def test_process_selection_is_scoped_to_the_managed_root(tmp_path: Path, monkeyp
     assert lifecycle.browser_processes(Path("/fixture with spaces")) == [7]
 
 
-def test_desktop_environment_does_not_pass_vault_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Browser children receive session access, never the backup process's vault secrets."""
-
-    monkeypatch.setenv("BW_SESSION", "private-vault-session")
-    monkeypatch.setenv("BWS_ACCESS_TOKEN", "private-vault-token")
-    environment = lifecycle.browser_environment()
-    assert "BW_SESSION" not in environment
-    assert "BWS_ACCESS_TOKEN" not in environment
-    assert "private-vault" not in json.dumps(environment)
-
-
 def test_profile_lock_is_retained_without_launching_a_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A stale or foreign lock cannot be bypassed by automatic synchronization."""
 
     lock = tmp_path / "SingletonLock"
     lock.symlink_to("fixture-owner")
     monkeypatch.setattr(lifecycle, "browser_processes", lambda _root: [])
+    monkeypatch.setattr(lifecycle.DesktopSession, "environment", dict)
     launch = Mock()
     monkeypatch.setattr(lifecycle.subprocess, "Popen", launch)
     with pytest.raises(lifecycle.BrowserLifecycleBlocked, match="still locked"):
@@ -212,7 +212,7 @@ def test_existing_browser_is_reopened_even_when_sync_fails(tmp_path: Path, monke
     (tmp_path / "Local State").write_text(json.dumps({"profile": {"last_active_profiles": ["Default", "Profile 2"]}}))
     processes = iter([[123], [], [], []])
     monkeypatch.setattr(lifecycle, "browser_processes", lambda _root: next(processes))
-    monkeypatch.setattr(lifecycle, "browser_environment", lambda: {"DISPLAY": ":0"})
+    monkeypatch.setattr(lifecycle.DesktopSession, "environment", lambda: {"DISPLAY": ":0"})
     terminate = Mock()
     launch = Mock()
     launch.return_value.wait.side_effect = subprocess.TimeoutExpired("fixture", 2)

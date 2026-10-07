@@ -8,16 +8,12 @@
 # testing, or bootstrap without Git access to the private repository.
 #
 # Keep actual secrets in Bitwarden. This file is for non-secret workstation data.
-desktop:
-  browser: brave
-  gnome:
-    dark_mode: true
-    show_trash: true
-    # Use browser for the selected adapter's desktop entry; [] clears favorites.
-    favorites:
-      - org.gnome.Nautilus.desktop
-      - browser
-      - com.visualstudio.code.desktop
+# General workstation settings and standard development tools inherit the public defaults.
+# Keep maintained release pins in ansible/group_vars/all.yml, not in this private example.
+development:
+  github:
+    # Required non-secret username for the persistent managed-user login.
+    account: "<your-github-username>"
 
 home_environment:
   chezmoi:

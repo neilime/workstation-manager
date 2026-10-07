@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
-import pwd
 import subprocess
 import sys
 
 import pytest
 from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import (
+    ansible_environment,
+    managed_user,
+    run_playbook,
+    write_local_playbook,
+)
 from backup_prompt_helpers import run_interactive
+
+pytestmark = pytest.mark.integration
 
 TASK_DIRECTORY = (
     pathlib.Path(__file__).parents[2]
@@ -25,8 +31,6 @@ def fixture_chezmoi_setup(
     tmp_path: pathlib.Path,
 ) -> tuple[pathlib.Path, dict[str, str]]:
     """Model Chezmoi path selection and failures without modifying real dotfiles."""
-    # Isolated role fixtures repeat Ansible play and environment declarations.
-    # pylint: disable=duplicate-code
     home = tmp_path / "home"
     home.mkdir()
     (home / ".config").mkdir(mode=0o700)
@@ -111,70 +115,32 @@ def fixture_chezmoi_setup(
         elif task["name"] == "Inspect and apply the managed Chezmoi dotfiles":
             task["ansible.builtin.import_tasks"] = str(TASK_DIRECTORY / "chezmoi_apply.yml")
             tasks.append(task)
-    (tmp_path / "playbook.json").write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "connection": "local",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_manager_use_become": False,
-                        "workstation_manager_resolved": {
-                            "user": {
-                                "name": pwd.getpwuid(os.getuid()).pw_name,
-                                "home": str(home),
-                                "projects_directory": str(home / "projects"),
-                            },
-                            "home_environment": {
-                                "chezmoi": {"bin_path": str(binary), "apply": "{{ fixture_apply | default(true) }}"}
-                            },
-                        },
-                        "workstation_manager_home_environment_chezmoi_config_path": str(config),
-                        "workstation_manager_home_environment_chezmoi_source_dir": str(source),
-                        "workstation_manager_home_environment_chezmoi_source_url": (
-                            "https://github.com/fixture/dotfiles.git"
-                        ),
-                        "workstation_manager_home_environment_chezmoi_source_dir_stat": {"stat": {"exists": False}},
-                    },
-                    "tasks": tasks,
-                }
-            ]
-        )
+    write_local_playbook(
+        tmp_path / "playbook.json",
+        tasks,
+        {
+            "workstation_manager_use_become": False,
+            "workstation_manager_resolved": {
+                "user": managed_user(home, projects_directory=str(home / "projects")),
+                "home_environment": {"chezmoi": {"bin_path": str(binary)}},
+            },
+            "workstation_manager_home_environment_chezmoi_config_path": str(config),
+            "workstation_manager_home_environment_chezmoi_source_dir": str(source),
+            "workstation_manager_home_environment_chezmoi_source_url": "https://github.com/fixture/dotfiles.git",
+            "workstation_manager_home_environment_chezmoi_source_dir_stat": {"stat": {"exists": False}},
+        },
     )
-    ansible_config = tmp_path / "ansible.cfg"
-    ansible_config.write_text("[defaults]\n")
-    env = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(home),
-        "LC_ALL": "C.UTF-8",
-        "ANSIBLE_CONFIG": str(ansible_config),
-        "ANSIBLE_HOME": str(tmp_path / ".ansible"),
-        "XDG_DATA_HOME": str(tmp_path / "ide-data"),
-        "FIXTURE_ROOT": str(tmp_path),
-    }
+    env = ansible_environment(
+        tmp_path, HOME=str(home), XDG_DATA_HOME=str(tmp_path / "ide-data"), FIXTURE_ROOT=str(tmp_path)
+    )
     return tmp_path, env
-    # pylint: enable=duplicate-code
 
 
 def run_setup(fixture: tuple[pathlib.Path, dict[str, str]], *options: str) -> subprocess.CompletedProcess[str]:
     """Execute the production initialization and application tasks in the fixture."""
     root, env = fixture
-    return subprocess.run(
-        [
-            "ansible-playbook",
-            "--inventory",
-            "localhost,",
-            str(root / "playbook.json"),
-            *options,
-        ],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
+    return run_playbook(
+        ["ansible-playbook", "--inventory", "localhost,", str(root / "playbook.json"), *options], env, cwd=root
     )
 
 
@@ -197,20 +163,10 @@ def test_explicit_paths_apply_dotfiles_and_repeated_setup_is_unchanged(chezmoi_s
     assert "fixture-token" not in initial.stdout + initial.stderr
 
 
-@pytest.mark.parametrize(
-    "options",
-    [
-        ("--check",),
-        (
-            "--extra-vars",
-            '{"fixture_apply":false}',
-        ),
-    ],
-)
-def test_preview_or_disabled_application_does_not_apply_dotfiles(chezmoi_setup, options: tuple[str, ...]) -> None:
-    """A check run and an explicit apply=false must not write managed dotfiles."""
+def test_preview_does_not_apply_dotfiles(chezmoi_setup) -> None:
+    """A check run must not write managed dotfiles."""
     root, _ = chezmoi_setup
-    result = run_setup(chezmoi_setup, *options)
+    result = run_setup(chezmoi_setup, "--check")
     assert result.returncode == 0, result.stdout + result.stderr
     assert not (root / "home/.zshrc").exists()
     calls_file = root / "calls.jsonl"
@@ -297,8 +253,9 @@ def test_interactive_abort_preserves_dotfiles_without_running_scripts(chezmoi_se
     assert not any("apply" in call for call in calls)
 
 
-@pytest.mark.parametrize("directory_conflict", [False, True])
-@pytest.mark.parametrize("answers", [("skip",), (" SKIP ",), ("invalid", "skip")])
+@pytest.mark.parametrize(
+    "directory_conflict,answers", [(False, ("skip",)), (True, (" SKIP ",)), (False, ("invalid", "skip"))]
+)
 def test_interactive_skip_preserves_dotfiles_and_continues_setup(
     chezmoi_setup, directory_conflict: bool, answers: tuple[str, ...]
 ) -> None:

@@ -6,6 +6,7 @@ VM_NAME ?= workstation-manager-v1
 TOOLING_IMAGE ?= workstation-manager-tooling:local
 TOOLING_IMAGE_PULL ?= 0
 HOST_TEST_WORKERS ?= 2
+TEST_ARGS ?=
 ANSIBLE_TEST_CACHE_DIR ?=
 ANSIBLE_PLAYBOOK_FILES := $(filter-out ansible/inventory.yml,$(wildcard ansible/*.yml))
 FIRST_PARTY_COLLECTION_DIRS := \
@@ -15,7 +16,7 @@ FIRST_PARTY_COLLECTION_DIRS := \
 	ansible/collections/ansible_collections/neilime/workstation_cleanup \
 	ansible/collections/ansible_collections/neilime/workstation_state
 
-.PHONY: help setup tool-shell lint lint-fix check-ansible test test-host test-collections ci
+.PHONY: help setup tool-shell lint lint-fix check-ansible check-collections test test-unit test-integration test-host test-collections ci
 
 help: ## Display help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -60,32 +61,33 @@ lint-fix: ## Execute linting and fix
 check-ansible: ## Run syntax checks inside the tooling container
 	$(call tooling,$(check_ansible_command))
 
-test: test-host test-collections ## Run host tests and collection sanity and unit checks
+test: test-unit test-integration ## Run unit and isolated integration tests
+
+test-unit: ## Run fast host and collection unit tests in one pytest process
+	$(call tooling,$(call pytest_command,unit,-m "not integration"))
+
+test-integration: ## Run isolated Ansible and terminal integration tests
+	$(call tooling,$(call pytest_command,integration,-n "$(HOST_TEST_WORKERS)" -m integration /workspace/e2e-tests/unit))
 
 test-host: ## Run isolated host-tool tests with bounded parallelism
-	$(call tooling,$(test_host_command))
+	$(call tooling,$(call pytest_command,host,-n "$(HOST_TEST_WORKERS)" /workspace/e2e-tests/unit))
 
-test-collections: ## Run collection sanity and unit checks
+test-collections: check-collections ## Run collection sanity and unit checks
+	$(call tooling,$(call pytest_command,collections,$(addprefix /workspace/,$(wildcard $(addsuffix /tests/unit,$(FIRST_PARTY_COLLECTION_DIRS))))))
+
+check-collections: ## Run Ansible plugin and collection sanity checks
 	$(if $(strip $(ANSIBLE_TEST_CACHE_DIR)),@mkdir -p "$(ANSIBLE_TEST_CACHE_DIR)")
 	$(call tooling,$(test_collections_command),$(if $(strip $(ANSIBLE_TEST_CACHE_DIR)),--volume "$(abspath $(ANSIBLE_TEST_CACHE_DIR)):/ansible-test-cache"))
 
 ci: setup ## Run the local CI equivalent
 	$(MAKE) lint-fix
 	$(MAKE) check-ansible
+	$(MAKE) check-collections
 	$(MAKE) test
 
 e2e-up: ## Start the Lima end-to-end test VM
 	$(call check_lima)
-	@set -e; \
-	config_file="$(CURDIR)/e2e-tests/lima-ubuntu.yml"; \
-	runtime_config_file="$$(mktemp "/tmp/workstation-manager-lima-XXXXXX.yml")"; \
-	trap 'rm -f "$$runtime_config_file"' EXIT; \
-	sed 's|location: "."|location: "$(CURDIR)"|' "$$config_file" >"$$runtime_config_file"; \
-	if limactl list --format '{{.Name}}' 2>/dev/null | grep -Fxq "$(VM_NAME)"; then \
-		limactl start --timeout=20m $(VM_NAME); \
-	else \
-		limactl start --timeout=20m -y --containerd=none --name=$(VM_NAME) "$$runtime_config_file"; \
-	fi
+	@"$(CURDIR)/e2e-tests/e2e-up.sh" "$(VM_NAME)"
 
 e2e-setup: ## Run workstation.sh setup inside the Lima end-to-end test VM
 	$(call check_lima)
@@ -138,7 +140,7 @@ define tooling
 		--workdir /workspace \
 		$(2) \
 		"$(TOOLING_IMAGE)" \
-		bash -lc '$(1)'
+		bash -c '$(1)'
 endef
 
 define check_ansible_command
@@ -149,11 +151,11 @@ define check_ansible_command
 		$(ANSIBLE_PLAYBOOK_FILES)
 endef
 
-define test_host_command
+define pytest_command
 	set -e; \
-	python3 -m pytest -q -n "$(HOST_TEST_WORKERS)" -p no:cacheprovider --durations=10 \
-		$(if $(strip $(REPORTS_DIR)),--junitxml="/workspace/$(REPORTS_DIR)/tests/e2e-host-tools.junit.xml") \
-		/workspace/e2e-tests/unit
+	python3 -m pytest -q -p no:cacheprovider --durations=10 \
+		$(if $(strip $(REPORTS_DIR)),--junitxml="/workspace/$(REPORTS_DIR)/tests/$(1).junit.xml") \
+		$(2) $(TEST_ARGS)
 endef
 
 define run_collection_test_command
@@ -162,9 +164,9 @@ define run_collection_test_command
 			"/workspace/$(REPORTS_DIR)/tests/ansible-test-$(1)-$${collection_name}.junit.xml" \
 			"ansible-test-$${collection_name}" \
 			"$(1)" \
-			ansible-test $(1) --python 3.12; \
+			ansible-test $(1) --python "$$(python3 -c "import sys; print(str(sys.version_info.major) + chr(46) + str(sys.version_info.minor))")"; \
 	else \
-		ansible-test $(1) --python 3.12; \
+		ansible-test $(1) --python "$$(python3 -c "import sys; print(str(sys.version_info.major) + chr(46) + str(sys.version_info.minor))")"; \
 	fi
 endef
 
@@ -175,9 +177,6 @@ define test_collections_command
 		cd "/workspace/$$collection_dir"; \
 		collection_name="$$(basename "$$collection_dir")"; \
 		$(call run_collection_test_command,sanity); \
-		if [ -d tests/unit ]; then \
-			$(call run_collection_test_command,units); \
-		fi; \
 	done
 endef
 

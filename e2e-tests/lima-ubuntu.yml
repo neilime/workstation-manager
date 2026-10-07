@@ -9,18 +9,22 @@ video:
 
 # yamllint disable rule:line-length
 images:
-  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img"
+  - location: "https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-amd64.img"
     arch: "x86_64"
 # yamllint enable rule:line-length
 
 ssh:
   localPort: 60022
 
-mountType: "reverse-sshfs"
+# Use Lima's current QEMU mount provider; Ubuntu confines FUSE mounts outside /mnt and home.
+mountType: "9p"
 mounts:
   - location: "."
     mountPoint: "/workspace"
     writable: false
+    9p:
+      # Assertions and local qualification must see edits made on the host.
+      cache: "none"
 
 provision:
   - mode: system
@@ -50,12 +54,15 @@ provision:
         'gdm3 shared/default-x-display-manager select gdm3' \
         'gdm3 gdm3/daemon_name string /usr/sbin/gdm3' \
         | debconf-set-selections
-      apt-get update
-      apt-get install -y --no-install-recommends \
+      # HTTP archive connections can stall long enough to exhaust VM readiness.
+      sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources
+      apt_options=(-o Acquire::Retries=3 -o Acquire::https::Timeout=30)
+      apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
+      apt-get "${apt_options[@]}" install -y --no-install-recommends \
         dconf-cli \
         flatpak \
         gdm3 \
-        gnome-terminal \
+        ptyxis \
         ubuntu-desktop-minimal
 
       netplan generate
@@ -64,7 +71,6 @@ provision:
 
       cat >/etc/gdm3/custom.conf <<EOF
       [daemon]
-      WaylandEnable=false
       AutomaticLoginEnable=true
       AutomaticLogin=$desktop_user
 
@@ -125,6 +131,13 @@ probes:
       systemctl is-active --quiet gdm3
       gnome_shell_pid="$(pgrep --euid "$desktop_user" --oldest --exact gnome-shell)"
       test -n "$gnome_shell_pid"
+      graphical_session=false
+      for session_id in $(loginctl list-sessions --no-legend | awk -v user="$desktop_user" '$3 == user {print $1}'); do
+        if [ "$(loginctl show-session "$session_id" -p Type --value)" = wayland ]; then
+          graphical_session=true
+        fi
+      done
+      test "$graphical_session" = true
       tr '\0' '\n' <"/proc/$gnome_shell_pid/environ" \
         | grep -F '/var/lib/flatpak/exports/share' >/dev/null
       test "$(gsettings get org.gnome.desktop.session idle-delay)" = "uint32 0"

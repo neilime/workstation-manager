@@ -32,8 +32,9 @@
       {{
         'https://github.com/twpayne/chezmoi/releases/download/v'
         ~ workstation_manager_resolved.home_environment.chezmoi.version
-        ~ '/chezmoi-linux-'
+        ~ '/chezmoi_' ~ workstation_manager_resolved.home_environment.chezmoi.version ~ '_linux_'
         ~ workstation_manager_home_environment_chezmoi_architecture
+        ~ '.tar.gz'
       }}
     workstation_manager_home_environment_chezmoi_template_data: >-
       {{
@@ -107,28 +108,8 @@
       Chezmoi bootstrap currently supports only amd64 and arm64 Linux targets,
       but the detected architecture is {{ ansible_facts['architecture'] }}.
 
-- name: Check whether Chezmoi is already installed
-  ansible.builtin.command:
-    argv:
-      - "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
-      - --version
-  register: workstation_manager_home_environment_chezmoi_version
-  changed_when: false
-  failed_when: false
-
-- name: Install the pinned Chezmoi binary
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.get_url:
-    url: "{{ workstation_manager_home_environment_chezmoi_download_url }}"
-    dest: "{{ workstation_manager_resolved.home_environment.chezmoi.bin_path }}"
-    owner: root
-    group: root
-    mode: "0755"
-  when:
-    - >-
-      workstation_manager_home_environment_chezmoi_version.rc != 0
-      or workstation_manager_resolved.home_environment.chezmoi.version
-      not in workstation_manager_home_environment_chezmoi_version.stdout
+- name: Install verified Chezmoi release
+  ansible.builtin.import_tasks: chezmoi_install.yml
 
 - name: Ensure the managed Chezmoi config directory exists
   become: "{{ workstation_manager_use_become }}"
@@ -202,6 +183,4 @@
 
 - name: Inspect and apply the managed Chezmoi dotfiles
   ansible.builtin.import_tasks: chezmoi_apply.yml
-  when:
-    - workstation_manager_resolved.home_environment.chezmoi.apply
-    - not ansible_check_mode
+  when: not ansible_check_mode

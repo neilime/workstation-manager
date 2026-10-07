@@ -7,13 +7,13 @@ import os
 import pathlib
 import selectors
 import subprocess
-import sys
 import tarfile
 from time import monotonic
 
 import pytest
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
 
-WORKSPACE = pathlib.Path(__file__).parents[2]
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(name="archive_fixture")
@@ -35,40 +35,23 @@ def archive_fixture_builder(tmp_path):
         (source / directory / "excluded.txt").write_text("synthetic-excluded-marker\n")
     destination = tmp_path / "backup.tar.gz"
     playbook = tmp_path / "playbook.json"
-    playbook.write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "gather_facts": False,
-                    "vars": {"ansible_python_interpreter": sys.executable},
-                    "tasks": [
-                        {
-                            "name": "Create backup archive",
-                            "neilime.workstation_backup.archive_with_progress": {
-                                "path": [str(source)],
-                                "dest": str(destination),
-                                "exclusion_patterns": ["*/.git/*", "*/node_modules/*"],
-                            },
-                        }
-                    ],
-                }
-            ]
-        )
+    write_local_playbook(
+        playbook,
+        [
+            {
+                "name": "Create backup archive",
+                "neilime.workstation_backup.archive_with_progress": {
+                    "path": [str(source)],
+                    "dest": str(destination),
+                    "exclusion_patterns": ["*/.git/*", "*/node_modules/*"],
+                },
+            }
+        ],
+        {},
     )
-    configuration = tmp_path / "ansible.cfg"
-    configuration.write_text("[defaults]\n")
-    environment = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(tmp_path),
-        "ANSIBLE_HOME": str(tmp_path / ".ansible"),
-        "ANSIBLE_CONFIG": str(configuration),
-        "ANSIBLE_COLLECTIONS_PATH": f"{WORKSPACE / 'ansible/collections'}:"
-        + os.environ.get("ANSIBLE_COLLECTIONS_PATH", "/opt/ansible/collections"),
-        "PYTHONUNBUFFERED": "1",
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_NOSYSTEM": "1",
-    }
+    environment = ansible_environment(
+        tmp_path, PYTHONUNBUFFERED="1", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"
+    )
     return playbook, destination, environment
 
 
@@ -131,7 +114,7 @@ def test_preview_and_sensitive_tasks_do_not_display_progress(archive_fixture, ch
     command = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)]
     if check:
         command.append("--check")
-    result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60, check=False)
+    result = run_playbook(command, environment)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Creating backup archive:" not in result.stdout
     assert destination.exists() is not check
@@ -146,14 +129,7 @@ def test_archive_failure_remains_fatal(archive_fixture):
         destination.parent / "missing/backup.tar.gz"
     )
     playbook.write_text(json.dumps(content))
-    result = subprocess.run(
-        ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)],
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
+    result = run_playbook(["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)], environment)
     assert result.returncode != 0
     assert "Creating backup archive: preparing files" in result.stdout
     assert "FAILED!" in result.stdout
@@ -166,7 +142,7 @@ def test_repeat_backup_reports_no_change_and_keeps_a_valid_archive(archive_fixtu
     playbook, destination, environment = archive_fixture
     command = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook)]
     for expected_changes in (1, 0):
-        result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60, check=False)
+        result = run_playbook(command, environment)
         assert result.returncode == 0, result.stdout + result.stderr
         assert f"changed={expected_changes}" in result.stdout
         assert "MiB written, elapsed" in result.stdout

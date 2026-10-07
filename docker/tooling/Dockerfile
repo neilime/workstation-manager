@@ -1,7 +1,7 @@
 ARG TOOLING_UID=1000
 ARG TOOLING_GID=1000
 
-FROM python:3.12-slim
+FROM ubuntu:26.04
 
 ARG TOOLING_UID
 ARG TOOLING_GID
@@ -20,30 +20,33 @@ RUN apt-get update && \
     git \
     locales \
     openssh-client \
-    procps && \
+    procps \
+    python3 \
+    python3-venv \
+    sudo-rs && \
     sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen && \
     rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --gid "${TOOLING_GID}" tooling && \
+RUN if id ubuntu >/dev/null 2>&1; then userdel --remove ubuntu; fi && \
+    groupadd --gid "${TOOLING_GID}" tooling && \
     useradd --uid "${TOOLING_UID}" --gid "${TOOLING_GID}" --create-home --shell /bin/bash tooling && \
     mkdir -p /workspace && \
     chown tooling:tooling /workspace
 
-COPY docker/tooling/requirements.txt /opt/tooling/requirements.txt
-COPY e2e-tests/requirements.txt /opt/tooling/e2e-requirements.txt
-RUN pip install --no-cache-dir \
-    -r /opt/tooling/requirements.txt \
-    -r /opt/tooling/e2e-requirements.txt
+ENV PATH="/opt/tooling/venv/bin:${PATH}"
+COPY ansible/requirements.txt /opt/ansible/requirements.txt
+COPY ansible/ubuntu-version /opt/ansible/ubuntu-version
+COPY docker/tooling/requirements.txt /opt/docker/tooling/requirements.txt
+COPY e2e-tests/requirements.txt /opt/e2e-tests/requirements.txt
+RUN . /etc/os-release && test "$VERSION_ID" = "$(cat /opt/ansible/ubuntu-version)" && \
+    python3 -m venv /opt/tooling/venv && \
+    pip install --no-cache-dir \
+    -r /opt/docker/tooling/requirements.txt \
+    -r /opt/e2e-tests/requirements.txt
 
-COPY docker/tooling/requirements.yml /opt/ansible/requirements.yml
-COPY ansible/collections/requirements.yml /opt/ansible/production-requirements.yml
-RUN python -c 'import pathlib, sys, yaml; \
-    paths = ["requirements.yml", "production-requirements.yml"]; \
-    manifests = [yaml.safe_load((pathlib.Path("/opt/ansible") / path).read_text()) for path in paths]; \
-    names = [sorted(item["name"] for item in manifest["collections"]) for manifest in manifests]; \
-    sys.exit(0 if names[0] == names[1] else "Update docker/tooling/requirements.yml to match production collections")' && \
-    ansible-galaxy collection install -r /opt/ansible/requirements.yml -p /opt/ansible/collections
+COPY ansible/collections/requirements.yml /opt/ansible/requirements.yml
+RUN ansible-galaxy collection install -r /opt/ansible/requirements.yml -p /opt/ansible/collections
 
 HEALTHCHECK --interval=5m --timeout=10s --start-period=30s --retries=3 CMD ["python", "--version"]
 

@@ -21,15 +21,18 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     BrowserPipe,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (  # noqa: E402
-    browser_environment,
     browser_processes,
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (  # noqa: E402
     _ENABLE_EVERYTHING,
+    _SETTINGS_BRIDGE,
     _SNAPSHOT,
     _START,
     NativeSync,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
+    DesktopSession,
 )
 
 # pylint: enable=wrong-import-position
@@ -137,10 +140,7 @@ def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
 
     pairing = pipe.evaluate(
         native.settings,
-        """(async () => {
-      const {sendWithPromise} = await import('chrome://resources/js/cr.js');
-      return await sendWithPromise('SyncSetupGetSyncCode');
-    })()""",
+        "window.workstationSyncSettings.sendWithPromise('SyncSetupGetSyncCode')",
     )
     assert isinstance(pairing, str) and len(pairing.split()) == 25
     code = " ".join(pairing.split()[:24])
@@ -149,7 +149,7 @@ def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
     pipe.evaluate(
         native.settings,
         """(async () => {
-      const {sendWithPromise} = await import('chrome://resources/js/cr.js');
+      const {sendWithPromise} = window.workstationSyncSettings;
       void sendWithPromise('SyncSetupSetSyncCode', PAIRING).catch(() => {});
       return true;
     })()""".replace("PAIRING", json.dumps(pairing)),
@@ -161,13 +161,70 @@ def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
     return code
 
 
+def settings_callbacks(pipe: BrowserPipe) -> None:
+    """Route private requests without replacing the bundled page's own callbacks."""
+
+    page = pipe.page("brave://version")
+    pipe.evaluate(
+        page,
+        """(() => {
+      window.fixtureResponses = [];
+      window.fixtureEvents = [];
+      window.fixtureRequests = [];
+      window.cr = {
+        webUIResponse: (...args) => window.fixtureResponses.push(args),
+        webUIListenerCallback: (...args) => window.fixtureEvents.push(args)
+      };
+      chrome.send = (method, args) => {
+        if (method === 'throw') throw new Error('synthetic-private-error');
+        window.fixtureRequests.push([method, args]);
+      };
+      return true;
+    })()""",
+    )
+    assert pipe.evaluate(page, _SETTINGS_BRIDGE) is True
+    # Reusing an initialized page must retain pending requests and listeners.
+    pipe.evaluate(page, "window.fixtureBridge = window.workstationSyncSettings; true")
+    assert pipe.evaluate(page, _SETTINGS_BRIDGE) is True
+    assert (
+        pipe.evaluate(
+            page,
+            """(async () => {
+      const bridge = window.workstationSyncSettings;
+      if (bridge !== window.fixtureBridge) return false;
+      const first = bridge.sendWithPromise('first', 'synthetic-argument');
+      const second = bridge.sendWithPromise('second').catch(error => error.message);
+      const [[method, [firstId, argument]], [, [secondId]]] = window.fixtureRequests;
+      cr.webUIResponse('page-owned-request', true, 'page-owned-response');
+      cr.webUIResponse(secondId, false, 'synthetic-private-rejection');
+      cr.webUIResponse(firstId, true, 'synthetic-result');
+      const thrown = await bridge.sendWithPromise('throw').catch(error => error.message);
+      let observed = 0;
+      const listener = bridge.addWebUiListener('fixture-event', value => { observed += value; });
+      cr.webUIListenerCallback('other-event', 10);
+      cr.webUIListenerCallback('fixture-event', 1);
+      const removed = bridge.removeWebUiListener(listener);
+      cr.webUIListenerCallback('fixture-event', 2);
+      return method === 'first' && argument === 'synthetic-argument' && firstId !== secondId
+        && await first === 'synthetic-result' && await second === 'Native Sync request rejected'
+        && thrown === 'Native Sync request failed' && removed && observed === 1
+        && JSON.stringify(window.fixtureResponses) ===
+          JSON.stringify([['page-owned-request', true, 'page-owned-response']])
+        && JSON.stringify(window.fixtureEvents) ===
+          JSON.stringify([['other-event', 10], ['fixture-event', 1], ['fixture-event', 2]]);
+    })()""",
+        )
+        is True
+    )
+
+
 def sync_selection(pipe: BrowserPipe, page: str) -> None:
     """Exercise the production selection code against native-shaped WebUI callbacks."""
 
     pipe.evaluate(
         page,
-        """(async () => {
-      const {webUIListenerCallback, webUIResponse} = await import('chrome://resources/js/cr.js');
+        """(() => {
+      const {webUIListenerCallback, webUIResponse} = window.cr;
       window.fixturePrefs = {syncAllDataTypes: false, bookmarksSynced: true, preferencesSynced: false};
       chrome.send = (method, args) => {
         if (method === 'SyncPrefsDispatch')
@@ -252,10 +309,11 @@ def main() -> None:
             "--restore-last-session",
             "--sync-url=http://127.0.0.1:1",
         ]
-        environment = browser_environment()
+        environment = DesktopSession.environment()
         with BrowserPipe(arguments, environment) as pipe:
             native = NativeSync(pipe, directory + "/Default")
             assert len(native.code().split()) == 24
+            settings_callbacks(pipe)
             pipe.call("Target.createTarget", {"url": "data:text/plain,workstation-session-fixture"})
             diagnostics(pipe, pipe.page("brave://sync-internals"))
             code = pending_chain(pipe, native)

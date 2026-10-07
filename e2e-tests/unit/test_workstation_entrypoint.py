@@ -7,7 +7,6 @@ import os
 import pathlib
 import pty
 import select
-import shlex
 import shutil
 import signal
 import subprocess
@@ -17,7 +16,12 @@ import termios
 import time
 import unittest
 
-from entrypoint_test_helpers import controlling_tty_exec_python, sudo_passthrough_script
+from entrypoint_test_helpers import (
+    controlling_tty_exec_python,
+    entrypoint_source_with_mock_controller,
+    sudo_passthrough_script,
+    terminal_command,
+)
 
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
 
@@ -28,7 +32,7 @@ class EntrypointSourceTests(unittest.TestCase):
     def test_piped_source_does_not_resolve_the_shell_executable(self) -> None:
         """Both shell names and absolute interpreter paths must reject the binary."""
 
-        definitions = ENTRYPOINT_PATH.read_text().rsplit('main "$@"', 1)[0]
+        definitions = entrypoint_source_with_mock_controller().rsplit('main "$@"', 1)[0]
         for interpreter in ("sh", "/bin/sh"):
             with self.subTest(interpreter=interpreter):
                 result = subprocess.run(
@@ -46,7 +50,7 @@ class EntrypointSourceTests(unittest.TestCase):
     def test_shell_quoting_preserves_literal_values(self) -> None:
         """Generated assignments must retain quotes, whitespace, and shell metacharacters."""
 
-        definitions = ENTRYPOINT_PATH.read_text().rsplit('main "$@"', 1)[0]
+        definitions = entrypoint_source_with_mock_controller().rsplit('main "$@"', 1)[0]
         for value in (
             "",
             "a'b",
@@ -70,10 +74,10 @@ class EntrypointSourceTests(unittest.TestCase):
     def test_piped_local_source_uses_the_configured_checkout(self) -> None:
         """A local repository override must prepare its source without downloading it."""
 
-        definitions = ENTRYPOINT_PATH.read_text().rsplit('main "$@"', 1)[0]
+        definitions = entrypoint_source_with_mock_controller().rsplit('main "$@"', 1)[0]
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            shutil.copyfile(ENTRYPOINT_PATH, fixture / "workstation.sh")
+            (fixture / "workstation.sh").write_text(entrypoint_source_with_mock_controller())
             output = fixture / "definitions.sh"
             result = subprocess.run(
                 ["/bin/sh", "-s"],
@@ -108,7 +112,7 @@ class TerminalPromptTests(unittest.TestCase):
         return output
 
     def _write_prompt_fixture(self, fixture: pathlib.Path) -> pathlib.Path:
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         wrapper = fixture / "wrapper-definitions.sh"
         wrapper.write_text("\n".join(definitions) + "\n")
@@ -216,7 +220,7 @@ class AnsibleTargetContextTests(unittest.TestCase):
 
     def test_actions_preserve_resolved_home_and_check_mode(self) -> None:
         """Every action must preserve the target context when passwd uses a custom home."""
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -228,7 +232,7 @@ class AnsibleTargetContextTests(unittest.TestCase):
                 "sudo": (
                     "#!/bin/sh\nshift\n"
                     "export TEST_CONTROLLER_PRIVILEGED=1\n"
-                    "unset WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS SSH_AUTH_SOCK\n"
+                    "unset WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS WORKSTATION_MANAGER_RESTORE_ARCHIVE SSH_AUTH_SOCK\n"
                     'exec "$@"\n'
                 ),
                 "ansible-pull": (
@@ -242,6 +246,7 @@ class AnsibleTargetContextTests(unittest.TestCase):
                     '    "privileged": os.environ.get("TEST_CONTROLLER_PRIVILEGED"),\n'
                     '    "extra_paths": os.environ.get("WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS"),\n'
                     '    "ssh_auth_sock": os.environ.get("SSH_AUTH_SOCK"),\n'
+                    '    "restore_archive": os.environ.get("WORKSTATION_MANAGER_RESTORE_ARCHIVE"),\n'
                     "}))\n"
                 ),
             }
@@ -264,6 +269,7 @@ class AnsibleTargetContextTests(unittest.TestCase):
                             "TEST_PROCESS_USER": process_user,
                             "TEST_TARGET_HOME": target_home,
                             "WORKSTATION_MANAGER_BACKUP_EXTRA_PATHS": "~/notes:/mnt/project files",
+                            "WORKSTATION_MANAGER_RESTORE_ARCHIVE": "/mnt/backup's archive.tar.gz",
                             "SSH_AUTH_SOCK": "/tmp/fixture-ssh-agent",
                         }
                         if process_user == "root":
@@ -277,7 +283,7 @@ class AnsibleTargetContextTests(unittest.TestCase):
                                 "prepare_action_dependencies() { :; }\n"
                                 "prompt_for_bitwarden_credentials_if_needed() { :; }\n"
                                 "prompt_for_backup_output_dir_if_needed() { :; }\n"
-                                'run_"$2" "$3"',
+                                'run_action "$2" "$3"',
                                 "entrypoint-test",
                                 str(wrapper),
                                 action,
@@ -300,6 +306,10 @@ class AnsibleTargetContextTests(unittest.TestCase):
                         self.assertEqual(invocation["ssh_auth_sock"], "/tmp/fixture-ssh-agent")
                         if action == "backup":
                             self.assertEqual(invocation["extra_paths"], "~/notes:/mnt/project files")
+                        if action == "setup":
+                            self.assertEqual(invocation["restore_archive"], "/mnt/backup's archive.tar.gz")
+                        else:
+                            self.assertIsNone(invocation["restore_archive"])
                         self.assertIn(f"ansible/{action}.yml", invocation["args"])
                         self.assertEqual("--check" in invocation["args"], dry_run == "1")
                         self.assertEqual("--diff" in invocation["args"], dry_run == "1")
@@ -311,7 +321,7 @@ class RepositorySourceTests(unittest.TestCase):
     def test_local_entrypoint_defaults_to_local_repo_and_branch(self) -> None:
         """Without an explicit repository URL, the entrypoint should use its own checkout and current branch."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -363,7 +373,7 @@ class RepositorySourceTests(unittest.TestCase):
     def test_local_repository_requirements_use_local_manifest(self) -> None:
         """A local repository URL should install collection requirements from the local checkout."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -408,7 +418,7 @@ class RepositorySourceTests(unittest.TestCase):
     def test_local_repository_runs_playbook_from_worktree(self) -> None:
         """A local repository source should run ansible-playbook from the working tree."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -467,7 +477,7 @@ class RepositorySourceTests(unittest.TestCase):
     def test_run_ansible_pull_exports_interactive_tty_path(self) -> None:
         """Interactive runs should forward the resolved TTY path to Ansible."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -528,7 +538,7 @@ class RepositorySourceTests(unittest.TestCase):
     def test_interactive_terminal_path_resolves_concrete_device(self) -> None:
         """The resolved TTY must be a concrete device the relayed setup can reopen."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -571,7 +581,7 @@ class BitwardenRetryTests(unittest.TestCase):
     def test_retry_helper_reprompts_after_rejected_email_password(self) -> None:
         """A rejected interactive login should prompt again and rerun with the replacement values."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -652,7 +662,7 @@ class BitwardenRetryTests(unittest.TestCase):
     def test_script_capture_uses_one_outer_sudo_and_marks_runner_to_skip_nested_sudo(self) -> None:
         """Interactive capture must elevate before allocating its relay terminal."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -703,26 +713,19 @@ class BitwardenRetryTests(unittest.TestCase):
                 command.chmod(0o700)
 
             result = subprocess.run(
-                [
-                    shutil.which("script") or "script",
-                    "--quiet",
-                    "--return",
-                    "--command",
-                    shlex.join(
-                        [
-                            "/bin/sh",
-                            "-c",
-                            '. "$1"\n'
-                            'TARGET_USER="fixture"\n'
-                            'TARGET_USER_HOME="$HOME"\n'
-                            'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
-                            "run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n",
-                            "entrypoint-test",
-                            str(wrapper),
-                        ]
-                    ),
-                    os.devnull,
-                ],
+                terminal_command(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        '. "$1"\n'
+                        'TARGET_USER="fixture"\n'
+                        'TARGET_USER_HOME="$HOME"\n'
+                        'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
+                        "run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n",
+                        "entrypoint-test",
+                        str(wrapper),
+                    ]
+                ),
                 env={
                     "PATH": f"{fixture}:/usr/bin:/bin",
                     "HOME": temporary_dir,
@@ -751,10 +754,10 @@ class BitwardenRetryTests(unittest.TestCase):
 class GitHubCliAuthenticationTests(unittest.TestCase):
     """Prompt for GitHub CLI authentication with supported flags."""
 
-    def test_prompt_uses_https_login_without_skip_ssh_key_flag(self) -> None:
-        """Private override auth should not depend on the removed skip-ssh-key flag."""
+    def test_prompt_configures_https_login_and_git_credentials(self) -> None:
+        """Private repository access authenticates over HTTPS and configures Git credentials."""
 
-        definitions = ENTRYPOINT_PATH.read_text().splitlines()
+        definitions = entrypoint_source_with_mock_controller().splitlines()
         self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)

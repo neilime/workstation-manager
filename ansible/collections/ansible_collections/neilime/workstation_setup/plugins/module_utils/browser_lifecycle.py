@@ -22,43 +22,15 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_seed import (
     _browser_process_arguments,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (
+    DesktopSession,
+)
 
 _BROWSER_NAMES = frozenset(("brave", "brave-browser", "brave-browser-stable"))
-_DESKTOP_VARIABLES = frozenset(
-    ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
-)
 
 
 class BrowserLifecycleBlocked(ValueError):
     """The initial browser close could not complete before any approved writes."""
-
-
-def browser_environment() -> dict[str, str]:
-    """Use the managed user's session and keyring, without passing vault credentials."""
-
-    account = pwd.getpwuid(os.geteuid())
-    environment = {
-        "HOME": account.pw_dir,
-        "USER": account.pw_name,
-        "LOGNAME": account.pw_name,
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "LANG": "C.UTF-8",
-    }
-    environment.update({key: value for key, value in os.environ.items() if key in _DESKTOP_VARIABLES})
-    for process in Path("/proc").iterdir():
-        try:
-            if not process.name.isdigit() or process.stat().st_uid != os.geteuid():
-                continue
-            if (process / "comm").read_text().strip() != "gnome-shell":
-                continue
-            for entry in (process / "environ").read_bytes().split(b"\0"):
-                key, separator, value = entry.partition(b"=")
-                if separator and key.decode(errors="replace") in _DESKTOP_VARIABLES:
-                    environment[key.decode()] = value.decode()
-            break
-        except (FileNotFoundError, ProcessLookupError, PermissionError):
-            continue
-    return environment
 
 
 def browser_processes(root: Path) -> list[int]:
@@ -150,7 +122,7 @@ def closed_browser(user_data_dir: str) -> Iterator[tuple[str, dict[str, str]]]:
         raise ValueError("Browser automation requires an absolute, unlinked profile root")
     executable = shutil.which("brave-browser") or shutil.which("brave-browser-stable")
     executable = executable or "brave-browser"
-    environment = browser_environment()
+    environment = DesktopSession.environment()
     running = browser_processes(root)
     if running and not (environment.get("DISPLAY") or environment.get("WAYLAND_DISPLAY")):
         raise BrowserLifecycleBlocked("The desktop session is unavailable; Brave cannot be safely reopened")

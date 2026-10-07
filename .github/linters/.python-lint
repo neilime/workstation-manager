@@ -12,6 +12,13 @@ max-line-length=120
 # Super-Linter does not install the project's Python dependencies.
 disable=import-error
 
+[TYPECHECK]
+
+# The repository's ansible/ directory shadows the installed package during
+# Super-Linter's static analysis; ignore both namespaces so their imports do not
+# raise no-name-in-module. ansible-test sanity validates these imports for real.
+ignored-modules=ansible,ansible_collections
+
 [IMPORTS]
 
 # The local ansible/ tree is configuration, not the installed runtime package.

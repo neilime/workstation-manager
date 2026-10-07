@@ -1,0 +1,56 @@
+---
+- name: Configure native VS Code delivery
+  when: "'code' in workstation_manager_resolved.development.editor_packages"
+  block:
+    - name: Install the Microsoft APT signing key
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.get_url:
+        url: https://packages.microsoft.com/keys/microsoft.asc
+        dest: /etc/apt/keyrings/microsoft.asc
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure the stable VS Code repository
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.deb822_repository:
+        name: vscode
+        uris: https://packages.microsoft.com/repos/code
+        suites: stable
+        components: main
+        architectures: "{{ workstation_manager_native_arch }}"
+        signed_by: /etc/apt/keyrings/microsoft.asc
+      register: workstation_manager_vscode_repository
+
+    - name: Select Microsoft's code package
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.copy:
+        dest: /etc/apt/preferences.d/workstation-manager-code
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          Package: code
+          Pin: origin "packages.microsoft.com"
+          Pin-Priority: 9999
+
+- name: Install declared native editor packages
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: "{{ workstation_manager_resolved.development.editor_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ 0 if workstation_manager_vscode_repository is changed else workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Verify the native VS Code command
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv: [/usr/bin/code, --version]
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  changed_when: false
+  when:
+    - "'code' in workstation_manager_resolved.development.editor_packages"
+    - not ansible_check_mode

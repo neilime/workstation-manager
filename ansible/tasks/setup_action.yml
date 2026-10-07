@@ -31,7 +31,7 @@
   ansible.builtin.import_role:
     name: neilime.workstation_restore.state
 
-- name: Apply BleachBit preset schedule
+- name: Install BleachBit cleanup and its weekly schedule
   ansible.builtin.import_role:
     name: neilime.workstation_setup.bleachbit
   when: "'bleachbit' in workstation_manager_resolved.system.packages.apt"
@@ -39,6 +39,17 @@
 - name: Apply selected browser adapter
   ansible.builtin.include_role:
     name: "neilime.workstation_setup.browser_{{ workstation_manager_resolved.desktop.browser }}"
+
+- name: Remove Snap after application setup and verified data preservation
+  become: "{{ workstation_manager_use_become }}"
+  neilime.workstation_setup.snap_removal:
+    state: absent
+  register: workstation_manager_snap_removal
+
+- name: Report the verified Snap recovery archive
+  ansible.builtin.debug:
+    msg: "Snap data recovery archive: {{ workstation_manager_snap_removal.backup_archive }}"
+  when: workstation_manager_snap_removal.backup_archive | length > 0
 
 - name: Apply GNOME desktop preferences
   ansible.builtin.import_role:
@@ -51,6 +62,11 @@
 - name: Request VS Code settings sync flow
   ansible.builtin.import_role:
     name: neilime.workstation_setup.editor_settings_sync
+
+- name: Verify persistent GitHub authentication after applying dotfiles
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.development_tooling
+    tasks_from: github_auth
 
 - name: Apply managed state markers
   ansible.builtin.import_role:

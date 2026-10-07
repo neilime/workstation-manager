@@ -1,0 +1,28 @@
+---
+- name: Install declared pinned GitHub CLI extensions
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.github_extensions:
+    home: "{{ workstation_manager_resolved.user.home }}"
+    record: "{{ workstation_manager_resolved.user.state_dir }}/gh-extensions.json"
+    extensions: "{{ workstation_manager_resolved.development.github.extensions }}"
+  vars:
+    workstation_manager_development_github_token: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
+  environment: >-
+    {{
+      {
+        'PATH': '/usr/bin:/bin',
+        'HOME': workstation_manager_resolved.user.home,
+        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config',
+        'XDG_DATA_HOME': workstation_manager_resolved.user.home ~ '/.local/share',
+        'GH_CONFIG_DIR': workstation_manager_resolved.user.home ~ '/.config/gh'
+      } | combine(
+        {'GH_TOKEN': workstation_manager_development_github_token}
+        if workstation_manager_development_github_token | length > 0 else {}
+      )
+    }}
+  no_log: "{{ workstation_manager_development_github_token | length > 0 }}"
+  when:
+    - workstation_manager_resolved.development.github.extensions | length > 0
+    - not ansible_check_mode

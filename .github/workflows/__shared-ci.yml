@@ -107,8 +107,8 @@ jobs:
       - name: Run Ansible syntax checks
         run: REPORTS_DIR=.reports make check-ansible
 
-      - name: Run Ansible sanity and unit tests
-        run: REPORTS_DIR=.reports make test-collections
+      - name: Run Ansible sanity checks
+        run: REPORTS_DIR=.reports make check-collections
 
       - name: Parse static reports
         if: ${{ always() }}
@@ -119,7 +119,7 @@ jobs:
           path-mapping: /workspace:.
 
   static-host:
-    name: Host tests
+    name: Unit and integration tests
     runs-on: ubuntu-latest
     needs: [build-tooling-image]
     permissions:
@@ -148,15 +148,15 @@ jobs:
       - name: Setup
         run: make setup
 
-      - name: Run host tool unit tests
-        run: REPORTS_DIR=.reports make test-host
+      - name: Run unit and isolated integration tests
+        run: REPORTS_DIR=.reports make test
 
       - name: Parse host reports
         if: ${{ always() }}
         uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@3a27d31e9ccefbe9609cc9165017ed100ff34a22 # 0.38.0
         with:
-          report-paths: .reports/tests/e2e-host-tools.junit.xml
-          report-name: Host Validation
+          report-paths: .reports/tests/unit.junit.xml,.reports/tests/integration.junit.xml
+          report-name: Unit and Integration Validation
           path-mapping: /workspace:.
 
   e2e:

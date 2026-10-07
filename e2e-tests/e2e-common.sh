@@ -69,7 +69,7 @@ resolve_e2e_target_user_home() {
 }
 
 resolve_e2e_instance_dir() {
-	printf '%s\n' "$HOME/.lima/$E2E_VM_NAME"
+	printf '%s\n' "${LIMA_HOME:-$HOME/.lima}/$E2E_VM_NAME"
 }
 
 resolve_e2e_qmp_socket_path() {
@@ -251,21 +251,24 @@ restart_e2e_desktop_session() {
 	return 1
 }
 
-wait_for_e2e_user_process() {
-	local process_name="$1"
+wait_for_e2e_clipboard_extension() {
 	local desktop_user_id=""
+	local extension_info=""
 
 	desktop_user_id="$(run_e2e_lima_control_command 10 id -u | tr -d '\r')"
-
 	for _attempt in $(seq 1 30); do
-		if run_e2e_lima_control_command 10 \
-			pgrep --euid "$desktop_user_id" --exact "$process_name" >/dev/null; then
+		if extension_info="$(run_e2e_lima_control_command 10 env \
+			LC_ALL=C \
+			XDG_RUNTIME_DIR="/run/user/$desktop_user_id" \
+			DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$desktop_user_id/bus" \
+			gnome-extensions info clipboard-indicator@tudmotu.com)" &&
+			[[ "$extension_info" == *"State: ACTIVE"* ]]; then
 			return 0
 		fi
 		sleep 2
 	done
 
-	printf '%s\n' "$process_name did not start in the graphical user session" >&2
+	printf '%s\n' "Clipboard Indicator did not become active in the graphical user session" >&2
 	return 1
 }
 
