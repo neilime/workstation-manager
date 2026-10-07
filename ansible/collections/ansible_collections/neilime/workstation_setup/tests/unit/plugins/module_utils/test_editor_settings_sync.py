@@ -33,13 +33,13 @@ def test_build_sync_state_dir_rejects_empty_user_home() -> None:
 
 
 def test_has_vscode_editor_package_detects_managed_vscode() -> None:
-    """The managed editor set should recognize the VS Code Flatpak package id."""
+    """The managed editor set should recognize the native VS Code package."""
 
     # Arrange
     planner = VscodeSettingsSyncPlanner()
 
     # Act
-    has_vscode = planner.has_vscode_editor_package(["com.visualstudio.code", "other.editor"])
+    has_vscode = planner.has_vscode_editor_package(["code", "other.editor"])
 
     # Assert
     assert has_vscode is True
@@ -53,7 +53,7 @@ def test_should_request_sync_returns_true_when_setup_can_launch_the_cli_flow() -
 
     # Act
     should_request = planner.should_request_sync(
-        editor_packages=["com.visualstudio.code"],
+        editor_packages=["code"],
         conditions={
             "sync_state_exists": False,
             "has_desktop_session": True,
@@ -88,7 +88,7 @@ def test_should_request_sync_returns_false_when_preconditions_fail(
 
     # Act
     should_request = planner.should_request_sync(
-        editor_packages=["com.visualstudio.code"],
+        editor_packages=["code"],
         conditions={
             "sync_state_exists": sync_state_exists,
             "has_desktop_session": has_desktop_session,
@@ -109,7 +109,7 @@ def test_should_remind_sync_returns_true_when_setup_should_show_guidance() -> No
 
     # Act
     should_remind = planner.should_remind_sync(
-        editor_packages=["com.visualstudio.code"],
+        editor_packages=["code"],
         conditions={
             "sync_state_exists": False,
             "interactive": True,
@@ -141,7 +141,7 @@ def test_should_remind_sync_returns_false_when_preconditions_fail(
 
     # Act
     should_remind = planner.should_remind_sync(
-        editor_packages=["com.visualstudio.code"],
+        editor_packages=["code"],
         conditions={
             "sync_state_exists": sync_state_exists,
             "interactive": interactive,

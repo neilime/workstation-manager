@@ -3,72 +3,41 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
-import sys
 
 import pytest
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
 
-COLLECTIONS_PATH = pathlib.Path(__file__).parents[2] / "ansible/collections"
+pytestmark = pytest.mark.integration
 
 
 def apply(root: pathlib.Path, *, check: bool = False, editor_packages=None) -> subprocess.CompletedProcess[str]:
-    """Configure only the fixture's editor settings, without launching Flatpak or Zsh."""
+    """Configure only the fixture's editor settings, without launching the editor or Zsh."""
 
-    # Isolated role fixtures repeat Ansible play and environment declarations.
-    # pylint: disable=duplicate-code
-    (root / "ansible.cfg").write_text("[defaults]\n")
     playbook = root / "playbook.json"
-    playbook.write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "connection": "local",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_manager_use_become": False,
-                        "workstation_manager_resolved": {
-                            "user": {"name": "fixture-user", "home": str(root / "home")},
-                            "development": {
-                                "editor_packages": ["com.visualstudio.code"]
-                                if editor_packages is None
-                                else editor_packages,
-                            },
-                        },
-                    },
-                    "roles": ["neilime.workstation_setup.editor_terminal"],
-                }
-            ]
-        )
+    write_local_playbook(
+        playbook,
+        [],
+        {
+            "workstation_manager_use_become": False,
+            "workstation_manager_resolved": {
+                "user": {"name": "fixture-user", "home": str(root / "home")},
+                "development": {"editor_packages": ["code"] if editor_packages is None else editor_packages},
+            },
+        },
+        roles=["neilime.workstation_setup.editor_terminal"],
     )
     arguments = ["ansible-playbook", "--inventory", "localhost,", str(playbook)]
     if check:
         arguments.append("--check")
-    return subprocess.run(
-        arguments,
-        cwd=root,
-        env={
-            "PATH": os.environ["PATH"],
-            "HOME": str(root),
-            "ANSIBLE_CONFIG": str(root / "ansible.cfg"),
-            "ANSIBLE_HOME": str(root / ".ansible"),
-            "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_PATH),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
-    # pylint: enable=duplicate-code
+    return run_playbook(arguments, ansible_environment(root), cwd=root)
 
 
 def settings_path(root: pathlib.Path) -> pathlib.Path:
-    """Use the Flatpak application's actual user-config location."""
+    """Use the native application's user-config location."""
 
-    return root / "home/.var/app/com.visualstudio.code/config/Code/User/settings.json"
+    return root / "home/.config/Code/User/settings.json"
 
 
 def test_fresh_installation_creates_a_private_idempotent_terminal_configuration(tmp_path):
@@ -77,36 +46,8 @@ def test_fresh_installation_creates_a_private_idempotent_terminal_configuration(
     result = apply(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     path = settings_path(tmp_path)
-    assert json.loads(path.read_text())["terminal.integrated.defaultProfile.linux"] == "zsh (host)"
+    assert json.loads(path.read_text())["terminal.integrated.defaultProfile.linux"] == "zsh"
     assert path.stat().st_mode & 0o777 == 0o600
-    repeat = apply(tmp_path)
-    assert repeat.returncode == 0, repeat.stdout + repeat.stderr
-    assert "changed=0" in repeat.stdout
-
-
-def test_synced_settings_receive_local_terminal_sync_exclusions(tmp_path):
-    """Restoring editor preferences must not leave the host terminal vulnerable to later syncs."""
-
-    path = settings_path(tmp_path)
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        json.dumps(
-            {
-                "editor.fontSize": 19,
-                "settingsSync.ignoredSettings": ["editor.fontSize", "-terminal.integrated.profiles.linux"],
-            }
-        )
-    )
-    result = apply(tmp_path)
-    assert result.returncode == 0, result.stdout + result.stderr
-    settings = json.loads(path.read_text())
-    assert settings["editor.fontSize"] == 19
-    assert settings["terminal.integrated.defaultProfile.linux"] == "zsh (host)"
-    assert settings["settingsSync.ignoredSettings"] == [
-        "editor.fontSize",
-        "terminal.integrated.profiles.linux",
-        "terminal.integrated.defaultProfile.linux",
-    ]
     repeat = apply(tmp_path)
     assert repeat.returncode == 0, repeat.stdout + repeat.stderr
     assert "changed=0" in repeat.stdout
@@ -153,22 +94,19 @@ def test_check_mode_does_not_create_or_modify_settings(tmp_path, existing):
 
 @pytest.mark.parametrize("packages", [[], ["other.editor"]])
 def test_other_editors_do_not_receive_vscode_configuration(tmp_path, packages):
-    """Editor selection must gate the configuration without introducing Flatpak user files."""
+    """Editor selection must gate the configuration without creating unrelated user files."""
 
     result = apply(tmp_path, editor_packages=packages)
     assert result.returncode == 0, result.stdout + result.stderr
     assert not (tmp_path / "home").exists()
 
 
-@pytest.mark.parametrize(
-    "original",
-    ['{"synthetic-private-marker":', '{"settingsSync.ignoredSettings": ["synthetic-private-marker", 42]}'],
-)
-def test_invalid_settings_stop_setup_without_overwriting_the_file(tmp_path, original):
+def test_invalid_settings_stop_setup_without_overwriting_the_file(tmp_path):
     """An invalid settings file must produce a useful failure instead of replacing personal preferences."""
 
     path = settings_path(tmp_path)
     path.parent.mkdir(parents=True)
+    original = '{"synthetic-private-marker":'
     path.write_text(original)
     result = apply(tmp_path)
     assert result.returncode != 0

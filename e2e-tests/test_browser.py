@@ -1,43 +1,20 @@
 """End-to-end checks for the primary browser."""
 
 
-def resolve_primary_browser_source_file(host):
-    """Return the active Brave APT source in legacy or Deb822 format."""
-
-    source_paths = (
-        "/etc/apt/sources.list.d/brave-browser-release.sources",
-        "/etc/apt/sources.list.d/brave-browser-release.list",
-    )
-    for source_path in source_paths:
-        source_file = host.file(source_path)
-        if source_file.exists:
-            return source_file
-
-    raise AssertionError(f"Brave APT source not found in: {', '.join(source_paths)}")
+def test_native_browser_sync_automation_is_available(host) -> None:
+    """SSH-launched automation must reach the desktop and preserve disposable native profiles."""
+    result = host.run("python3 /workspace/e2e-tests/browser_sync_smoke.py")
+    assert result.succeeded, result.stdout + result.stderr
 
 
 def test_primary_browser_vendor_repository_is_configured(host) -> None:
-    """The installed machine should persist the primary browser vendor repository."""
-
-    # Arrange
-    source_file = resolve_primary_browser_source_file(host)
-    repository_urls = (
-        "https://brave-browser-apt-release.s3.brave.com/",
-        "https://brave-browser-apt-release.s3.brave.com/",
-    )
-    keyring_paths = (
-        "/usr/share/keyrings/brave-browser-archive-keyring.gpg",
-        "/usr/share/keyrings/brave-browser-archive-keyring.gpg",
-    )
-
-    # Act
-    source_content = source_file.content_string.lower()
-    configured_keyrings = [path for path in keyring_paths if path.lower() in source_content]
-
-    # Assert
-    assert any(url in source_content for url in repository_urls)
-    assert configured_keyrings
-    assert all(host.file(path).exists for path in configured_keyrings)
+    """Brave uses the managed Deb822 source and its vendor signing key."""
+    source = host.file("/etc/apt/sources.list.d/brave-browser-release.sources")
+    keyring = "/usr/share/keyrings/brave-browser-archive-keyring.gpg"
+    assert source.exists
+    assert "https://brave-browser-apt-release.s3.brave.com/" in source.content_string
+    assert "Signed-By: " + keyring in source.content_string
+    assert host.file(keyring).exists
 
 
 def test_primary_browser_is_installed_and_default(host) -> None:

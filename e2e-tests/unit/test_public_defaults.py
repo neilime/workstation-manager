@@ -1,31 +1,30 @@
-"""Validate selected public defaults used during workstation bootstrap."""
+"""Check that public defaults and required personal configuration satisfy the schema."""
 
-from __future__ import annotations
+import re
 
-import pathlib
-import unittest
-
-from ansible.parsing.dataloader import DataLoader
-
-GROUP_VARS_PATH = pathlib.Path(__file__).parents[2] / "ansible/group_vars/all.yml"
+from ansible.utils.vars import merge_hash
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state import (
+    DesiredStateConfigNormalizer,
+)
 
 
-class PublicDefaultsTests(unittest.TestCase):
-    """Check public package defaults and pinned development tools."""
-
-    def test_deja_is_declared_as_pinned_mise_tool(self) -> None:
-        """Déjà should stay in the managed mise defaults with a pinned release."""
-        defaults = DataLoader().load_from_file(str(GROUP_VARS_PATH))
-        tools = defaults["workstation_manager"]["development"]["mise"]["tools"]
-        self.assertRegex(tools["github:Giammarco-Ferranti/deja"], r"^\d+(?:\.\d+)+$")
-
-    def test_public_defaults_include_bleachbit_in_managed_apt_packages(self) -> None:
-        """BleachBit should stay in the default managed Ubuntu package list."""
-
-        defaults = DataLoader().load_from_file(str(GROUP_VARS_PATH))["workstation_manager"]
-
-        self.assertIn("bleachbit", defaults["system"]["packages"]["apt"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+def test_public_defaults_preserve_configured_versions_and_desktop_preferences(public_defaults) -> None:
+    """Normalization consumes maintained configuration without copying its values into tests."""
+    config = merge_hash(public_defaults, {"development": {"github": {"account": "fixture"}}})
+    resolved = DesiredStateConfigNormalizer().normalize(config, {"USER": "fixture"})
+    for section, tool in (
+        ("development", "node"),
+        ("development", "mise"),
+        ("home_environment", "chezmoi"),
+        ("desktop", "clipboard_indicator"),
+    ):
+        assert resolved[section][tool]["version"] == public_defaults[section][tool]["version"]
+    assert resolved["development"]["mise"]["tools"] == public_defaults["development"]["mise"]["tools"]
+    assert resolved["development"]["npm_packages"] == public_defaults["development"]["npm_packages"]
+    for repository, revision in public_defaults["development"]["github"]["extensions"].items():
+        # The default extensions publish binaries; gh requires release tags for them.
+        assert re.fullmatch(r"v?\d+\.\d+\.\d+", revision), repository
+        expected = "v" + revision.removeprefix("v")
+        assert resolved["development"]["github"]["extensions"][repository] == expected
+    assert resolved["desktop"]["browser"] == public_defaults["desktop"]["browser"]
+    assert resolved["desktop"]["gnome"] == public_defaults["desktop"]["gnome"]

@@ -11,11 +11,16 @@ packages, removes unused artifacts, and reports configuration drift.
 
 ## Before you start
 
-You need Ubuntu, internet access, `wget`, `sudo`, and:
+You need the latest stable Ubuntu release selected in
+[the supported baseline](ansible/ubuntu-version), internet access, `wget`, `sudo`, and:
 
 - Access to your configured private configuration and dotfiles sources.
 - Bitwarden credentials and configured SSH/GPG key collections.
 - A browser profile collection if you want managed Brave profiles.
+
+Use a conventional Ubuntu installation whose boot and encryption do not require
+Snap. Setup removes Snap after preserving its application data; see
+[application delivery](docs/usage/configuration.md#application-delivery).
 
 Set up your [private configuration](docs/usage/configuration.md) first. Run the
 commands below from a terminal in your desktop session. Setup prompts for GitHub
@@ -67,8 +72,8 @@ wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/wor
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup
 ```
 
-Cleanup includes package upgrades, unused package removal, Docker pruning, and
-log retention. Read [cleanup](docs/usage/cleanup.md) for the exact scope.
+Cleanup reports pending updates, cleans obsolete package downloads, prunes old
+Docker cache, and applies log retention. Read [cleanup](docs/usage/cleanup.md) for the exact scope.
 
 ## Help and documentation
 
@@ -79,7 +84,7 @@ wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/wor
 - [Configuration](docs/usage/configuration.md): private overrides, keys, dotfiles, and tools.
 - [Browser profiles](docs/usage/browser.md): Bitwarden records, Sync, colors, and logos.
 - [Backup and restore](docs/usage/backup-and-restore.md): recovery checks and archives.
-- [Cleanup](docs/usage/cleanup.md): changes, preserved data, and reports.
+- [Cleanup](docs/usage/cleanup.md): changes, preserved data, and terminal results.
 - [Development](docs/development/README.md): repository layout, checks, and VM tests.
 
 The [documentation index](docs/README.md) lists all guides.

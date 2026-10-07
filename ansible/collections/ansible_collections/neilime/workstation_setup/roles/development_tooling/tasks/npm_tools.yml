@@ -1,0 +1,33 @@
+---
+- name: Install pinned system npm commands
+  become: "{{ workstation_manager_use_become }}"
+  community.general.npm:
+    name: "{{ item.key }}"
+    version: "{{ item.value.version }}"
+    global: true
+    executable: /usr/local/bin/npm
+    state: present
+  environment:
+    PATH: /usr/local/bin:/usr/bin:/bin
+    NPM_CONFIG_PREFIX: /usr/local
+    NPM_CONFIG_USERCONFIG: /dev/null
+  loop: "{{ workstation_manager_resolved.development.npm_packages | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Verify agent commands without interactive shell activation
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - -i
+      - "HOME={{ workstation_manager_resolved.user.home }}"
+      - PATH=/usr/local/bin:/usr/bin:/bin
+      - "/usr/local/bin/{{ item.value.command }}"
+      - --version
+  changed_when: false
+  loop: "{{ workstation_manager_resolved.development.npm_packages | dict2items }}"
+  loop_control:
+    label: "{{ item.value.command }}"
+  when: not ansible_check_mode

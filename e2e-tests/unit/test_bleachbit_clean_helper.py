@@ -11,7 +11,7 @@ from unittest import mock
 HELPER_FILE = (
     pathlib.Path(__file__).parents[2]
     / "ansible/collections/ansible_collections/neilime/workstation_setup"
-    / "roles/bleachbit/files/schedule/bleachbit_clean.py"
+    / "roles/bleachbit/files/clean/bleachbit_clean.py"
 )
 HELPER_SPEC = importlib.util.spec_from_file_location("workstation_manager_bleachbit_clean_helper", HELPER_FILE)
 assert HELPER_SPEC is not None

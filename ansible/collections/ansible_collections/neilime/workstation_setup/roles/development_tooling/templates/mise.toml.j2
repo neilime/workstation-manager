@@ -1,4 +1,9 @@
 [tools]
+{# Keep Composer before PHP so the PHP plugin's bundled copy does not shadow it. #}
 {% for tool_name, tool_version in workstation_manager_mise_config_tools | dictsort %}
+{% if tool_name == 'github:composer/composer' %}
+{{ tool_name | to_json }} = { version = {{ tool_version | to_json }}, asset_pattern = "composer.phar", bin = "composer" }
+{% else %}
 {{ tool_name | to_json }} = {{ tool_version | string | to_json }}
+{% endif %}
 {% endfor %}

@@ -49,8 +49,8 @@ def test_inventory_preserves_bytes_and_exposes_only_safe_sync_metadata(tmp_path:
     state = _state(tmp_path, {"Default": {"name": "Personal"}})
     before = {path: path.read_bytes() for path in (preferences, state)}
     result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
-    assert result["drift"] == []
-    assert result["sync_issues"] == []
+    assert isinstance(result["drift"], list) and not result["drift"]
+    assert isinstance(result["sync_issues"], list) and not result["sync_issues"]
     assert result["profiles"][0]["sync"]["seed_present"] is True
     assert result["profiles"][0]["sync"]["requested"] is None
     assert result["profiles"][0]["item_id"] == _ITEM_ID
@@ -93,7 +93,7 @@ def test_missing_registered_name_falls_back_to_profile_preferences(tmp_path: Pat
     _state(tmp_path, {"Default": entry})
     result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
     assert result["profiles"][0]["label"] == "Personal"
-    assert result["drift"] == []
+    assert isinstance(result["drift"], list) and not result["drift"]
 
 
 def test_discovers_unregistered_profiles_and_detects_renames_and_missing_profiles(tmp_path: Path) -> None:
@@ -134,7 +134,7 @@ def test_collection_only_profiles_remain_in_vault_without_creating_local_files(t
 
     root = tmp_path / "missing"
     result = inspect_browser_profiles(str(root), [_DECLARATION])
-    assert result["profiles"] == []
+    assert isinstance(result["profiles"], list) and not result["profiles"]
     assert result["drift"] == [{"kind": "missing", "directory": "Default", "id": "personal"}]
     assert not root.exists()
     assert _DECLARATION["item_id"] == _ITEM_ID
@@ -298,7 +298,7 @@ def test_unconfigured_palette_does_not_report_or_manage_theme_drift(tmp_path: Pa
     _profile(tmp_path, "Default", "Personal")
     _state(tmp_path, {"Default": {"name": "Personal"}})
     result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
-    assert result["drift"] == []
+    assert isinstance(result["drift"], list) and not result["drift"]
     assert "theme_color" not in result["profiles"][0]
 
 
@@ -403,7 +403,7 @@ def test_absent_avatar_attachment_leaves_local_avatar_uninspected(tmp_path: Path
     _state(tmp_path, {"Default": {"name": "Personal"}})
     (preferences.parent / AVATAR_FILENAME).symlink_to(tmp_path / "unmanaged-avatar")
     result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
-    assert result["drift"] == []
+    assert isinstance(result["drift"], list) and not result["drift"]
     assert "avatar" not in result["profiles"][0]
     assert (preferences.parent / AVATAR_FILENAME).is_symlink()
 
@@ -423,7 +423,7 @@ def test_omitted_sync_everything_uses_the_native_enabled_default(tmp_path: Path)
     _state(tmp_path, {"Default": {"name": "Personal"}})
     before = preferences.read_bytes()
     result = inspect_browser_profiles(str(tmp_path), [_DECLARATION])
-    assert result["sync_issues"] == []
+    assert isinstance(result["sync_issues"], list) and not result["sync_issues"]
     assert result["profiles"][0]["sync"]["keep_everything_synced"] is True
     assert result["profiles"][0]["sync"]["selected_types"]["bookmarks"] is False
     assert preferences.read_bytes() == before

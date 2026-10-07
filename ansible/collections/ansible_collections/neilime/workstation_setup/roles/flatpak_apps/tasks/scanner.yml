@@ -1,0 +1,22 @@
+---
+- name: Install the native scanner application and SANE diagnostics
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: [simple-scan, sane-utils]
+    state: present
+    install_recommends: false
+
+- name: Remove the duplicate system Flatpak scanner without deleting application data
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak:
+    name: org.gnome.SimpleScan
+    state: absent
+    method: system
+
+- name: Remove the duplicate user Flatpak scanner without deleting application data
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.flatpak:
+    name: org.gnome.SimpleScan
+    state: absent
+    method: user

@@ -18,6 +18,9 @@ updates:
     directories:
       - "/"
       - "/docker/tooling"
+    ignore:
+      # Renovate advances the Ubuntu image with the VM and supported-release guard.
+      - dependency-name: ubuntu
     schedule:
       interval: "weekly"
     groups:
@@ -30,6 +33,7 @@ updates:
   - package-ecosystem: "pip"
     open-pull-requests-limit: 20
     directories:
+      - "/ansible"
       - "/docker/tooling"
       - "/e2e-tests"
     schedule:

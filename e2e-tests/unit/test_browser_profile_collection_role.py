@@ -6,13 +6,16 @@ import base64
 import json
 import os
 import pathlib
-import pwd
 import subprocess
 import sys
 import tempfile
 import unittest
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import ansible_environment, managed_user, write_local_playbook
+
+pytestmark = pytest.mark.integration
 
 WORKSPACE = pathlib.Path(__file__).parents[2]
 COLLECTION_ROLE = "neilime.workstation_setup.browser_profile_collection"
@@ -45,7 +48,6 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 "attachments": [{"id": "fixture-avatar", "fileName": "avatar.png"}],
             }
         ]
-        (self.fixture / "ansible.cfg").write_text("[defaults]\n")
         (self.fixture / "avatar").write_bytes(AVATAR)
         (self.fixture / "bin").mkdir()
         cli = self.fixture / "bin/bw"
@@ -126,7 +128,7 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "ansible_python_interpreter": sys.executable,
             "workstation_manager_use_become": False,
             "workstation_manager_resolved": {
-                "user": {"name": pwd.getpwuid(os.getuid()).pw_name, "home": str(self.fixture)},
+                "user": managed_user(self.fixture),
                 "secrets": {
                     "bitwarden": {
                         "server": "https://vault.example.invalid",
@@ -136,32 +138,12 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             },
         }
         playbook = self.fixture / "playbook.json"
-        playbook.write_text(
-            json.dumps(
-                [
-                    {
-                        "name": "Exercise browser profile recovery boundaries",
-                        "hosts": "localhost",
-                        "connection": "local",
-                        "gather_facts": False,
-                        "vars": variables,
-                        "tasks": tasks,
-                    }
-                ]
-            )
-        )
+        write_local_playbook(playbook, tasks, variables, name="Exercise browser profile recovery boundaries")
         result = subprocess.run(
             ["ansible-playbook", "-i", "localhost,", str(playbook), *(["--check"] if check else [])],
-            env={
-                "PATH": f"{self.fixture / 'bin'}:{os.environ['PATH']}",
-                "HOME": str(self.fixture),
-                "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
-                "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-                "ANSIBLE_COLLECTIONS_PATH": ":".join(
-                    [str(WORKSPACE / "ansible/collections"), os.environ["ANSIBLE_COLLECTIONS_PATH"]]
-                ),
-                "BITWARDEN_PASSWORD": "fixture-password",
-            },
+            env=ansible_environment(
+                self.fixture, PATH=f"{self.fixture / 'bin'}:{os.environ['PATH']}", BITWARDEN_PASSWORD="fixture-password"
+            ),
             cwd=self.fixture,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -206,19 +188,14 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 self.assertFalse((self.fixture / "result.json").exists())
 
     def test_setup_and_backup_loader_still_requires_avatar_recovery(self) -> None:
-        """Full recovery loads the avatar, and a failed download must remain fatal."""
+        """A failed avatar download must remain fatal after exhausting recovery retries."""
 
-        result = self.run_loader(cleanup=False)
-        self.assertEqual(result.returncode, 0, result.stdout)
-        inventory = json.loads((self.fixture / "result.json").read_text())
-        self.assertEqual(base64.b64decode(inventory["profiles"][0]["avatar_png"]), AVATAR)
-        (self.fixture / "result.json").unlink()
         (self.fixture / "attachment-unavailable").touch()
         result = self.run_loader(cleanup=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Browser avatar recovery failed after retrying", result.stdout)
         calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
-        self.assertEqual(sum(call[:2] == ["get", "attachment"] for call in calls), 5)
+        self.assertEqual(sum(call[:2] == ["get", "attachment"] for call in calls), 4)
         self.assertFalse((self.fixture / "result.json").exists())
 
     def test_avatar_download_recovers_from_a_temporary_failure(self) -> None:

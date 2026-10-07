@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 
 
 # pylint: disable=too-few-public-methods
 class DesiredStateValueResolver:
     """Validate and clone schema values used by section normalizers."""
+
+    @staticmethod
+    def release_version(value: object, name: str) -> str:
+        """Require an explicit stable release from the merged configuration."""
+
+        if not isinstance(value, str) or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value) is None:
+            raise ValueError(f"{name} must be a stable release number supplied by configuration")
+        return value
 
     @staticmethod
     def bool_value(value: object, default: bool) -> bool:
@@ -43,12 +52,16 @@ class DesiredStateValueResolver:
         raise ValueError(f"{name} must be a list")
 
     @staticmethod
-    def mapping(value: object, name: str) -> dict[str, object]:
+    def mapping(value: object, name: str, *, allowed_keys: set[str] | None = None) -> dict[str, object]:
         """Return a cloned mapping value or fail with a clear schema error."""
 
         if value is None:
             return {}
         if isinstance(value, dict):
+            if allowed_keys is not None and value.keys() - allowed_keys:
+                raise ValueError(
+                    f"{name} contains unsupported fields; allowed fields: {', '.join(sorted(allowed_keys))}"
+                )
             return deepcopy(value)
         raise ValueError(f"{name} must be a mapping")
 
@@ -57,28 +70,6 @@ class DesiredStateValueResolver:
         """Select an explicit value or its default before type validation and cloning."""
 
         return default if value is None else value
-
-    @classmethod
-    def apt_repositories(
-        cls,
-        repositories: object,
-        default_repositories: object,
-        name: str,
-    ) -> dict[str, object]:
-        """Return normalized APT repository declarations for a schema section."""
-
-        declared_repositories = cls.mapping(repositories, name)
-        declared_defaults = cls.mapping(default_repositories, f"{name}.defaults")
-
-        return {
-            "apt": cls.list_value(
-                cls.value_or_default(
-                    declared_repositories.get("apt"),
-                    declared_defaults.get("apt"),
-                ),
-                f"{name}.apt",
-            )
-        }
 
     @classmethod
     def sysctl_settings(
@@ -122,13 +113,13 @@ class DesiredStateDefaultsSectionNormalizer:
 
 
 class DesiredStateDefaultsFactory:
-    """Build the default desired-state document for a selected state slug."""
+    """Build version-independent defaults for a selected state slug."""
 
     def __init__(self, state_slug: str) -> None:
         self._state_slug = state_slug
 
     def build(self) -> dict[str, object]:
-        """Return the full default desired-state mapping."""
+        """Return optional schema defaults without dependency release pins."""
 
         return {
             "system": {
@@ -140,9 +131,6 @@ class DesiredStateDefaultsFactory:
                     "apt": [],
                     "cache_valid_time": 86400,
                 },
-                "repositories": {"apt": []},
-                "directories": [],
-                "services": {"enabled": [], "disabled": []},
                 "settings": {"sysctl": {}},
             },
             "desktop": {
@@ -152,14 +140,12 @@ class DesiredStateDefaultsFactory:
                 },
                 "browser": "brave",
                 "gnome": {
-                    "dark_mode": None,
-                    "show_trash": None,
                     "favorites": None,
                 },
             },
             "development": {
+                "github": {"extensions": {}},
                 "packages": [],
-                "repositories": {"apt": []},
                 "editor_packages": [],
                 "mise": {
                     "tools": {},
@@ -168,9 +154,7 @@ class DesiredStateDefaultsFactory:
             },
             "home_environment": {
                 "chezmoi": {
-                    "version": "2.73.0",
                     "source": "https://github.com/neilime/workstation-config.git",
-                    "apply": True,
                     "bin_path": "/usr/local/bin/chezmoi",
                     "config_path": ".config/chezmoi/chezmoi.yaml",
                 },

@@ -13,6 +13,9 @@ import types
 import unittest
 from unittest import mock
 
+import pytest
+from ansible.parsing.dataloader import DataLoader
+
 E2E_PATH = pathlib.Path(__file__).parents[1]
 
 
@@ -28,6 +31,62 @@ def load_profiling_module() -> types.ModuleType:
 
 
 task_profiling = load_profiling_module()
+
+
+@pytest.mark.parametrize("existing_instance,start_status", [(False, 0), (True, 0), (False, 37)])
+def test_vm_start_preserves_failures_and_collects_diagnostics(
+    tmp_path: pathlib.Path, existing_instance: bool, start_status: int
+) -> None:
+    """Both startup paths retain status; failed diagnostics cannot hide a boot failure."""
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    limactl = commands / "limactl"
+    limactl.write_text(
+        "#!/bin/bash\n"
+        'case "$1" in\n'
+        '  list) if [ "$TEST_EXISTING_VM" = 1 ]; then printf "fixture\\n"; fi ;;\n'
+        '  start) printf "%s\\0" "$@" >"$TEST_START_ARGS"\n'
+        '    if [ "$TEST_EXISTING_VM" = 0 ]; then cp "${@: -1}" "$TEST_RENDERED_CONFIG"; fi\n'
+        '    exit "$TEST_START_STATUS" ;;\n'
+        '  shell) cat >/dev/null; printf "guest boot diagnostic\\n"; exit 42 ;;\n'
+        "esac\n"
+    )
+    limactl.chmod(0o700)
+    instance = tmp_path / "lima/fixture"
+    instance.mkdir(parents=True)
+    (instance / "serial.log").write_text("serial boot diagnostic\n")
+    (instance / "ha.stderr.log").write_text("hostagent boot diagnostic\n")
+    arguments = tmp_path / "arguments"
+    rendered_config = tmp_path / "rendered.yml"
+    result = subprocess.run(
+        ["bash", str(E2E_PATH / "e2e-up.sh"), "fixture"],
+        env={
+            **os.environ,
+            "PATH": f"{commands}:/usr/bin:/bin",
+            "LIMA_HOME": str(instance.parent),
+            "TMPDIR": str(tmp_path),
+            "TEST_EXISTING_VM": str(int(existing_instance)),
+            "TEST_START_STATUS": str(start_status),
+            "TEST_START_ARGS": str(arguments),
+            "TEST_RENDERED_CONFIG": str(rendered_config),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == start_status, result.stderr
+    start_arguments = arguments.read_text().split("\0")[:-1]
+    if existing_instance:
+        assert start_arguments[-1] == "fixture"
+    else:
+        assert "--containerd=none" in start_arguments
+        assert "--name=fixture" in start_arguments
+        assert DataLoader().load_from_file(str(rendered_config))["mounts"][0]["location"] == str(E2E_PATH.parent)
+    for diagnostic in ("serial boot diagnostic", "hostagent boot diagnostic", "guest boot diagnostic"):
+        assert (diagnostic in result.stderr) == bool(start_status)
+    assert re.search(rf"phase=vm-start elapsed=\d+s status={start_status}", result.stderr)
+    assert not list(tmp_path.glob("workstation-manager-lima-*"))
 
 
 class ProfilingConfigurationTests(unittest.TestCase):
@@ -113,6 +172,33 @@ class PhaseTimingTests(unittest.TestCase):
                 self.assertNotIn("synthetic-vault-password", result.stdout + result.stderr)
 
 
+@pytest.mark.parametrize("state,expected", [("ACTIVE", 0), ("ERROR", 1)])
+def test_clipboard_readiness_requires_an_active_extension(state, expected):
+    """GNOME readiness checks distinguish a loaded extension from an installed failure."""
+    script = r"""
+source "$1/e2e-common.sh"
+run_e2e_lima_control_command() {
+    if [[ "$2" == id ]]; then
+        printf '1234\n'
+    else
+        printf 'State: %s\n' "$TEST_EXTENSION_STATE"
+    fi
+}
+seq() { printf '1\n'; }
+sleep() { :; }
+wait_for_e2e_clipboard_extension
+"""
+    result = subprocess.run(
+        ["bash", "-c", script, "--", str(E2E_PATH)],
+        env={**os.environ, "TEST_EXTENSION_STATE": state},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == expected, result.stdout + result.stderr
+
+
 class SuiteFailureTests(unittest.TestCase):
     """Exercise suite orchestration with fake actions and no VM or external services."""
 
@@ -137,7 +223,7 @@ class SuiteFailureTests(unittest.TestCase):
                         + 'restore_e2e_task_profiling() { printf "restore\\n" >>"$TEST_TRACE"; '
                         + 'return "$TEST_RESTORE_STATUS"; }\n'
                         + "restart_e2e_desktop_session() { :; }\n"
-                        + "wait_for_e2e_user_process() { :; }\n"
+                        + "wait_for_e2e_clipboard_extension() { :; }\n"
                         + 'capture_e2e_vm_desktop() { printf "screenshot\\n" >>"$TEST_TRACE"; '
                         + 'printf "image" >"$2/$1.png"; return "$TEST_SCREENSHOT_STATUS"; }\n'
                     )

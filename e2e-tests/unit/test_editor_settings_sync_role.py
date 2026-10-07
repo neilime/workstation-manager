@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
-import os
 import pathlib
-import subprocess
-import sys
 import tempfile
 import unittest
 
-COLLECTIONS_PATH = pathlib.Path(__file__).parents[2] / "ansible" / "collections"
+import pytest
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
+
+pytestmark = pytest.mark.integration
 
 
 class EditorSettingsSyncRoleTests(unittest.TestCase):
@@ -33,67 +32,39 @@ class EditorSettingsSyncRoleTests(unittest.TestCase):
                 if scenario.get("sync_state_exists"):
                     (user_home / ".config" / "Code" / "User" / "sync").mkdir(parents=True)
                 playbook = fixture / "playbook.json"
-                playbook.write_text(
-                    json.dumps(
-                        [
-                            {
-                                "name": "Verify skipped editor sync probes",
-                                "hosts": "localhost",
-                                "connection": "local",
-                                "gather_facts": False,
-                                "vars": {
-                                    "ansible_facts": {"user_id": "test-user"},
-                                    "ansible_python_interpreter": sys.executable,
-                                    "workstation_manager_use_become": False,
-                                    "workstation_manager_resolved": {
-                                        "user": {"name": "test-user", "home": str(user_home)},
-                                        "development": {
-                                            "editor_packages": scenario.get(
-                                                "editor_packages", ["com.visualstudio.code"]
-                                            )
-                                        },
-                                    },
-                                },
-                                "roles": ["neilime.workstation_setup.editor_settings_sync"],
-                                "tasks": [
-                                    {
-                                        "name": "Verify the editor remains untouched",
-                                        "ansible.builtin.assert": {
-                                            "that": [
-                                                (
-                                                    "workstation_manager_vscode_settings_sync_session_environment "
-                                                    "is skipped"
-                                                ),
-                                                "not workstation_manager_vscode_should_request_settings_sync",
-                                                "workstation_manager_vscode_settings_sync_command is skipped",
-                                                "not workstation_manager_vscode_should_remind_settings_sync",
-                                            ]
-                                        },
-                                    }
-                                ],
-                            }
-                        ]
-                    )
+                write_local_playbook(
+                    playbook,
+                    [
+                        {
+                            "name": "Verify the editor remains untouched",
+                            "ansible.builtin.assert": {
+                                "that": [
+                                    "workstation_manager_vscode_settings_sync_session_environment is skipped",
+                                    "not workstation_manager_vscode_should_request_settings_sync",
+                                    "workstation_manager_vscode_settings_sync_command is skipped",
+                                    "not workstation_manager_vscode_should_remind_settings_sync",
+                                ]
+                            },
+                        }
+                    ],
+                    {
+                        "ansible_facts": {"user_id": "test-user"},
+                        "workstation_manager_use_become": False,
+                        "workstation_manager_resolved": {
+                            "user": {"name": "test-user", "home": str(user_home)},
+                            "development": {"editor_packages": scenario.get("editor_packages", ["code"])},
+                        },
+                    },
+                    name="Verify skipped editor sync probes",
+                    roles=["neilime.workstation_setup.editor_settings_sync"],
                 )
                 command = ["ansible-playbook", "--inventory", "localhost,", str(playbook)]
                 if scenario.get("check_mode"):
                     command.append("--check")
-                result = subprocess.run(
+                result = run_playbook(
                     command,
+                    ansible_environment(fixture, WORKSTATION_MANAGER_INTERACTIVE=str(scenario.get("interactive", "1"))),
                     cwd=fixture,
-                    env={
-                        "PATH": os.environ["PATH"],
-                        "HOME": str(fixture),
-                        "LC_ALL": "C.UTF-8",
-                        "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-                        "ANSIBLE_HOME": str(fixture / ".ansible"),
-                        "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_PATH),
-                        "WORKSTATION_MANAGER_INTERACTIVE": str(scenario.get("interactive", "1")),
-                    },
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

@@ -2,7 +2,7 @@
 # Copyright: (c) 2026, workstation-manager contributors
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
-"""Configure the VS Code Flatpak's integrated terminal to use host Zsh."""
+"""Configure native VS Code to use the workstation login shell."""
 
 from __future__ import annotations
 
@@ -11,13 +11,12 @@ from __future__ import annotations
 DOCUMENTATION = r"""
 ---
 module: editor_terminal
-short_description: Configure the VS Code Flatpak host terminal
+short_description: Configure the native VS Code terminal
 version_added: "1.0.0"
 description:
-  - Adds a C(zsh (host)) terminal profile using the Flatpak's C(/app/bin/host-spawn) bridge.
+  - Adds a C(zsh) terminal profile using the native C(/usr/bin/zsh) executable.
   - Selects that profile as the Linux default and preserves other settings and terminal profiles.
-  - Excludes Linux terminal profiles and their default selection from Settings Sync.
-  - Preserves other sync exclusions and removes explicit sync opt-ins for these terminal settings.
+  - Preserves other profiles and sync preferences.
   - Supports JSONC comments and trailing commas without rewriting unrelated text.
   - Follows settings-file symlinks and preserves existing file permissions and ownership.
 options:
@@ -36,9 +35,9 @@ attributes:
 # pylint: enable=duplicate-code
 
 EXAMPLES = r"""
-- name: Configure host Zsh for the VS Code Flatpak
+- name: Configure native Zsh for VS Code
   neilime.workstation_setup.editor_terminal:
-    path: /home/user/.var/app/com.visualstudio.code/config/Code/User/settings.json
+    path: /home/user/.config/Code/User/settings.json
 """
 
 RETURN = r"""

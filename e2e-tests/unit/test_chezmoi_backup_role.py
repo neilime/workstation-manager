@@ -10,9 +10,11 @@ import sys
 import tempfile
 import unittest
 
+import pytest
+from ansible_test_helpers import ansible_environment, write_local_playbook
 from backup_prompt_helpers import run_interactive
 
-COLLECTIONS_PATH = pathlib.Path(__file__).parents[2] / "ansible" / "collections"
+pytestmark = pytest.mark.integration
 
 
 class ChezmoiBackupRoleTests(unittest.TestCase):
@@ -22,18 +24,9 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
         # enterContext keeps fixture cleanup registered even when setup fails.
         # pylint: disable-next=consider-using-with
         self.fixture = pathlib.Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.environment = {
-            "PATH": os.environ["PATH"],
-            "HOME": str(self.fixture),
-            "LC_ALL": "C.UTF-8",
-            "ANSIBLE_CONFIG": str(self.fixture / "ansible.cfg"),
-            "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-            "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_PATH),
-            "WORKSTATION_MANAGER_INTERACTIVE": "1",
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_CONFIG_NOSYSTEM": "1",
-        }
-        (self.fixture / "ansible.cfg").write_text("[defaults]\n")
+        self.environment = ansible_environment(
+            self.fixture, WORKSTATION_MANAGER_INTERACTIVE="1", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1"
+        )
         self.home = self.fixture / "home"
         self.source = self.home / ".local/share/chezmoi"
         self.source.mkdir(parents=True)
@@ -81,28 +74,20 @@ class ChezmoiBackupRoleTests(unittest.TestCase):
                 "home_environment": {"chezmoi": {"config_path": str(config), "bin_path": str(chezmoi)}},
             },
         }
-        (self.fixture / "playbook.json").write_text(
-            json.dumps(
-                [
-                    {
-                        "name": "Exercise backup synchronization decisions",
-                        "hosts": "localhost",
-                        "connection": "local",
-                        "gather_facts": False,
-                        "vars": variables,
-                        "roles": ["neilime.workstation_backup.chezmoi"],
-                        "tasks": [
-                            {
-                                "ansible.builtin.copy": {
-                                    "dest": str(self.fixture / "recovery-skips.json"),
-                                    "content": "{{ workstation_backup_recovery_skips | default([]) | to_json }}",
-                                    "mode": "0600",
-                                }
-                            }
-                        ],
+        write_local_playbook(
+            self.fixture / "playbook.json",
+            [
+                {
+                    "ansible.builtin.copy": {
+                        "dest": str(self.fixture / "recovery-skips.json"),
+                        "content": "{{ workstation_backup_recovery_skips | default([]) | to_json }}",
+                        "mode": "0600",
                     }
-                ]
-            )
+                }
+            ],
+            variables,
+            name="Exercise backup synchronization decisions",
+            roles=["neilime.workstation_backup.chezmoi"],
         )
 
     def git(self, path: pathlib.Path, *arguments: str) -> str:

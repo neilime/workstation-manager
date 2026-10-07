@@ -17,8 +17,7 @@
   ansible.builtin.git:
     repo: https://github.com/ohmyzsh/ohmyzsh.git
     dest: "{{ workstation_manager_resolved.user.home }}/.oh-my-zsh"
-    # Setup owns this pin; Renovate follows the upstream master branch.
-    version: "4d4cfc287e9d887b81242c0e431b5f49f9cec5c1"
+    version: "{{ workstation_manager_oh_my_zsh_revision }}"
     update: true
     force: false
     recursive: false

@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import shlex
 import subprocess
-import sys
 import tempfile
 import unittest
 
-WORKSPACE = pathlib.Path(__file__).parents[2]
+import pytest
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
+
+pytestmark = pytest.mark.integration
 
 
 class BackupManifestTests(unittest.TestCase):
@@ -33,7 +34,6 @@ class BackupManifestTests(unittest.TestCase):
         profile.mkdir(parents=True)
         (profile / "Bookmarks").write_text(json.dumps({"roots": {"bookmark_bar": {"children": []}}}))
         (profile / "Preferences").write_text(json.dumps({"profile": {"name": "Fixture"}}))
-        (fixture / "ansible.cfg").write_text("[defaults]\n")
         self.archive = self.output / "workstation-manager-backup-fixture.tar.gz"
         self.browser_export = self.archive.with_suffix("").with_suffix(".browser-profiles.json")
         self.inventory = self.archive.with_suffix("").with_suffix(".git-repositories.json")
@@ -42,15 +42,7 @@ class BackupManifestTests(unittest.TestCase):
             f"missing\tworkstation-manager-user-config\t{fixture / '.config/workstation-manager'}",
         ]
         self.playbook = fixture / "playbook.json"
-        self.environment = {
-            "PATH": os.environ["PATH"],
-            "HOME": str(fixture),
-            "ANSIBLE_HOME": str(fixture / ".ansible"),
-            "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-            "ANSIBLE_COLLECTIONS_PATH": f"{WORKSPACE / 'ansible/collections'}:"
-            + os.environ.get("ANSIBLE_COLLECTIONS_PATH", "/opt/ansible/collections"),
-            "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR": str(self.output),
-        }
+        self.environment = ansible_environment(fixture, WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=str(self.output))
 
     def _assert_backup(self, profiles_present: bool, check: bool) -> None:
         """Run the real workflow and compare the manifest with the generated artifacts."""
@@ -61,64 +53,38 @@ class BackupManifestTests(unittest.TestCase):
             expected_lines.append(f"export\tbrowser-profiles\t{self.browser_export}")
         expected_lines.append(f"export\tgit-repositories\t{self.inventory}")
         expected_lines.append(f"export\trestore-command\t{restore_command}")
-        self.playbook.write_text(
-            json.dumps(
-                [
-                    {
-                        "hosts": "localhost",
-                        "gather_facts": False,
-                        "vars": {
-                            "ansible_python_interpreter": sys.executable,
-                            "workstation_backup_timestamp": "fixture",
-                            "workstation_manager_resolved": {
-                                "user": {"home": str(self.playbook.parent)},
-                                "desktop": {"browser": "brave"},
-                            },
-                            "workstation_backup_browser_user_data_dir": str(
-                                self.playbook.parent / ".config/BraveSoftware/Brave-Browser"
-                            ),
-                            "workstation_backup_browser_inspection": {
-                                "profiles": [{"directory": "Default", "label": "Fixture"}] if profiles_present else [],
-                            },
-                            "fixture_expected_manifest_lines": expected_lines,
-                        },
-                        "tasks": [
-                            {"ansible.builtin.assert": {"that": "workstation_backup_manifest_lines is not defined"}},
-                            {
-                                "ansible.builtin.import_role": {
-                                    "name": "neilime.workstation_backup.state",
-                                    "tasks_from": "prepare",
-                                }
-                            },
-                            {
-                                "ansible.builtin.import_role": {
-                                    "name": "neilime.workstation_backup.browser",
-                                    "tasks_from": "export",
-                                }
-                            },
-                            {"ansible.builtin.import_role": {"name": "neilime.workstation_backup.state"}},
-                            {
-                                "ansible.builtin.assert": {
-                                    "that": "workstation_backup_manifest_lines == fixture_expected_manifest_lines"
-                                }
-                            },
-                        ],
+        write_local_playbook(
+            self.playbook,
+            [
+                {"ansible.builtin.assert": {"that": "workstation_backup_manifest_lines is not defined"}},
+                {"ansible.builtin.import_role": {"name": "neilime.workstation_backup.state", "tasks_from": "prepare"}},
+                {"ansible.builtin.import_role": {"name": "neilime.workstation_backup.browser", "tasks_from": "export"}},
+                {"ansible.builtin.import_role": {"name": "neilime.workstation_backup.state"}},
+                {
+                    "ansible.builtin.assert": {
+                        "that": "workstation_backup_manifest_lines == fixture_expected_manifest_lines"
                     }
-                ]
-            )
+                },
+            ],
+            {
+                "workstation_backup_timestamp": "fixture",
+                "workstation_manager_resolved": {
+                    "user": {"home": str(self.playbook.parent)},
+                    "desktop": {"browser": "brave"},
+                },
+                "workstation_backup_browser_user_data_dir": str(
+                    self.playbook.parent / ".config/BraveSoftware/Brave-Browser"
+                ),
+                "workstation_backup_browser_inspection": {
+                    "profiles": [{"directory": "Default", "label": "Fixture"}] if profiles_present else []
+                },
+                "fixture_expected_manifest_lines": expected_lines,
+            },
         )
         command = ["ansible-playbook", "-i", "localhost,", "-c", "local", str(self.playbook)]
         if check:
             command.append("--check")
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            cwd=self.playbook.parent,
-            timeout=60,
-            check=False,
-            env=self.environment,
-        )
+        result = run_playbook(command, self.environment, cwd=self.playbook.parent)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         if check:
             self.assertNotIn("Creating backup archive:", result.stdout)

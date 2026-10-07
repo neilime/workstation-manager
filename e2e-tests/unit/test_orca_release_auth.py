@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -12,7 +11,11 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import ansible_environment, run_playbook
+
+pytestmark = pytest.mark.integration
 
 TASK_FILE = (
     pathlib.Path(__file__).parents[2]
@@ -82,12 +85,12 @@ class OrcaReleaseAuthTests(unittest.TestCase):
         variables = {
             "ansible_python_interpreter": sys.executable,
             "ansible_facts": {"architecture": "x86_64"},
-            "workstation_manager": {"development": {"orca": {"settings": {}}}},
             "workstation_manager_resolved": {
+                "development": {"orca": {"version": "1.2.3", "settings": {}}},
                 "user": {
                     "projects_directory": "/home/fixture/Documents/dev-projects",
                     "home": "/home/fixture",
-                }
+                },
             },
         }
         playbook = self.fixture / "playbook.json"
@@ -99,24 +102,14 @@ class OrcaReleaseAuthTests(unittest.TestCase):
             "tasks": tasks,
         }
         playbook.write_text(json.dumps([play]))
-        config = self.fixture / "ansible.cfg"
-        config.write_text("[defaults]\n")
-        environment = {
-            "PATH": os.environ["PATH"],
-            "HOME": str(self.fixture),
-            "LC_ALL": "C.UTF-8",
-            "ANSIBLE_CONFIG": str(config),
-            "ANSIBLE_HOME": str(self.fixture / ".ansible"),
-        }
+        environment = ansible_environment(self.fixture)
         if token is not None:
             environment["WORKSTATION_MANAGER_GITHUB_TOKEN"] = token
         # Verbose output must not reveal even the request headers on failure.
         command = ["ansible-playbook", "-vvv", "-i", "localhost,", "-c", "local", str(playbook)]
         if check:
             command.append("--check")
-        return subprocess.run(
-            command, cwd=self.fixture, env=environment, check=False, capture_output=True, text=True, timeout=60
-        )
+        return run_playbook(command, environment, cwd=self.fixture)
 
     def test_token_authenticates_release_lookup_in_normal_and_check_mode(self) -> None:
         """Both setup and preview can resolve releases when anonymous API access is exhausted."""

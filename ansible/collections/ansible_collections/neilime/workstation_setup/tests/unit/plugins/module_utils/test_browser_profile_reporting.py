@@ -233,7 +233,8 @@ def test_chain_enrollment_is_deferred_to_native_actions_without_manual_instructi
     inspection["sync_issues"] = [
         {"directory": "Default", "issues": ["missing_sync_seed", "sync_not_requested", "sync_setup_incomplete"]}
     ]
-    assert browser_recovery_inspection(inspection)["sync_issues"] == []
+    sync_issues = browser_recovery_inspection(inspection)["sync_issues"]
+    assert isinstance(sync_issues, list) and not sync_issues
     assert "Live Sync is not verified" in browser_recovery_report(inspection)
     inspection["sync_issues"][0]["issues"].append("sync_disabled_by_policy")
     assert browser_recovery_inspection(inspection)["sync_issues"][0]["issues"] == ["sync_disabled_by_policy"]

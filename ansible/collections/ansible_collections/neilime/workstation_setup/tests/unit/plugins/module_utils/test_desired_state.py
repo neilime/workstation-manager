@@ -11,18 +11,10 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_
 
 BROWSER_PROFILES_COLLECTION_ID = "1659d058-b43c-4b59-8c84-cba19c437223"
 
-DECLARED_DOCKER_CLI_PLUGINS = [
-    {
-        "command": "docker-compose",
-        "tool": "aqua:docker/compose",
-        "binary": "docker-cli-plugin-docker-compose",
-    }
-]
 
 DEFAULT_HOME_ENVIRONMENT_ITEMS = (
-    ("version", "2.73.0"),
+    ("version", "1.2.3"),
     ("source", "https://github.com/neilime/workstation-config.git"),
-    ("apply", True),
     ("bin_path", "/usr/local/bin/chezmoi"),
     ("config_path", ".config/chezmoi/chezmoi.yaml"),
 )
@@ -43,24 +35,14 @@ def build_home_environment(
 DECLARED_HOME_ENVIRONMENT = build_home_environment(
     overrides={
         "source": "https://git.example.test/team/dotfiles.git",
-        "apply": False,
         "bin_path": "/opt/bin/chezmoi",
         "config_path": ".config/chezmoi/work.yaml",
     },
 )
 
 
-def assert_empty_optional_system_collections(normalized: dict[str, Any]) -> None:
-    """Assert the normalized system section keeps empty optional collections."""
-
-    assert normalized["system"]["directories"] == []
-    assert normalized["system"]["services"]["enabled"] == []
-    assert normalized["system"]["services"]["disabled"] == []
-    assert normalized["system"]["settings"]["sysctl"] == {}
-
-
-def test_normalize_returns_complete_shape_with_defaults() -> None:
-    """An empty configuration should resolve the documented defaults."""
+def test_normalize_returns_complete_shape_with_defaults(with_tool_versions) -> None:
+    """Configured versions and omitted optional values should resolve a complete document."""
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
@@ -68,7 +50,7 @@ def test_normalize_returns_complete_shape_with_defaults() -> None:
     environment = {"USER": "emilien"}
 
     # Act
-    normalized = normalizer.normalize(raw_config, environment)
+    normalized = normalizer.normalize(with_tool_versions(raw_config), environment)
 
     # Assert
     assert normalized["user"] == {
@@ -83,17 +65,14 @@ def test_normalize_returns_complete_shape_with_defaults() -> None:
     assert normalized["system"]["packages"]["prerequisites"] == ["locales", "tzdata"]
     assert normalized["system"]["packages"]["apt"] == []
     assert normalized["system"]["packages"]["cache_valid_time"] == 86400
-    assert normalized["system"]["repositories"]["apt"] == []
-    assert_empty_optional_system_collections(normalized)
+    assert normalized["system"]["settings"]["sysctl"] == {}
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "flathub"
     assert normalized["desktop"]["browser"] == "brave"
-    assert normalized["desktop"]["gnome"] == {"dark_mode": None, "show_trash": None, "favorites": None}
-    assert normalized["development"]["repositories"]["apt"] == []
+    assert normalized["desktop"]["gnome"] == {"favorites": None}
     assert normalized["development"]["mise"] == {
-        "tools": {},
-        "gh_extensions": [],
-        "docker_cli_plugins": [],
+        "tools": {"vfox:jdx/vfox-php": "1.2.3", "github:composer/composer": "1.2.3"},
+        "version": "1.2.3",
     }
     assert normalized["home_environment"] == build_home_environment()
     assert normalized["secrets"]["bitwarden"]["server"] == ""
@@ -102,32 +81,82 @@ def test_normalize_returns_complete_shape_with_defaults() -> None:
     assert normalized["secrets"]["bitwarden"]["browser_profiles_collection_id"] == ""
 
 
-def test_normalize_preserves_declared_values_and_env_overrides() -> None:
+@pytest.mark.parametrize(
+    "tool", ["node", "aqua:cli/cli", "aqua:docker/cli", "aqua:docker/compose", "aqua:docker/buildx"]
+)
+def test_rejects_duplicate_native_runtime_ownership(with_tool_versions, tool: str) -> None:
+    """Global mise entries cannot shadow setup's native workstation commands."""
+    with pytest.raises(ValueError, match="system-owned"):
+        DesiredStateConfigNormalizer().normalize(
+            with_tool_versions({"development": {"mise": {"tools": {tool: "latest"}}}}), {}
+        )
+
+
+@pytest.mark.parametrize(
+    "section,tool", [("development", "node"), ("development", "mise"), ("home_environment", "chezmoi")]
+)
+@pytest.mark.parametrize("version", [None, "", " ", "latest", "lts", "1.2.3-rc.1", "../../tmp", 24, True, [], {}])
+def test_runtime_versions_require_reproducible_stable_releases(
+    with_tool_versions, section: str, tool: str, version: object
+) -> None:
+    """Unresolved selectors and invalid URL components fail before downloading."""
+    config = with_tool_versions({section: {tool: {"version": version}}})
+    with pytest.raises(
+        ValueError, match=rf"{section}\.{tool}\.version must be a stable release number supplied by configuration"
+    ):
+        DesiredStateConfigNormalizer().normalize(config, {})
+
+
+@pytest.mark.parametrize(
+    "section,tool",
+    [
+        ("development", "node"),
+        ("development", "mise"),
+        ("development", "orca"),
+        ("home_environment", "chezmoi"),
+    ],
+)
+def test_missing_tool_versions_do_not_fall_back_to_python_defaults(with_tool_versions, section: str, tool: str) -> None:
+    """Every release must come from the effective configuration."""
+    config = with_tool_versions({})
+    del config[section][tool]["version"]
+    with pytest.raises(
+        ValueError, match=rf"{section}\.{tool}\.version must be a stable release number supplied by configuration"
+    ):
+        DesiredStateConfigNormalizer().normalize(config, {})
+
+
+@pytest.mark.parametrize(
+    "section,tool",
+    [
+        ("development", "node"),
+        ("development", "mise"),
+        ("development", "orca"),
+        ("home_environment", "chezmoi"),
+    ],
+)
+def test_tool_version_updates_only_require_configuration_changes(with_tool_versions, section: str, tool: str) -> None:
+    """A new configured release reaches consumers without an implementation edit."""
+    config = with_tool_versions({section: {tool: {"version": "9.8.7"}}})
+    normalized = DesiredStateConfigNormalizer().normalize(config, {})
+    assert normalized[section][tool]["version"] == config[section][tool]["version"]
+
+
+def test_native_tool_preferences_survive_normalization(with_tool_versions) -> None:
+    """Explicit native releases and extensions are retained."""
+    config: dict[str, Any] = {
+        "development": {"node": {"version": "24.0.0"}, "github": {"extensions": {"owner/gh-tool": "1.2.3"}}},
+    }
+    normalized = DesiredStateConfigNormalizer().normalize(with_tool_versions(config), {})
+    assert normalized["development"]["node"] == config["development"]["node"]
+    assert normalized["development"]["github"]["extensions"] == {"owner/gh-tool": "v1.2.3"}
+
+
+def test_normalize_preserves_declared_values_and_env_overrides(with_tool_versions) -> None:
     """Declared values should survive normalization unless env overrides apply."""
 
     # Arrange
     normalizer = DesiredStateConfigNormalizer()
-    github_cli_source = (
-        "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main"
-    )
-    github_cli_repository = {
-        "name": "github-cli",
-        "source": github_cli_source,
-        "keyring": {
-            "url": "https://cli.github.com/packages/githubcli-archive-keyring.gpg",
-            "path": "/usr/share/keyrings/githubcli-archive-keyring.gpg",
-        },
-    }
-    docker_repository = {
-        "name": "docker",
-        "source": (
-            "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable"
-        ),
-        "keyring": {
-            "url": "https://download.docker.com/linux/ubuntu/gpg",
-            "path": "/etc/apt/keyrings/docker.asc",
-        },
-    }
     raw_config: dict[str, object] = {
         "user": {
             "name": "declared",
@@ -144,12 +173,6 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
                 "apt": ["git"],
                 "cache_valid_time": 3600,
             },
-            "repositories": {"apt": [github_cli_repository]},
-            "directories": [{"path": "/var/lib/workstation-manager/cache", "mode": "0750"}],
-            "services": {
-                "enabled": ["systemd-timesyncd"],
-                "disabled": ["apache2"],
-            },
             "settings": {"sysctl": {}},
         },
         "desktop": {
@@ -159,19 +182,14 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
             },
             "browser": "brave",
             "gnome": {
-                "dark_mode": False,
-                "show_trash": False,
                 "favorites": ["org.gnome.Terminal.desktop"],
             },
         },
         "development": {
             "packages": ["git", "make", "jq", "fonts-firacode"],
-            "repositories": {"apt": [github_cli_repository, docker_repository]},
-            "editor_packages": ["com.visualstudio.code"],
+            "editor_packages": ["code"],
             "mise": {
-                "tools": {"node": "latest", "php": "8.4"},
-                "gh_extensions": ["nektos/gh-act", "github/gh-stack"],
-                "docker_cli_plugins": DECLARED_DOCKER_CLI_PLUGINS,
+                "tools": {"aqua:helm/helm": "5.6.7"},
             },
             "settings": {"sysctl": {"fs.inotify.max_user_watches": "524288"}},
         },
@@ -192,7 +210,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     }
 
     # Act
-    normalized = normalizer.normalize(raw_config, environment)
+    normalized = normalizer.normalize(with_tool_versions(raw_config), environment)
 
     # Assert
     assert normalized["user"] == {
@@ -207,17 +225,11 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     assert normalized["system"]["packages"]["prerequisites"] == ["locales", "curl"]
     assert normalized["system"]["packages"]["apt"] == ["git"]
     assert normalized["system"]["packages"]["cache_valid_time"] == 3600
-    assert normalized["system"]["repositories"]["apt"] == [github_cli_repository]
-    assert normalized["system"]["directories"] == [{"path": "/var/lib/workstation-manager/cache", "mode": "0750"}]
-    assert normalized["system"]["services"]["enabled"] == ["systemd-timesyncd"]
-    assert normalized["system"]["services"]["disabled"] == ["apache2"]
     assert normalized["system"]["settings"]["sysctl"] == {}
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "custom"
     assert normalized["desktop"]["flatpak"]["packages"] == ["com.brave.Browser"]
     assert normalized["desktop"]["browser"] == "brave"
-    assert normalized["desktop"]["gnome"]["dark_mode"] is False
-    assert normalized["desktop"]["gnome"]["show_trash"] is False
     assert normalized["desktop"]["gnome"]["favorites"] == ["org.gnome.Terminal.desktop"]
     assert normalized["development"]["packages"] == [
         "git",
@@ -225,15 +237,14 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
         "jq",
         "fonts-firacode",
     ]
-    assert normalized["development"]["repositories"]["apt"] == [
-        github_cli_repository,
-        docker_repository,
-    ]
-    assert normalized["development"]["editor_packages"] == ["com.visualstudio.code"]
+    assert normalized["development"]["editor_packages"] == ["code"]
     assert normalized["development"]["mise"] == {
-        "tools": {"node": "latest", "php": "8.4"},
-        "gh_extensions": ["nektos/gh-act", "github/gh-stack"],
-        "docker_cli_plugins": DECLARED_DOCKER_CLI_PLUGINS,
+        "tools": {
+            "vfox:jdx/vfox-php": "1.2.3",
+            "github:composer/composer": "1.2.3",
+            "aqua:helm/helm": "5.6.7",
+        },
+        "version": "1.2.3",
     }
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["home_environment"] == DECLARED_HOME_ENVIRONMENT
@@ -242,7 +253,7 @@ def test_normalize_preserves_declared_values_and_env_overrides() -> None:
     assert normalized["secrets"]["bitwarden"]["gpg_collection_id"] == "22222222-2222-2222-2222-222222222222"
 
 
-def test_normalize_rejects_invalid_section_types() -> None:
+def test_normalize_rejects_invalid_section_types(with_tool_versions) -> None:
     """Wrong section types should fail with a clear validation error."""
 
     # Arrange
@@ -252,10 +263,10 @@ def test_normalize_rejects_invalid_section_types() -> None:
 
     # Act / Assert
     with pytest.raises(ValueError, match="workstation_manager.desktop must be a mapping"):
-        normalizer.normalize(invalid_config, environment)
+        normalizer.normalize(with_tool_versions(invalid_config), environment)
 
 
-def test_normalize_preserves_explicit_empty_system_lists() -> None:
+def test_normalize_preserves_explicit_empty_system_lists(with_tool_versions) -> None:
     """Explicit empty system lists should not fall back to non-empty defaults."""
 
     # Arrange
@@ -264,23 +275,21 @@ def test_normalize_preserves_explicit_empty_system_lists() -> None:
         "home_environment": build_home_environment(),
         "system": {
             "packages": {"prerequisites": [], "apt": []},
-            "directories": [],
-            "services": {"enabled": [], "disabled": []},
             "settings": {"sysctl": {}},
         },
     }
     environment = {"USER": "emilien"}
 
     # Act
-    normalized = normalizer.normalize(raw_config, environment)
+    normalized = normalizer.normalize(with_tool_versions(raw_config), environment)
 
     # Assert
     assert normalized["system"]["packages"]["prerequisites"] == []
     assert normalized["system"]["packages"]["apt"] == []
-    assert_empty_optional_system_collections(normalized)
+    assert normalized["system"]["settings"]["sysctl"] == {}
 
 
-def test_normalize_rejects_bitwarden_collections_without_server() -> None:
+def test_normalize_rejects_bitwarden_collections_without_server(with_tool_versions) -> None:
     """Declared Bitwarden collections require an explicit Bitwarden server."""
 
     # Arrange
@@ -300,10 +309,10 @@ def test_normalize_rejects_bitwarden_collections_without_server() -> None:
         ValueError,
         match="workstation_manager.secrets.bitwarden.server must not be empty",
     ):
-        normalizer.normalize(raw_config, {"USER": "emilien"})
+        normalizer.normalize(with_tool_versions(raw_config), {"USER": "emilien"})
 
 
-def test_normalize_rejects_invalid_package_cache_policy() -> None:
+def test_normalize_rejects_invalid_package_cache_policy(with_tool_versions) -> None:
     """Non-integer package cache policies should fail with a clear error."""
 
     # Arrange
@@ -313,10 +322,10 @@ def test_normalize_rejects_invalid_package_cache_policy() -> None:
 
     # Act / Assert
     with pytest.raises(ValueError, match="non-negative integer value expected"):
-        normalizer.normalize(raw_config, environment)
+        normalizer.normalize(with_tool_versions(raw_config), environment)
 
 
-def test_normalize_rejects_invalid_bitwarden_collection_id() -> None:
+def test_normalize_rejects_invalid_bitwarden_collection_id(with_tool_versions) -> None:
     """Bitwarden collection IDs should fail fast when not UUIDs."""
 
     # Arrange
@@ -336,7 +345,7 @@ def test_normalize_rejects_invalid_bitwarden_collection_id() -> None:
         ValueError,
         match="workstation_manager.secrets.bitwarden.ssh_collection_id must be a UUID string",
     ):
-        normalizer.normalize(raw_config, {"USER": "emilien"})
+        normalizer.normalize(with_tool_versions(raw_config), {"USER": "emilien"})
 
 
 @pytest.mark.parametrize(
@@ -348,37 +357,45 @@ def test_normalize_rejects_invalid_bitwarden_collection_id() -> None:
         ("  https://git.example.test/team/dotfiles.git  ", "https://git.example.test/team/dotfiles.git"),
     ],
 )
-def test_normalize_preserves_configured_chezmoi_source(source: str, expected: str) -> None:
+def test_normalize_preserves_configured_chezmoi_source(with_tool_versions, source: str, expected: str) -> None:
     """The configured repository or local path must reach Chezmoi without being replaced by the default."""
 
-    normalized = DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": source}}})
+    normalized = DesiredStateConfigNormalizer().normalize(
+        with_tool_versions({"home_environment": {"chezmoi": {"source": source}}})
+    )
     assert normalized["home_environment"]["chezmoi"]["source"] == expected
 
 
-def test_normalize_defaults_null_chezmoi_source() -> None:
+def test_normalize_defaults_null_chezmoi_source(with_tool_versions) -> None:
     """A null placeholder uses the documented source just like an omitted value."""
 
-    normalized = DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": None}}})
+    normalized = DesiredStateConfigNormalizer().normalize(
+        with_tool_versions({"home_environment": {"chezmoi": {"source": None}}})
+    )
     assert normalized["home_environment"]["chezmoi"]["source"] == "https://github.com/neilime/workstation-config.git"
 
 
 @pytest.mark.parametrize("source", ["", " ", "\t\n"])
-def test_normalize_rejects_blank_chezmoi_source(source: str) -> None:
+def test_normalize_rejects_blank_chezmoi_source(with_tool_versions, source: str) -> None:
     """An explicitly blank source must not silently initialize the default repository."""
 
     with pytest.raises(ValueError, match="chezmoi.source must be a non-empty string"):
-        DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": source}}})
+        DesiredStateConfigNormalizer().normalize(
+            with_tool_versions({"home_environment": {"chezmoi": {"source": source}}})
+        )
 
 
 @pytest.mark.parametrize("source", [12, True, [], {}])
-def test_normalize_rejects_non_string_chezmoi_source(source: object) -> None:
+def test_normalize_rejects_non_string_chezmoi_source(with_tool_versions, source: object) -> None:
     """Source values must be strings before they are passed to the Chezmoi command."""
 
     with pytest.raises(ValueError, match="chezmoi.source must be a string"):
-        DesiredStateConfigNormalizer().normalize({"home_environment": {"chezmoi": {"source": source}}})
+        DesiredStateConfigNormalizer().normalize(
+            with_tool_versions({"home_environment": {"chezmoi": {"source": source}}})
+        )
 
 
-def test_browser_recovery_collection_selector():
+def test_browser_recovery_collection_selector(with_tool_versions):
     """The optional browser collection is validated like key collections."""
     normalizer = DesiredStateConfigNormalizer()
     config = {
@@ -390,15 +407,17 @@ def test_browser_recovery_collection_selector():
         }
     }
     assert (
-        normalizer.normalize(config, {"USER": "test"})["secrets"]["bitwarden"]["browser_profiles_collection_id"]
+        normalizer.normalize(with_tool_versions(config), {"USER": "test"})["secrets"]["bitwarden"][
+            "browser_profiles_collection_id"
+        ]
         == BROWSER_PROFILES_COLLECTION_ID
     )
     config["secrets"]["bitwarden"]["browser_profiles_collection_id"] = "invalid"
     with pytest.raises(ValueError, match="browser_profiles_collection_id must be a UUID"):
-        normalizer.normalize(config, {"USER": "test"})
+        normalizer.normalize(with_tool_versions(config), {"USER": "test"})
 
 
-def test_browser_profile_collection_requires_server():
+def test_browser_profile_collection_requires_server(with_tool_versions):
     """A profile collection cannot be fetched without a selected Bitwarden server."""
 
     config = {
@@ -410,36 +429,38 @@ def test_browser_profile_collection_requires_server():
         }
     }
     with pytest.raises(ValueError, match="bitwarden.server must not be empty"):
+        DesiredStateConfigNormalizer().normalize(with_tool_versions(config))
+
+
+@pytest.mark.parametrize("section,key", [("secrets", "bitwarden"), ("development", "mise")])
+def test_configuration_rejects_unknown_fields_without_exposing_values(with_tool_versions, section, key):
+    """Closed configuration mappings validate the current schema and keep values private."""
+    config = with_tool_versions({section: {key: {"unexpected_option": "synthetic-secret"}}})
+    with pytest.raises(ValueError, match="contains unsupported fields") as error:
         DesiredStateConfigNormalizer().normalize(config)
+    assert "synthetic-secret" not in str(error.value)
 
 
-def test_obsolete_browser_collection_selector_is_rejected():
-    """Do not silently treat the old recovery-only selector as an unconfigured browser."""
-
-    config = {"secrets": {"bitwarden": {"browser_collection_id": BROWSER_PROFILES_COLLECTION_ID}}}
-    with pytest.raises(ValueError, match="use browser_profiles_collection_id with complete profile notes"):
-        DesiredStateConfigNormalizer().normalize(config)
-
-
-def test_normalize_does_not_expose_oh_my_zsh_configuration() -> None:
+def test_normalize_does_not_expose_oh_my_zsh_configuration(with_tool_versions) -> None:
     """Private configuration cannot choose the setup-owned framework revision."""
     normalized = DesiredStateConfigNormalizer().normalize(
-        {"home_environment": {"oh_my_zsh": {"version": "unmanaged-revision"}}}
+        with_tool_versions({"home_environment": {"oh_my_zsh": {"version": "unmanaged-revision"}}})
     )
     assert normalized["home_environment"] == build_home_environment()
 
 
-def test_empty_gnome_favorites_explicitly_clears_the_dock() -> None:
+def test_empty_gnome_favorites_explicitly_clears_the_dock(with_tool_versions) -> None:
     """An empty preference list is distinct from leaving the setting unmanaged."""
     normalized = DesiredStateConfigNormalizer().normalize(
-        {"desktop": {"gnome": {"dark_mode": False, "show_trash": False, "favorites": []}}},
+        with_tool_versions({"desktop": {"gnome": {"favorites": []}}}),
         {"USER": "fixture"},
     )
-    assert normalized["desktop"]["gnome"] == {"dark_mode": False, "show_trash": False, "favorites": []}
+    assert normalized["desktop"]["gnome"] == {"favorites": []}
 
 
-@pytest.mark.parametrize("key,value", [("dark_mode", "true"), ("show_trash", 1), ("favorites", "browser")])
-def test_gnome_preferences_reject_invalid_types(key: str, value: object) -> None:
-    """Optional settings still require explicit booleans and a list of favorites."""
+def test_gnome_favorites_require_a_list(with_tool_versions) -> None:
+    """A string must not be interpreted as a list of favorite applications."""
     with pytest.raises(ValueError):
-        DesiredStateConfigNormalizer().normalize({"desktop": {"gnome": {key: value}}}, {"USER": "fixture"})
+        DesiredStateConfigNormalizer().normalize(
+            with_tool_versions({"desktop": {"gnome": {"favorites": "browser"}}}), {"USER": "fixture"}
+        )

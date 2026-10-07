@@ -1,5 +1,5 @@
 {
-  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  $schema: "https://docs.renovatebot.com/renovate-global-schema.json",
   onboarding: true,
   platform: "github",
   platformCommit: "enabled",
@@ -16,11 +16,56 @@
   customManagers: [
     {
       customType: "regex",
-      description: "Update the setup-owned Oh My Zsh revision",
-      managerFilePatterns: [
-        "/^ansible\\/collections\\/ansible_collections\\/neilime\\/workstation_setup\\/roles\\/home_environment\\/tasks\\/oh_my_zsh\\.yml$/",
+      description: "Propose reviewed Clipboard Indicator releases; refresh the archive digest during review",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: [
+        'clipboard_indicator:\\n(?:[^\\n]*\\n){0,4}?\\s+version: "(?<currentValue>[0-9]+)"',
       ],
-      matchStrings: ['version:\\s+"(?<currentDigest>[0-9a-f]{40})"'],
+      depNameTemplate: "clipboard-indicator",
+      datasourceTemplate: "custom.gnome-clipboard",
+      versioningTemplate: "regex:^(?<major>[0-9]+)$",
+    },
+    {
+      customType: "regex",
+      description: "Keep the complete system Node distribution on the latest LTS release",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: ['node:\\n\\s+version: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: "node-lts",
+      datasourceTemplate: "custom.node-lts",
+      versioningTemplate: "semver",
+    },
+    {
+      customType: "regex",
+      description: "Update the checksum-verified mise release",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: ['mise:\\n\\s+version: "(?<currentValue>[^"]+)"'],
+      depNameTemplate: "jdx/mise",
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^v(?<version>.+)$",
+      versioningTemplate: "semver",
+    },
+    {
+      customType: "regex",
+      description: "Advance the single Ubuntu baseline in bootstrap, tooling, and Lima together",
+      managerFilePatterns: [
+        "/^ansible\\/ubuntu-version$/",
+        "/^docker\\/tooling\\/Dockerfile$/",
+        "/^e2e-tests\\/lima-ubuntu\\.yml$/",
+      ],
+      matchStrings: [
+        "(?:FROM ubuntu:|releases/|ubuntu-|^)(?<currentValue>\\d{2}\\.\\d{2})",
+      ],
+      depNameTemplate: "ubuntu-workstation",
+      datasourceTemplate: "custom.ubuntu-stable",
+      versioningTemplate: "regex:^(?<major>\\d{2})\\.(?<minor>\\d{2})$",
+    },
+    {
+      customType: "regex",
+      description: "Update the setup-owned Oh My Zsh revision",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: [
+        'workstation_manager_oh_my_zsh_revision: "(?<currentDigest>[0-9a-f]{40})"',
+      ],
       depNameTemplate: "ohmyzsh/ohmyzsh",
       packageNameTemplate: "https://github.com/ohmyzsh/ohmyzsh.git",
       datasourceTemplate: "git-refs",
@@ -28,29 +73,10 @@
     },
     {
       customType: "regex",
-      description: "Update pinned PHP defaults in Ansible config",
-      managerFilePatterns: [
-        "/^ansible\\/(group_vars\\/all|vars\\/private\\.override\\.example)\\.yml$/",
-      ],
-      matchStrings: ['php:\\s+"(?<currentValue>[^"]+)"'],
-      depNameTemplate: "php/php-src",
-      datasourceTemplate: "github-tags",
-      extractVersionTemplate: "^php-(?<version>.+)$",
-      versioningTemplate: "semver",
-    },
-    {
-      customType: "regex",
-      description: "Update pinned Chezmoi defaults across config and tests",
-      managerFilePatterns: [
-        "/^ansible\\/group_vars\\/all\\.yml$/",
-        "/^ansible\\/collections\\/ansible_collections\\/neilime\\/workstation_setup\\/plugins\\/module_utils\\/desired_state_support\\.py$/",
-        "/^ansible\\/collections\\/ansible_collections\\/neilime\\/workstation_setup\\/tests\\/unit\\/plugins\\/module_utils\\/test_desired_state\\.py$/",
-      ],
-      matchStringsStrategy: "any",
+      description: "Update the pinned Chezmoi release in public config",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: [
         'chezmoi:\\n(?:[^\\n]*\\n){0,6}?\\s+version:\\s+"(?<currentValue>[^"]+)"',
-        '"chezmoi": \\{\\n\\s+"version": "(?<currentValue>[^"]+)",',
-        '\\("version", "(?<currentValue>[^"]+)"\\),',
       ],
       depNameTemplate: "twpayne/chezmoi",
       datasourceTemplate: "github-releases",
@@ -59,26 +85,46 @@
     },
     {
       customType: "regex",
-      description: "Update the major-only Helm track in mise defaults",
+      description: "Update reviewed development-tool releases and npm CLIs",
       managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: [
-        '"aqua:helm/helm": "(?<currentValue>\\d+)"',
+        '# renovate: datasource=(?<datasource>[^ ]+) depName=(?<depName>[^\\s]+)\\n\\s+[^\\n]+?:\\s+"(?<currentValue>[^"\\n]+)"',
       ],
-      depNameTemplate: "helm/helm",
-      datasourceTemplate: "github-releases",
-      versioningTemplate: "semver-partial",
-    },
-    {
-      customType: "regex",
-      description: "Update the pinned Déjà version in mise defaults",
-      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
-      matchStrings: [
-        '"github:Giammarco-Ferranti/deja": "(?<currentValue>[^"]+)"',
-      ],
-      depNameTemplate: "Giammarco-Ferranti/deja",
-      datasourceTemplate: "github-releases",
       extractVersionTemplate: "^v?(?<version>.+)$",
       versioningTemplate: "semver",
     },
+    {
+      customType: "regex",
+      description: "Update the mandatory mise PHP runtime from stable upstream tags",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: ['"vfox:jdx/vfox-php": "(?<currentValue>[^"]+)"'],
+      depNameTemplate: "php/php-src",
+      datasourceTemplate: "github-tags",
+      extractVersionTemplate: "^php-(?<version>\\d+\\.\\d+\\.\\d+)$",
+      versioningTemplate: "semver",
+    },
   ],
+  customDatasources: {
+    "gnome-clipboard": {
+      defaultRegistryUrlTemplate: "https://extensions.gnome.org/extension-info/?uuid=clipboard-indicator%40tudmotu.com",
+      format: "json",
+      transformTemplates: [
+        '{"releases": $distinct($each(shell_version_map, function($value) { {"version": $string($value.version)} }))}',
+      ],
+    },
+    "node-lts": {
+      defaultRegistryUrlTemplate: "https://nodejs.org/dist/index.json",
+      format: "json",
+      transformTemplates: [
+        '{"releases": [$[lts != false].{"version": $substring(version, 1), "releaseTimestamp": date}]}',
+      ],
+    },
+    "ubuntu-stable": {
+      defaultRegistryUrlTemplate: "https://changelogs.ubuntu.com/meta-release",
+      format: "plain",
+      transformTemplates: [
+        '{"releases": [releases[$match(version, /^Version: [0-9]{2}\\.[0-9]{2}(\\.[0-9]+)?( LTS)?$/)].{"version": $match(version, /^Version: ([0-9]{2}\\.[0-9]{2})/).groups[0]}]}',
+      ],
+    },
+  },
 }

@@ -8,39 +8,29 @@ from typing import Any
 
 _JSONC_TOKENS = re.compile(r'"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*[\s\S]*?\*/')
 _TRAILING_COMMAS = re.compile(r'"(?:\\.|[^"\\])*"|,(?=\s*[}\]])')
-_LOCAL_TERMINAL_SETTINGS = (
-    "terminal.integrated.profiles.linux",
-    "terminal.integrated.defaultProfile.linux",
-)
 
 
 # The editor exposes the single configuration operation used by its module.
 # pylint: disable-next=too-few-public-methods
 class EditorTerminalSettings:
-    """Configure the managed terminal profile and keep its Linux settings local."""
+    """Configure native Zsh while preserving personal editor settings."""
 
     def configure(self, content: str) -> str:
         """Preserve comments, unrelated settings and profiles, accepting JSONC trailing commas."""
 
         if not self._without_comments(content).strip():
             content += ("" if content.endswith("\n") else "\n") + "{}\n"
+        settings = json.loads(self._parse(content))
+        profiles = settings.get("terminal.integrated.profiles.linux", {})
+        if not isinstance(profiles, dict):
+            raise ValueError("VS Code terminal profiles must be a JSONC object.")
         content = self._set(
             content,
-            ("terminal.integrated.profiles.linux", "zsh (host)"),
-            {"path": "/app/bin/host-spawn", "args": ["/usr/bin/zsh", "-l"], "overrideName": True},
+            ("terminal.integrated.profiles.linux", "zsh"),
+            {"path": "/usr/bin/zsh", "args": ["-l"]},
         )
-        content = self._set(content, ("terminal.integrated.defaultProfile.linux",), "zsh (host)")
-        settings = json.loads(self._parse(content))
-        ignored = settings.get("settingsSync.ignoredSettings", [])
-        if not isinstance(ignored, list) or any(not isinstance(setting, str) for setting in ignored):
-            raise ValueError("VS Code settingsSync.ignoredSettings must be an array of strings.")
-        # A leading minus explicitly opts a setting back into Settings Sync.
-        terminal_sync_opt_ins = {f"-{key}" for key in _LOCAL_TERMINAL_SETTINGS}
-        ignored = [setting for setting in ignored if setting not in terminal_sync_opt_ins]
-        for setting in _LOCAL_TERMINAL_SETTINGS:
-            if setting not in ignored:
-                ignored.append(setting)
-        return self._set(content, ("settingsSync.ignoredSettings",), ignored)
+        content = self._set(content, ("terminal.integrated.defaultProfile.linux",), "zsh")
+        return content
 
     @staticmethod
     def _without_comments(content: str) -> str:

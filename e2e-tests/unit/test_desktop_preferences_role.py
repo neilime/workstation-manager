@@ -1,77 +1,118 @@
-"""Check that unset personal preferences leave the desktop untouched."""
+"""Exercise fixed desktop behavior through isolated Ansible tasks."""
 
 from __future__ import annotations
 
 import json
-import os
-import pathlib
-import pwd
-import subprocess
-import sys
+from typing import Any
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import (
+    SETUP_ROLES,
+    ansible_environment,
+    desktop_variables,
+    run_playbook,
+    write_local_playbook,
+    write_stateful_module,
+)
+
+pytestmark = pytest.mark.integration
+
+FIXTURE_OPERATIONS = r"""
+if operation == "apt":
+    names = args["name"] if isinstance(args["name"], list) else [args["name"]]
+    packages = set(state["packages"])
+    packages = packages - set(names) if args["state"] == "absent" else packages | set(names)
+    state["packages"] = sorted(packages)
+elif operation == "stat":
+    exists = args["path"].endswith(".gschema.xml") and "gnome-software" in state["packages"]
+    result["stat"] = {"exists": exists, "isreg": exists}
+elif operation == "dconf":
+    state["dconf"][args["key"]] = args["value"]
+elif operation == "flatpak":
+    if args.get("delete_data"):
+        module.fail_json(msg="Application removal must preserve user data")
+    state["flatpaks"][args["method"]] = [app for app in state["flatpaks"][args["method"]] if app != args["name"]]
+
+"""
 
 
-def test_unset_desktop_preferences_do_not_access_dconf(tmp_path) -> None:
-    """A setup without overrides or wallpaper must work without a desktop bus."""
-    # Role fixtures repeat the Ansible play and isolated environment contract.
-    # pylint: disable=duplicate-code
-    task_file = (
-        pathlib.Path(__file__).parents[2]
-        / "ansible/collections/ansible_collections/neilime/workstation_setup"
-        / "roles/gnome_preferences/tasks/main.yml"
-    )
+def isolated_tasks(state_file):
+    """Keep role expressions while replacing adapters that mutate host state."""
+    loader = DataLoader()
     tasks = [
         task
-        for task in DataLoader().load_from_file(str(task_file))
-        if "community.general.dconf" in task or task.get("register") == "workstation_manager_gnome_wallpaper"
+        for task in loader.load_from_file(str(SETUP_ROLES / "flatpak_apps/tasks/main.yml"))
+        if "ansible.builtin.apt" in task
     ]
-    home = tmp_path / "home"
-    database = home / ".config/dconf/user"
-    database.parent.mkdir(parents=True)
-    database.write_bytes(b"existing desktop state")
-    config = tmp_path / "ansible.cfg"
-    config.write_text("[defaults]\n")
-    playbook = tmp_path / "playbook.json"
-    playbook.write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "connection": "local",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_manager_gnome_use_become_user": False,
-                        "workstation_manager_resolved": {
-                            "user": {"name": pwd.getpwuid(os.getuid()).pw_name, "home": str(home)},
-                            "desktop": {"gnome": {"dark_mode": None, "show_trash": None, "favorites": None}},
-                        },
-                    },
-                    "tasks": tasks,
+    tasks.extend(loader.load_from_file(str(SETUP_ROLES / "flatpak_apps/tasks/updates.yml")))
+    tasks.extend(loader.load_from_file(str(SETUP_ROLES / "flatpak_apps/tasks/scanner.yml")))
+    tasks.extend(
+        task
+        for task in loader.load_from_file(str(SETUP_ROLES / "gnome_preferences/tasks/main.yml"))
+        if "community.general.dconf" in task or task.get("register") == "workstation_manager_gnome_wallpaper"
+    )
+    for task in tasks:
+        for action in ("apt", "stat", "dconf", "flatpak"):
+            module = ("community.general." if action in ("dconf", "flatpak") else "ansible.builtin.") + action
+            if module in task:
+                task["fixture_desktop_state"] = {
+                    "operation": action,
+                    "arguments": task.pop(module),
+                    "state_file": str(state_file),
                 }
-            ]
-        )
-    )
-    environment = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(home),
-        "XDG_CONFIG_HOME": str(home / ".config"),
-        "DBUS_SESSION_BUS_ADDRESS": f"unix:path={tmp_path}/missing-bus",
-        "ANSIBLE_CONFIG": str(config),
-        "ANSIBLE_HOME": str(tmp_path / ".ansible"),
-        "ANSIBLE_COLLECTIONS_PATH": os.environ.get("ANSIBLE_COLLECTIONS_PATH", ""),
+    return tasks
+
+
+def test_fixed_desktop_settings_preserve_personal_state(tmp_path) -> None:
+    """Actual role conditions apply fixed values, preserve optional state, and converge once."""
+    state_file = tmp_path / "state.json"
+    original: dict[str, Any] = {
+        "packages": [],
+        "flatpaks": {"system": ["org.gnome.SimpleScan", "example.Other"], "user": ["org.gnome.SimpleScan"]},
+        "scanner_data": "synthetic preserved preferences",
+        "dconf": {
+            "/org/gnome/desktop/interface/color-scheme": "'default'",
+            "/org/gnome/shell/extensions/dash-to-dock/show-trash": "false",
+            "/org/gnome/software/download-updates": "false",
+            "/org/gnome/shell/favorite-apps": "['personal.desktop']",
+            "/org/gnome/desktop/background/picture-uri": "'file:///personal.jpg'",
+        },
     }
-    result = subprocess.run(
-        ["ansible-playbook", "-i", "localhost,", str(playbook)],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
+    state_file.write_text(json.dumps(original))
+    library = tmp_path / "library"
+    library.mkdir()
+    write_stateful_module(library / "fixture_desktop_state.py", FIXTURE_OPERATIONS)
+    tasks = isolated_tasks(state_file)
+    home = tmp_path / "home"
+    playbook = write_local_playbook(
+        tmp_path / "playbook.json",
+        tasks,
+        desktop_variables(
+            home,
+            system={"packages": {"cache_valid_time": 0}},
+            desktop={"gnome": {"favorites": None}},
+        ),
     )
+    environment = ansible_environment(tmp_path, ANSIBLE_LIBRARY=str(library))
+    command = ["ansible-playbook", "-i", "localhost,", str(playbook)]
+    preview = run_playbook([*command, "--check"], environment)
+    assert preview.returncode == 0, preview.stdout + preview.stderr
+    assert json.loads(state_file.read_text()) == original
+    result = run_playbook(command, environment)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "changed=0" in result.stdout
-    assert database.read_bytes() == b"existing desktop state"
-    assert not (home / ".local/share/backgrounds/wallpaper.jpg").exists()
-    # pylint: enable=duplicate-code
+    state = json.loads(state_file.read_text())
+    assert state["dconf"] == {
+        **original["dconf"],
+        "/org/gnome/desktop/interface/color-scheme": "'prefer-dark'",
+        "/org/gnome/shell/extensions/dash-to-dock/show-trash": "true",
+        "/org/gnome/software/download-updates": "true",
+    }
+    assert {"gnome-software", "gnome-software-plugin-flatpak"}.issubset(state["packages"])
+    assert {"simple-scan", "sane-utils"}.issubset(state["packages"])
+    assert state["flatpaks"] == {"system": ["example.Other"], "user": []}
+    assert state["scanner_data"] == original["scanner_data"]
+    repeated = run_playbook(command, environment)
+    assert repeated.returncode == 0, repeated.stdout + repeated.stderr
+    assert "changed=0" in repeated.stdout
+    assert json.loads(state_file.read_text()) == state

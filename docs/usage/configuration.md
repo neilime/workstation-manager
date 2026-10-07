@@ -8,14 +8,15 @@ and workstation settings. Put personal overrides in
 repository, on its `main` branch.
 
 Start from the [example override](../../ansible/vars/private.override.example.yml).
-The override starts with sections such as `desktop`, `home_environment`, and
-`secrets`; do not wrap them in `workstation_manager`.
+The example contains `development`, `home_environment`, and `secrets`; do not wrap
+them in `workstation_manager`. General workstation settings inherit the public defaults.
 
 For example:
 
 ```yaml
-desktop:
-  browser: brave
+development:
+  github:
+    account: "<your-github-username>"
 
 home_environment:
   chezmoi:
@@ -29,13 +30,19 @@ secrets:
     browser_profiles_collection_id: "<your-browser-profiles-collection-uuid>"
 ```
 
-Replace the collection placeholders with your Bitwarden collection UUIDs. Commit
-and push the file, then run `setup` using the [Readme command](../../README.md#set-up-or-update-the-workstation).
+Set your GitHub username and replace the collection placeholders with your
+Bitwarden collection UUIDs. Commit and push the file, then run `setup` using the
+[Readme command](../../README.md#set-up-or-update-the-workstation).
 Setup, backup, and cleanup fetch that published override unless you select a local
 file. Nested mappings are merged with the defaults; lists replace the
 corresponding default list.
 
-Keep passwords, private keys, and browser recovery words in Bitwarden. Only
+The GitHub account is required: missing or blank `development.github.account`
+stops configuration validation before Ansible applies workstation roles. The
+username is not a secret; it identifies the account whose persistent login setup
+must verify.
+
+Keep passwords, tokens, private keys, and browser recovery words in Bitwarden. Only
 non-secret settings and collection identifiers belong in Git.
 
 To use a local override instead:
@@ -43,6 +50,43 @@ To use a local override instead:
 ```sh
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=/absolute/path/private.override.yml sh -s -- setup
+```
+
+## Application delivery
+
+Setup supports one Ubuntu release, recorded in
+[the baseline](../../ansible/ubuntu-version). Update Ubuntu before using a revision
+that selects a newer release. Setup uses the system Python for host modules and
+an isolated Ansible controller shared with the test image.
+
+After installing the selected applications, setup removes all Snap applications,
+snapd, and residual Snap directories. Close Snap applications before running setup.
+Boot or encryption that depends on Snap blocks setup before removal; use a
+conventional Ubuntu installation for this workstation.
+
+Before removal, setup stops Snap services and saves application data, existing
+snapshots, and affected accounts' Snap directories in a root-only archive under
+`/var/backups/workstation-manager/snap`. It compares the archive with the originals
+before deleting them. The printed archive path is retained after setup. Copy it to
+protected external storage if needed; the normal project backup does not include
+this directory automatically. Restore individual application files into the
+replacement's data location; setup does not convert application profile formats.
+An archive failure, mounted data, or an unexpected package dependency stops
+removal. A dry run inventories the planned removal without stopping services or
+removing data; archive integrity is checked when setup applies the plan.
+An APT preference prevents automatic snapd reinstallation.
+
+GNOME Software and its Flatpak plugin manage applications and updates, with
+automatic downloads enabled for the managed account. Setup installs Ptyxis and
+includes it in the default dock favorites while preserving existing terminal profiles.
+
+To run a reviewed immutable revision, use the same full commit for the entrypoint
+and its Ansible checkout:
+
+```sh
+revision="<reviewed-40-character-commit>"
+wget -qO- "https://raw.githubusercontent.com/neilime/workstation-manager/${revision}/workstation.sh" | \
+  REPOSITORY_BRANCH="$revision" sh -s -- setup
 ```
 
 ## Prepare Bitwarden collections
@@ -107,8 +151,9 @@ including when your terminal or IDE sets a different `XDG_DATA_HOME`. Existing
 baseline directory permissions are preserved, including private `.config`
 permissions applied by your dotfiles.
 
-Setup checks pending changes with `chezmoi status`. If local changes conflict
-with the source, it lists the affected paths and prompts before replacing them.
+Every normal setup checks pending changes with `chezmoi status` and applies them.
+Dry runs do not apply dotfiles. If local changes conflict with the source, setup
+lists the affected paths and prompts before replacing them.
 Choose `apply` to use the source versions and permissions for those paths,
 `skip` to keep your local changes and continue setup without applying any Chezmoi
 dotfiles or scripts for this run, or `abort` to stop setup and reconcile your
@@ -123,40 +168,24 @@ errors use an actual `apply` command for diagnosis: a dry run does not run scrip
 and can exit without an error message on conflicts.
 
 Setup installs [Oh My Zsh](https://github.com/ohmyzsh/ohmyzsh) into `~/.oh-my-zsh`
-before applying dotfiles. The installation task pins the framework revision,
-maintained by Renovate. This is an internal setup dependency, with no private
+before applying dotfiles. The framework revision is pinned in
+[public configuration](../../ansible/group_vars/all.yml) and maintained by
+Renovate. This is an internal setup dependency, with no private
 override setting. Setup updates the checkout to that revision and refuses to
 overwrite tracked local edits. Put personal plugins and themes in its `custom/`
 directory or manage them through Chezmoi.
 
-Enable Oh My Zsh and select plugins in your Chezmoi-managed `.zshrc`. The framework
-supplies aliases and completion; Starship can supply the prompt and mise can
-manage runtimes alongside it. Setup also installs Déjà through mise; enable it
-immediately after sourcing the managed `~/.config/workstation-manager/mise.sh`
-helper in your Chezmoi-managed `.zshrc`. That helper runs `mise activate zsh`,
-which puts `deja` on `PATH`. Run `deja import` once to seed it from your
-existing shell history. Because mise upgrades move Déjà between versioned
-install directories, keep the `eval "$(deja init zsh)"` line in your `.zshrc`
-instead of caching its output so each shell refreshes the init script against
-the current binary:
+The companion shell files select Oh My Zsh plugins, activate mise, and use
+Starship for the prompt. Docker plugins load only when Docker is available;
+Yarn, Composer, AWS, pre-commit, and thefuck integrations also require their
+commands. These shell hooks do not install software. When `batcat` is available,
+`bat` invokes it directly and `cat` invokes `batcat -pp`. Déjà is outside the
+default selection, and setup preserves existing shell history.
 
-```zsh
-source "$HOME/.config/workstation-manager/mise.sh"
-eval "$(deja init zsh)"
-```
-
-Do not enable `zsh-autosuggestions` at the same time; Déjà replaces it. For a
-pinned Oh My Zsh installation, add this before sourcing
-`~/.oh-my-zsh/oh-my-zsh.sh`:
-
-```zsh
-zstyle ':omz:update' mode disabled
-```
-
-Setup then owns framework updates. Setup leaves `.zshrc` ownership to Chezmoi
-and sets the target user's login shell to `/usr/bin/zsh`. Log out of your desktop
-session and log back in after setup to use Zsh in new terminals. Existing
-terminals keep their current shell.
+Setup owns the pinned framework updates; keep `zstyle ':omz:update' mode disabled`
+in `.zshrc`. Chezmoi owns shell preferences. Setup selects `/usr/bin/zsh` as the
+login shell; log out and back in to use it in new terminals. Existing terminals
+keep their current shell.
 
 Maintain dotfiles in that source repository. Before backup, review local changes;
 the [backup workflow](backup-and-restore.md) offers to capture or reapply managed
@@ -184,86 +213,100 @@ in your Chezmoi `~/.gitconfig`. The companion repository enables automatic garba
 collection with `gc.auto = 6700` and enables commit and tag signing. Repository-local
 settings and conditional includes can override those preferences.
 
-When `development.editor_packages` includes `com.visualstudio.code`, setup
-installs a `code` launcher on your terminal's `PATH`, preserving any existing
-`/usr/local/bin/code`. Open a project or file with:
+`development.editor_packages` selects native APT packages. The default `code`
+comes from [Microsoft's stable repository](https://code.visualstudio.com/docs/setup/linux),
+with `/usr/bin/code` available to terminals, Git, and agents:
 
 ```sh
 code .
 code --wait path/to/file
 ```
 
-Setup also selects `zsh (host)` as the Visual Studio Code integrated terminal's
-default Linux profile. It uses the Flatpak package's
-[host-spawn bridge](https://github.com/flathub/com.visualstudio.code#use-host-shell-in-the-integrated-terminal)
-to run `/usr/bin/zsh` on the workstation, where your `.zshrc`, mise tools, and
-project files are available. Setup preserves other editor settings, terminal
-profiles, and comments in `settings.json`. Restart Visual Studio Code after setup
-and open a new terminal; existing terminals keep their current shell. Workspace settings
-can override the default; select `zsh (host)` through
-**Terminal: Select Default Profile** in that case.
+The integrated terminal uses native `/usr/bin/zsh`. Setup preserves unrelated
+JSONC settings and personal profiles. Open Visual Studio Code after setup, check
+your profiles and extensions, and complete sign-in if requested. Project settings
+may override the selected terminal. Settings Sync uses the native configuration
+directory.
 
-Setup adds `terminal.integrated.profiles.linux` and
-`terminal.integrated.defaultProfile.linux` to
-[`settingsSync.ignoredSettings`](https://code.visualstudio.com/docs/configure/settings-sync#configure-synced-data).
-These Linux terminal settings stay local to the workstation so Settings Sync
-cannot replace the Flatpak host bridge. Other sync exclusions are preserved;
-explicit sync opt-ins for these two settings are removed.
+Public [development defaults](../../ansible/group_vars/all.yml) own software
+selection and release pins. Setup always installs Codex and GitHub Copilot as
+system-wide npm commands. Their reviewed versions live in `development.npm_packages`
+and are maintained by Renovate. Both commands are verified without shell activation;
+complete each product's sign-in when first using it.
 
-If Settings Sync has already removed `zsh (host)`, rerun setup or open
-**Preferences: Open User Settings (JSON)** and merge these entries into the
-existing settings, keeping any other terminal profiles and sync exclusions:
+Setup always installs PHP through mise's `vfox:jdx/vfox-php` backend. The exact PHP
+release lives in `development.mise.tools`; there is no PHP enable switch or APT
+runtime alternative. The backend compiles PHP, so setup installs its compiler and
+required library headers. Initial installation and PHP upgrades can take several
+minutes. Project PHP versions belong in each project's `mise.toml`.
 
-```json
-{
-  "terminal.integrated.profiles.linux": {
-    "zsh (host)": {
-      "path": "/app/bin/host-spawn",
-      "args": ["/usr/bin/zsh", "-l"],
-      "overrideName": true
-    }
-  },
-  "terminal.integrated.defaultProfile.linux": "zsh (host)",
-  "settingsSync.ignoredSettings": [
-    "terminal.integrated.profiles.linux",
-    "terminal.integrated.defaultProfile.linux"
-  ]
-}
-```
+Composer is also always installed through mise. Its `github:composer/composer`
+entry in `development.mise.tools` pins the official release; mise verifies the
+release asset checksum and exposes the `composer` command. Setup checks both
+executables through mise. Use `mise exec -- php` or `mise exec -- composer` from
+other shell contexts.
+Renovate maintains both release pins. Existing project files and PHP installations
+are preserved.
 
-Open a new terminal after saving. Zsh is installed on the workstation; selecting
-`/usr/bin/zsh` directly inside the Flatpak does not use the host installation.
+Setup always installs Helm and Dive through `development.mise.tools`, and gh-act
+and gh-stack through `development.github.extensions`. Their versions remain in
+public configuration and are maintained by Renovate.
 
-Set workstation-wide tool versions in `development.mise.tools`. They are
-written to `~/.config/mise/config.toml`; project-specific versions belong in each
-project's `mise.toml`.
+Helm supplies neither kubectl nor cluster credentials.
+Check the [Helm/Kubernetes compatibility policy](https://helm.sh/docs/topics/version_skew/)
+against the target cluster and test project charts/plugins before using it.
+Project runtime overrides belong in each project's `mise.toml`. Global mise tools
+use exact releases and must not take ownership of system Node, GitHub CLI, or Docker.
+Renovate maintains the selected tool versions, including optional pins.
 
-Setup always configures the local Docker daemon.
-Mise installs the Docker client and runtime binaries through `aqua:docker/cli`,
-with Compose and Buildx installed as Docker CLI plugins. Setup creates and starts
-`workstation-manager-docker.service`, and adds the managed user to the `docker`
-group. The daemon uses the containerd and runc binaries from the same mise
-installation. Setup also grants the managed user direct socket access, so
-existing terminals and IDE sessions can use Docker without `sudo` or a logout.
-The service reapplies this permission whenever it starts. Check access after
-setup with `docker info`.
-Docker access grants root-level control of the workstation; see
+Setup always installs and configures the release pinned by `development.orca.version`.
+It checks the architecture-specific package digest and seeds only missing settings.
+Existing workspaces and preferences remain intact. Renovate maintains the release pin.
+
+The agents workload installs pinned [Codex](https://learn.chatgpt.com/docs/codex/cli)
+and [Copilot](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli)
+commands through system npm and verifies them without shell activation. Their
+preferences and shared skills remain in Chezmoi. Product sign-in and access to a
+subscription remain separate first-use steps.
+
+`development.node.version` pins the complete system Node.js LTS distribution,
+including npm and npx, exposed through `/usr/local/bin`. Project-local mise
+versions may override it inside a project. Update native vendor packages through
+APT; cleanup only previews pending upgrades. Rerun setup after merging release
+pin updates.
+
+GitHub CLI comes from its official APT repository. Setup requires a persistent
+login for `development.github.host` matching `development.github.account`, after
+applying dotfiles. It reuses a valid OS-keyring login, can save a supplied bootstrap
+token in an unlocked credential store, or opens one browser login from the managed
+user's terminal. An unavailable keyring, failed authentication, or unexpected
+account stops setup. Unattended runs need usable stored credentials or a token
+plus an unlocked credential store.
+
+Provide a bootstrap token through `WORKSTATION_MANAGER_GITHUB_TOKEN`, never through
+the private override. A token is unnecessary when the configured account already
+has a working keyring login or you complete the interactive browser login.
+
+Git credential settings are stored alongside restored signing settings in
+`~/.config/git/config`; existing working helpers are reused. Token
+values stay out of configuration templates and logs. If authentication fails,
+unlock the desktop keyring, inspect `gh auth status --active`, and rerun setup.
+Agent product sign-in does not replace this GitHub CLI login.
+
+GitHub binary extensions, including gh-act and gh-stack, require exact release
+versions in the public configuration. Full commit revisions are supported only
+for script extensions. Setup verifies installed revisions and replaces outdated pins;
+modified script-extension checkouts stop the update for reconciliation. Unselected
+extensions are retained. `gh-act` remains a local CI debugging tool; its runner
+images and behavior do not replace hosted CI qualification.
+
+Docker Engine, its CLI, containerd, Compose, and Buildx come from Docker's official
+APT repository for the actual Ubuntu release. Setup enables `docker.service` and
+adds the managed user to the `docker` group. Log out and back in once if an existing
+desktop session does not yet have that group. Verify with `docker info`,
+`docker compose version`, and `docker buildx version`.
+Docker group access grants root-level control; see
 [Docker's post-installation guide](https://docs.docker.com/engine/install/linux-postinstall/).
-
-The [public defaults](../../ansible/group_vars/all.yml) provide the Compose and
-Buildx plugin mappings. Setup links their mise-managed binaries automatically.
-
-Rerun setup after changing the workstation's Docker version in
-`development.mise.tools` or upgrading Docker through mise. Setup updates the
-service's binary path and restarts the daemon when its service configuration
-changes. Running containers can be interrupted by that restart.
-
-Setup supports fresh installations without existing Docker service units. If
-another installation provides `docker.service` or `docker.socket`, setup stops.
-Reconcile that installation before continuing with the mise-managed daemon.
-A dry run previews available configuration without starting or verifying the
-daemon. If mise cannot resolve installed Docker binaries or plugins yet, their
-configuration is deferred until a normal setup run.
 
 Setup creates `user.projects_directory` (`~/Documents/dev-projects` by default)
 and adds it to the Files sidebar bookmarks. Existing bookmarks and custom labels
@@ -276,57 +319,61 @@ fixed default directory and any explicitly added paths.
 
 Setup also installs `workstation-manager-git-project-report`. Run it manually to
 print the Git repositories under `user.projects_directory` that still have local
-work in progress. A user-level daily timer is installed alongside it, and the
-desktop session activates that timer so the same summary appears as a
-notification once per day.
+work in progress. Setup always enables daily desktop notifications and installs
+`libnotify-bin`. The timer starts in the active user session, or at the next
+graphical login when no session is available.
 
-Choose `desktop.gnome.dark_mode`, `show_trash`, and `favorites` in
-`ansible/private.override.yml` in the companion repository. Unset values preserve
-existing desktop preferences; an explicit `favorites: []` clears the dock.
+Setup always enables dark mode and shows Trash in Ubuntu Dock. The
+[public defaults](../../ansible/group_vars/all.yml) select Brave and define the
+ordered dock favorites. Set `desktop.gnome.favorites: null` to preserve existing
+favorites or `favorites: []` to clear the dock.
 Use `browser` in the favorites list for the selected browser adapter's desktop entry.
-The [override example](../../ansible/vars/private.override.example.yml) shows the structure.
 
 Manage the wallpaper through Chezmoi at
 `~/.local/share/backgrounds/wallpaper.jpg`. Setup selects that image for both light
 and dark modes with zoom scaling when it exists; it preserves the current
 wallpaper settings when the file is absent.
 
-Manage CopyQ's graphical-login entry through Chezmoi at
-`~/.config/autostart/com.github.hluk.copyq.desktop`. The companion entry starts
-CopyQ hidden. Setup also starts it in an active GNOME session if the entry exists,
-is enabled, and CopyQ is installed but not running. Set `Hidden=true` or
-`X-GNOME-Autostart-enabled=false` in its Chezmoi source and apply it to disable
-startup. Without a graphical session, startup is deferred to the next login.
-Setup preserves existing `~/.config` permissions, including Chezmoi's private mode.
+### Clipboard and personal-file backup
 
-Setup configures the CopyQ Flatpak to use XWayland (`QT_QPA_PLATFORM=xcb`) for
-clipboard monitoring on GNOME. The setting applies to graphical login and manual
-launches. After setup changes this setting, quit CopyQ from its menu and reopen
-it, or log out and back in. Closing its window leaves the existing process running.
+Setup installs and enables Clipboard Indicator as the managed clipboard history
+extension. Inherit its version and checksum pins from public configuration.
+The companion repository owns `~/.config/clipboard-indicator/settings.ini`.
 
-If an existing installation does not record copied text, run this from your
-desktop terminal, then quit and reopen CopyQ:
+Setup verifies the archive digest, identity, and detected GNOME version before
+installation. It preserves unrelated extensions and keeps GNOME compatibility
+validation enabled. Log out and back in after installation or an update.
+The companion profile retains 200 entries, images, search, pins, whitespace, and
+paste-on-select, with `Super+Shift+V` as its only global shortcut. Check that this
+shortcut is free in your desktop and apps during the
+[Wayland acceptance checks](../development/adr/adr-0001-workstation-toolchain.md#gnome-clipboard-indicator).
 
-```sh
-flatpak override --user --env=QT_QPA_PLATFORM=xcb com.github.hluk.copyq
-```
+Setup closes CopyQ and removes its system and user Flatpak installations.
+`~/.var/app/com.github.hluk.copyq` and `~/.config/copyq` remain intact for recovery;
+existing history is not imported into Clipboard Indicator. Setup preserves
+existing `~/.config` permissions, including Chezmoi's private mode.
 
-Copy two different pieces of ordinary text while CopyQ's window is hidden, then
-open it and check that both appear. GNOME's native CopyQ clipboard extension is
-unavailable to the Flatpak build. The
-[upstream XWayland workaround](https://copyq.readthedocs.io/en/latest/known-issues.html#workaround-running-under-xwayland)
-depends on the compositor and may still miss clipboard changes on some systems.
+Simple Scan uses Ubuntu's native `simple-scan` and `sane-utils` packages. Setup
+removes duplicate system and user Flatpak installations without deleting their
+data. Use `scanimage -L` and Simple Scan with the actual scanner to confirm device
+access; a package check cannot establish hardware compatibility.
+
+Setup installs Déjà Dup. Configure its destination, included folders,
+encryption, schedule, and retention before relying on routine personal-file
+backups. Keep the backup password in Bitwarden and complete a restore to a
+separate directory, comparing the restored files with their originals.
+Manager archives and application installation do not prove this coverage.
 
 ## Automated runs
 
 Provide credentials through your automation's secret store:
 
-| Environment variable               | Purpose                                                                       |
-| ---------------------------------- | ----------------------------------------------------------------------------- |
-| `WORKSTATION_MANAGER_GITHUB_TOKEN` | Access private GitHub repositories and authenticate developer tool downloads. |
-| `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.                                                      |
-| `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.                                                  |
-| `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.                                                   |
+| Environment variable               | Purpose                                                                                                    |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `WORKSTATION_MANAGER_GITHUB_TOKEN` | Access private repositories, authenticate downloads, and establish the configured account's keyring login. |
+| `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.                                                                                   |
+| `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.                                                                               |
+| `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.                                                                                |
 
 Setup passes the GitHub token to mise and GitHub CLI extension commands through
 their environment and uses it for the Orca release lookup, including previews.

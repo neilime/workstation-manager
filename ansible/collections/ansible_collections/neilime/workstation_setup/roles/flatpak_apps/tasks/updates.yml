@@ -1,0 +1,15 @@
+---
+- name: Inspect the GNOME Software settings schema
+  ansible.builtin.stat:
+    path: /usr/share/glib-2.0/schemas/org.gnome.software.gschema.xml
+  register: workstation_manager_flatpak_software_schema
+
+- name: Enable GNOME Software updates
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/software/download-updates
+    value: "true"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+  when: workstation_manager_flatpak_software_schema.stat.exists

@@ -34,7 +34,7 @@ def live_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[Mock, MagicMock, Mock
     pipe = MagicMock()
     monkeypatch.setattr(live, "BrowserPipe", pipe)
     monkeypatch.setattr(live, "NativeSync", Mock(return_value=native))
-    lifecycle = Mock(return_value=nullcontext(("/usr/bin/brave-browser", {})))
+    lifecycle = Mock(return_value=nullcontext(("/usr/bin/brave-browser", {"WAYLAND_DISPLAY": "wayland-fixture"})))
     monkeypatch.setattr(live, "closed_browser", lifecycle)
     inspection = Mock(
         return_value={
@@ -142,6 +142,16 @@ def test_preview_does_not_launch_brave_or_access_the_vault(fixture: tuple) -> No
     native.code.assert_not_called()
     lifecycle.assert_not_called()
     vault.run.assert_not_called()
+
+
+def test_missing_desktop_stops_before_launching_brave(fixture: tuple) -> None:
+    """A fresh profile still needs a desktop; missing access must not look like a pipe crash."""
+    vault, pipe, native, lifecycle = fixture
+    lifecycle.return_value = nullcontext(("/usr/bin/brave-browser", {}))
+    with pytest.raises(ValueError, match="desktop session is unavailable"):
+        live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault)
+    pipe.assert_not_called()
+    native.restore.assert_not_called()
 
 
 @pytest.mark.parametrize(

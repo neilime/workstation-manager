@@ -8,7 +8,7 @@ from collections.abc import Mapping
 class VscodeSettingsSyncPlanner:
     """Plan when workstation setup should request or remind about VS Code settings sync."""
 
-    _VSCODE_FLATPAK_APP_ID = "com.visualstudio.code"
+    _VSCODE_PACKAGE = "code"
 
     def build_sync_state_dir(self, user_home: str) -> str:
         """Return the VS Code sync state directory under the managed home."""
@@ -21,7 +21,7 @@ class VscodeSettingsSyncPlanner:
     def has_vscode_editor_package(self, editor_packages: list[object]) -> bool:
         """Return whether the managed editor set includes VS Code."""
 
-        return self._VSCODE_FLATPAK_APP_ID in editor_packages
+        return self._VSCODE_PACKAGE in editor_packages
 
     def _is_ready_for_sync(self, conditions: Mapping[str, object]) -> bool:
         """Return whether the supplied sync conditions permit further action."""

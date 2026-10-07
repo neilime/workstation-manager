@@ -1,74 +1,4 @@
 ---
-- name: Validate development APT repository declarations
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.assert:
-    that:
-      - item.name is string
-      - item.uris | length > 0
-      - item.suites | length > 0
-      - item.components | length > 0
-      - item.keyring is mapping
-      - item.keyring.url is string
-      - item.keyring.path is string
-    fail_msg: >-
-      Declared development APT repository {{ item | to_nice_json }} must include
-      name, uris, suites, components, and keyring.url/keyring.path fields.
-  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
-  loop_control:
-    label: "{{ item.name | default('unnamed-repository') }}"
-  when: workstation_manager_resolved.development.repositories.apt | length > 0
-
-- name: Ensure development APT keyring directories exist
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.file:
-    path: "{{ item.keyring.path | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: workstation_manager_resolved.development.repositories.apt | length > 0
-
-- name: Download development APT repository keyrings
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.get_url:
-    url: "{{ item.keyring.url }}"
-    dest: "{{ item.keyring.path }}"
-    owner: root
-    group: root
-    mode: "{{ item.keyring.mode | default('0644') }}"
-  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: workstation_manager_resolved.development.repositories.apt | length > 0
-
-- name: Configure declared development vendor APT repositories
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.deb822_repository:
-    name: "{{ item.filename | default(item.name) }}"
-    uris: "{{ item.uris }}"
-    suites: "{{ item.suites }}"
-    components: "{{ item.components }}"
-    architectures: "{{ item.architectures | default(omit) }}"
-    signed_by: "{{ item.keyring.path }}"
-    state: "{{ item.state | default('present') }}"
-  loop: "{{ workstation_manager_resolved.development.repositories.apt }}"
-  loop_control:
-    label: "{{ item.name }}"
-  register: workstation_manager_development_apt_repositories
-  when: workstation_manager_resolved.development.repositories.apt | length > 0
-
-- name: Refresh APT cache after development repository changes
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 0
-  when:
-    - workstation_manager_resolved.development.repositories.apt | length > 0
-    - workstation_manager_development_apt_repositories is changed
-
 - name: Install declared development APT packages
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
@@ -77,49 +7,6 @@
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
   when: workstation_manager_resolved.development.packages | length > 0
-
-- name: Install declared editor packages
-  become: "{{ workstation_manager_use_become }}"
-  community.general.flatpak:
-    name: "{{ workstation_manager_resolved.development.editor_packages }}"
-    state: present
-    method: system
-    remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
-  when: workstation_manager_resolved.development.editor_packages | length > 0
-
-- name: Expose the VS Code terminal command
-  ansible.builtin.import_tasks: editor_cli.yml
-  when: workstation_manager_resolved.development.editor_packages | neilime.workstation_setup.has_vscode_editor_package
-
-- name: Validate declared GitHub CLI extensions
-  ansible.builtin.assert:
-    that:
-      - item is string
-      - item | length > 0
-      - item is match('^[^/]+/[^/]+$')
-    fail_msg: >-
-      Declared GitHub CLI extension {{ item | to_nice_json }} must use the
-      OWNER/REPOSITORY format.
-  loop: "{{ workstation_manager_resolved.development.mise.gh_extensions }}"
-  loop_control:
-    label: "{{ item }}"
-
-- name: Validate declared Docker CLI plugins
-  ansible.builtin.assert:
-    that:
-      - item is mapping
-      - item.command is string
-      - item.command | length > 0
-      - item.tool is string
-      - item.tool | length > 0
-      - item.binary | default(item.command) is string
-      - item.binary | default(item.command) | length > 0
-    fail_msg: >-
-      Declared Docker CLI plugin {{ item | to_nice_json }} must include
-      non-empty command and tool fields, and a non-empty binary when specified.
-  loop: "{{ workstation_manager_resolved.development.mise.docker_cli_plugins }}"
-  loop_control:
-    label: "{{ item.command | default('unnamed-plugin') }}"
 
 - name: Inspect development config directory permissions
   become: "{{ workstation_manager_use_become }}"
@@ -155,26 +42,12 @@
     path: "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
   register: workstation_manager_development_mise_binary
 
-- name: Download the official mise installer
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.get_url:
-    url: https://mise.run
-    dest: "{{ workstation_manager_resolved.user.state_dir }}/mise-install.sh"
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
+- name: Install pinned mise and native workstation tools
+  ansible.builtin.import_tasks: native_tools.yml
 
-- name: Install mise for the managed user
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - sh
-      - "{{ workstation_manager_resolved.user.state_dir }}/mise-install.sh"
-    creates: "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+- name: Install native editors and preserve existing VS Code data
+  ansible.builtin.import_tasks: editors.yml
+  when: workstation_manager_resolved.development.editor_packages | length > 0
 
 - name: Render global mise tool configuration
   become: "{{ workstation_manager_use_become }}"
@@ -212,8 +85,7 @@
     {{
       {
         'HOME': workstation_manager_resolved.user.home,
-        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config',
-        'MISE_BACKENDS_PHP': 'vfox:mise-plugins/vfox-php'
+        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config'
       } | combine(
         {'MISE_GITHUB_TOKEN': workstation_manager_development_github_token}
         if workstation_manager_development_github_token | length > 0 else {}
@@ -224,206 +96,21 @@
   when:
     - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
 
-- name: Resolve starship install directory
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - /bin/bash
-      - -lc
-      - |
-        set -euo pipefail
-        . "$HOME/.config/workstation-manager/mise.sh"
-        "$HOME/.local/bin/mise" where "aqua:starship/starship"
-  register: workstation_manager_development_starship_install_dir
-  changed_when: false
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+- name: Verify mise-managed PHP and Composer releases
+  ansible.builtin.import_tasks: php.yml
+  when: not ansible_check_mode
+
+- name: Expose the pinned Starship executable
+  ansible.builtin.import_tasks: starship.yml
   when:
     - '"aqua:starship/starship" in workstation_manager_resolved.development.mise.tools'
-    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
-
-- name: Link starship binary from mise-managed installation
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    src: "{{ workstation_manager_development_starship_install_dir.stdout }}/bin/starship"
-    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/starship"
-    state: link
-    force: true
-  when:
-    - '"aqua:starship/starship" in workstation_manager_resolved.development.mise.tools'
-    - workstation_manager_development_starship_install_dir.stdout | length > 0
-
-- name: Resolve GitHub CLI install directory
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - /bin/bash
-      - -lc
-      - |
-        set -euo pipefail
-        . "$HOME/.config/workstation-manager/mise.sh"
-        "$HOME/.local/bin/mise" where "aqua:cli/cli"
-  register: workstation_manager_development_github_cli_install_dir
-  changed_when: false
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-  when:
-    - '"aqua:cli/cli" in workstation_manager_resolved.development.mise.tools'
-    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
-
-- name: Link GitHub CLI binary from mise-managed installation
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    src: "{{ workstation_manager_development_github_cli_install_dir.stdout }}/bin/gh"
-    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/gh"
-    state: link
-    force: true
-  when:
-    - '"aqua:cli/cli" in workstation_manager_resolved.development.mise.tools'
-    - workstation_manager_development_github_cli_install_dir.stdout | length > 0
-
-- name: Read installed GitHub CLI extensions
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - /bin/bash
-      - -lc
-      - |
-        set -euo pipefail
-        . "$HOME/.config/workstation-manager/mise.sh"
-        gh extension list
-  register: workstation_manager_development_gh_extensions
-  changed_when: false
-  failed_when: false
-  vars:
-    workstation_manager_development_github_token: >-
-      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
-  environment: >-
-    {{
-      {
-        'HOME': workstation_manager_resolved.user.home,
-        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config'
-      } | combine(
-        {'GH_TOKEN': workstation_manager_development_github_token}
-        if workstation_manager_development_github_token | length > 0 else {}
-      )
-    }}
-  no_log: "{{ workstation_manager_development_github_token | length > 0 }}"
-  when:
-    - workstation_manager_resolved.development.mise.gh_extensions | length > 0
-    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
-
-- name: Install declared GitHub CLI extensions
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - /bin/bash
-      - -lc
-      - |
-        set -euo pipefail
-        . "$HOME/.config/workstation-manager/mise.sh"
-        gh extension install {{ item | quote }}
-  changed_when: true
-  vars:
-    workstation_manager_development_github_token: >-
-      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
-  environment: >-
-    {{
-      {
-        'HOME': workstation_manager_resolved.user.home,
-        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config'
-      } | combine(
-        {'GH_TOKEN': workstation_manager_development_github_token}
-        if workstation_manager_development_github_token | length > 0 else {}
-      )
-    }}
-  no_log: "{{ workstation_manager_development_github_token | length > 0 }}"
-  loop: "{{ workstation_manager_resolved.development.mise.gh_extensions }}"
-  loop_control:
-    label: "{{ item }}"
-  when:
-    - workstation_manager_resolved.development.mise.gh_extensions | length > 0
-    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
-    - item not in (workstation_manager_development_gh_extensions.stdout | default(''))
-
-- name: Ensure Docker CLI plugin directory exists
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    path: "{{ workstation_manager_resolved.user.home }}/.docker/cli-plugins"
-    state: directory
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
-  when: workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
-
-- name: Resolve declared Docker CLI plugin binaries through mise
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
-      - which
-      - --tool
-      - "{{ item.tool }}"
-      - "{{ item.binary | default(item.command) }}"
-    chdir: "{{ workstation_manager_resolved.user.home }}"
-  register: workstation_manager_development_docker_cli_plugin_commands
-  changed_when: false
-  failed_when:
     - not ansible_check_mode
-    - workstation_manager_development_docker_cli_plugin_commands.rc != 0
-  check_mode: false
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-  loop: "{{ workstation_manager_resolved.development.mise.docker_cli_plugins }}"
-  loop_control:
-    label: "{{ item.command }}"
-  when:
-    - workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
-    - not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
 
-- name: Link Docker CLI plugins from mise-managed binaries
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    src: "{{ item.stdout }}"
-    dest: >-
-      {{ workstation_manager_resolved.user.home }}/.docker/cli-plugins/{{ item.item.command }}
-    state: link
-    force: true
-  loop: >-
-    {{ workstation_manager_development_docker_cli_plugin_commands.results | default([]) }}
-  loop_control:
-    label: "{{ item.item.command }}"
-  when:
-    - workstation_manager_resolved.development.mise.docker_cli_plugins | length > 0
-    - item.stdout | default('') | length > 0
+- name: Install selected pinned GitHub CLI extensions
+  ansible.builtin.import_tasks: github_extensions.yml
 
-- name: Report Docker CLI plugins deferred until mise tools are installed
-  ansible.builtin.debug:
-    msg: >-
-      Docker CLI plugin {{ item.item.command }} configuration is deferred in this
-      preview because mise cannot resolve its installed binary. Run setup normally
-      to install the configured plugin.
-  loop: "{{ workstation_manager_development_docker_cli_plugin_commands.results | default([]) }}"
-  loop_control:
-    label: "{{ item.item.command }}"
-  when:
-    - ansible_check_mode
-    - item.rc | default(1) != 0
-
-- name: Configure and start the mise-managed Docker daemon
-  ansible.builtin.import_tasks: docker.yml
+- name: Install standard workstation agent CLIs
+  ansible.builtin.import_tasks: npm_tools.yml
 
 - name: Remove managed development sysctl configuration when no values are declared
   become: "{{ workstation_manager_use_become }}"

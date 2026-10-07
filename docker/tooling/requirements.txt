@@ -1,2 +1,2 @@
-ansible-core>=2.21.4,<2.22
+-r ../../ansible/requirements.txt
 pytest-xdist>=3.8.0,<4

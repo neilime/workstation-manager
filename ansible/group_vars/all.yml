@@ -1,4 +1,7 @@
 ---
+# Setup-owned framework pin; Renovate follows the upstream master branch.
+workstation_manager_oh_my_zsh_revision: "4d4cfc287e9d887b81242c0e431b5f49f9cec5c1"
+
 workstation_manager:
   user:
     # Default: current sudo user, then USER, then root.
@@ -23,19 +26,14 @@ workstation_manager:
         - bleachbit
         - htop
         - xdg-utils
+        - fwupd
       # Refresh APT metadata when the cache is older than this many seconds.
       cache_valid_time: 86400
-    repositories:
-      # Vendor APT repository declarations use explicit deb822 source fields.
-      apt: []
-    # Extra system directories managed with root ownership by default.
-    directories: []
-    services:
-      # Services to enable when later stories require them.
-      enabled: []
-      # Services to disable when later stories require them.
-      disabled: []
   desktop:
+    clipboard_indicator:
+      # The managed GNOME clipboard extension; inherit these pins in private overrides.
+      version: "71"
+      sha256: "687cb404f9540958ddb0c1de638970572cef73f22f016e5d6c6d6f5d4cd55f97"
     flatpak:
       # Default remote for managed Flatpak applications.
       remote: flathub
@@ -46,29 +44,44 @@ workstation_manager:
         - com.spotify.Client
         - org.videolan.VLC
         - org.jdownloader.JDownloader
-        - com.github.hluk.copyq
-        - org.gnome.SimpleScan
         - org.gnome.DejaDup
         - org.libreoffice.LibreOffice
         - com.bitwarden.desktop
     # Select the browser adapter; installation details belong to its role.
     browser: brave
     gnome:
-      # Leave unset to preserve existing preferences; choose values in private overrides.
-      dark_mode:
-      show_trash:
       # An explicit empty list clears the dock favorites.
       favorites:
+        - org.gnome.Nautilus.desktop
+        - org.gnome.Software.desktop
+        - com.bitwarden.desktop.desktop
+        - browser
+        - com.slack.Slack.desktop
+        - com.spotify.Client.desktop
+        - code.desktop
+        - org.gnome.Ptyxis.desktop
   development:
-    # Core developer packages installed globally from APT.
+    # Complete system runtime, available without shell or mise activation.
+    node:
+      version: "24.21.0"
+    github:
+      host: github.com
+      # Required GitHub username; set it in ansible/private.override.yml.
+      account: ""
+      extensions:
+        # renovate: datasource=github-releases depName=nektos/gh-act
+        nektos/gh-act: "0.2.89"
+        # renovate: datasource=github-releases depName=github/gh-stack
+        github/gh-stack: "0.2.0"
     packages:
       - git
-      - libnotify-bin
       - zsh
       - make
       - jq
       - bat
       - fonts-firacode
+      - libsecret-tools
+      # The mise PHP backend compiles the user runtime and its standard extensions.
       - build-essential
       - autoconf
       - bison
@@ -81,51 +94,43 @@ workstation_manager:
       - libonig-dev
       - libcurl4-openssl-dev
       - libpng-dev
-      - libgd-dev
-      - libjpeg-dev
-      - libfreetype6-dev
-      - libwebp-dev
-      - libgmp-dev
-      - libsodium-dev
       - libreadline-dev
-      - libbz2-dev
       - libsqlite3-dev
-    repositories:
-      apt: []
-    # Optional GUI editor packages, usually delivered by Flatpak.
+      - zlib1g-dev
+    # Native editor packages; Microsoft APT owns code and its updates.
     editor_packages:
-      - com.visualstudio.code
+      - code
     orca:
-      # Setup installs the latest stable official Orca IDE Debian package.
-      # Seed settings only on first setup; Orca owns subsequent changes.
-      # Worktrees are stored in <projects_directory>/workspaces/orca.
+      # renovate: datasource=github-releases depName=stablyai/orca
+      version: "1.4.222"
+      # Seed only missing settings; preserve existing workspaces and preferences.
       settings:
         theme: system
         terminalFontFamily: Fira Code
     mise:
-      # Common workstation-wide tool defaults. Child folders can override these
-      # with their own restored mise.toml files.
+      version: "2026.10.3"
+      # Project mise.toml files may select their own tools and versions.
       tools:
-        node: lts
-        php: "8.5.11"
-        "aqua:starship/starship": latest
-        "aqua:cli/cli": latest
-        "github:Giammarco-Ferranti/deja": "0.4.2"
-        "aqua:docker/cli": latest
-        "aqua:docker/compose": latest
-        "aqua:docker/buildx": latest
-        "aqua:helm/helm": "4"
-        "aqua:wagoodman/dive": latest
-      gh_extensions:
-        - nektos/gh-act
-        - github/gh-stack
-      docker_cli_plugins:
-        - command: docker-compose
-          tool: aqua:docker/compose
-          binary: docker-cli-plugin-docker-compose
-        - command: docker-buildx
-          tool: aqua:docker/buildx
-          binary: docker-cli-plugin-docker-buildx
+        # renovate: datasource=github-releases depName=starship/starship
+        "aqua:starship/starship": "1.26.0"
+        # renovate: datasource=github-releases depName=helm/helm
+        "aqua:helm/helm": "4.3.0"
+        # renovate: datasource=github-releases depName=wagoodman/dive
+        "aqua:wagoodman/dive": "0.13.1"
+        # Renovate follows stable php-* tags; use the maintained backend explicitly.
+        "vfox:jdx/vfox-php": "8.5.11"
+        # renovate: datasource=github-releases depName=composer/composer
+        "github:composer/composer": "2.10.3"
+    # Standard workstation CLIs, installed with the system Node runtime.
+    npm_packages:
+      "@openai/codex":
+        # renovate: datasource=npm depName=@openai/codex
+        version: "0.160.1"
+        command: codex
+      "@github/copilot":
+        # renovate: datasource=npm depName=@github/copilot
+        version: "1.0.92"
+        command: copilot
     settings:
       # Development tooling often needs a higher filesystem watch limit.
       sysctl:
@@ -137,8 +142,6 @@ workstation_manager:
       version: "2.73.0"
       # Git repository used to initialize the managed dotfiles checkout.
       source: "https://github.com/neilime/workstation-config.git"
-      # Apply dotfiles after init.
-      apply: true
       # Install the Chezmoi binary to this global path.
       bin_path: /usr/local/bin/chezmoi
       # This repo owns the Chezmoi machine-data config file.

@@ -10,7 +10,11 @@ import sys
 import tempfile
 import unittest
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
+
+pytestmark = pytest.mark.integration
 
 ROLE_PATH = (
     pathlib.Path(__file__).parents[2]
@@ -18,7 +22,7 @@ ROLE_PATH = (
 )
 TOKEN = "synthetic-development-tooling-token"
 INSTALL_TASK = "Install globally configured mise tools"
-EXTENSION_TASKS = {"Read installed GitHub CLI extensions", "Install declared GitHub CLI extensions"}
+EXTENSION_TASK = "Install declared pinned GitHub CLI extensions"
 
 
 def prepare_fixture(fixture: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
@@ -49,6 +53,12 @@ with open(os.environ["AUDIT_PATH"], "a", encoding="utf-8") as audit:
 if " ".join([tool, *sys.argv[1:]]) == os.environ["FAIL_COMMAND"]:
     print("Simulated installation failure: " + os.environ[token_name], file=sys.stderr)
     sys.exit(1)
+if tool == "gh":
+    pin = pathlib.Path(os.environ["HOME"]) / "extension-pin"
+    if sys.argv[1:3] == ["extension", "install"]:
+        pin.write_text(sys.argv[-1])
+    if sys.argv[1:3] == ["extension", "list"] and pin.exists():
+        print("gh fixture\texample/gh-fixture\t" + pin.read_text())
 """
     )
     for name in ("mise", "gh"):
@@ -57,8 +67,14 @@ if " ".join([tool, *sys.argv[1:]]) == os.environ["FAIL_COMMAND"]:
         binary.chmod(0o755)
 
     tasks = []
-    for task in DataLoader().load_from_file(str(ROLE_PATH / "tasks/main.yml")):
-        if task["name"] in {INSTALL_TASK, *EXTENSION_TASKS}:
+    source_tasks = DataLoader().load_from_file(str(ROLE_PATH / "tasks/main.yml"))
+    source_tasks += DataLoader().load_from_file(str(ROLE_PATH / "tasks/github_extensions.yml"))
+    for task in source_tasks:
+        if task["name"] in {INSTALL_TASK, EXTENSION_TASK}:
+            if task["name"] == EXTENSION_TASK:
+                task["environment"] = task["environment"].replace(
+                    "'/usr/bin:/bin'", repr(str(binary_dir) + ":/usr/bin:/bin")
+                )
             tasks.append(task)
         elif task["name"] in {"Render global mise tool configuration", "Render mise shell activation fragment"}:
             template = task["ansible.builtin.template"]
@@ -67,31 +83,20 @@ if " ".join([tool, *sys.argv[1:]]) == os.environ["FAIL_COMMAND"]:
             template["group"] = str(os.getgid())
             tasks.append(task)
     playbook = fixture / "playbook.json"
-    playbook.write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "connection": "local",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_manager_use_become": False,
-                        "workstation_manager_development_mise_binary": {"stat": {"exists": True}},
-                        "workstation_manager_resolved": {
-                            "user": {"name": str(os.getuid()), "home": str(user_home)},
-                            "development": {
-                                "mise": {
-                                    "tools": {"aqua:cli/cli": "latest"},
-                                    "gh_extensions": ["example/gh-fixture"],
-                                }
-                            },
-                        },
-                    },
-                    "tasks": tasks,
-                }
-            ]
-        )
+    write_local_playbook(
+        playbook,
+        tasks,
+        {
+            "workstation_manager_use_become": False,
+            "workstation_manager_development_mise_binary": {"stat": {"exists": True}},
+            "workstation_manager_resolved": {
+                "user": {"name": str(os.getuid()), "home": str(user_home), "state_dir": str(user_home / "state")},
+                "development": {
+                    "mise": {"tools": {"aqua:starship/starship": "1.2.3"}},
+                    "github": {"extensions": {"example/gh-fixture": "v1.2.3"}},
+                },
+            },
+        },
     )
     return user_home, audit_path, playbook
 
@@ -106,21 +111,15 @@ class DevelopmentToolingAuthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
             user_home, audit_path, playbook = prepare_fixture(fixture)
-            config = fixture / "ansible.cfg"
-            config.write_text("[defaults]\n")
-            environment = {
-                "PATH": os.environ["PATH"],
-                "HOME": str(fixture),
-                "LC_ALL": "C.UTF-8",
-                "ANSIBLE_CONFIG": str(config),
-                "ANSIBLE_HOME": str(fixture / ".ansible"),
-                "MISE_GITHUB_TOKEN": "existing-mise-token",
-                "GH_TOKEN": "existing-gh-token",
-                "EXPECTED_TOKEN": TOKEN if token else "",
-                "EXPECTED_HOME": str(user_home),
-                "AUDIT_PATH": str(audit_path),
-                "FAIL_COMMAND": failure_command,
-            }
+            environment = ansible_environment(
+                fixture,
+                MISE_GITHUB_TOKEN="existing-mise-token",
+                GH_TOKEN="existing-gh-token",
+                EXPECTED_TOKEN=TOKEN if token else "",
+                EXPECTED_HOME=str(user_home),
+                AUDIT_PATH=str(audit_path),
+                FAIL_COMMAND=failure_command,
+            )
             if token is not None:
                 environment["WORKSTATION_MANAGER_GITHUB_TOKEN"] = token
             if not token:
@@ -130,9 +129,7 @@ class DevelopmentToolingAuthTests(unittest.TestCase):
             command = ["ansible-playbook", "-i", "localhost,", str(playbook)]
             if check_mode:
                 command.append("--check")
-            result = subprocess.run(
-                command, cwd=fixture, env=environment, check=False, capture_output=True, text=True, timeout=60
-            )
+            result = run_playbook(command, environment, cwd=fixture)
             calls = [json.loads(line) for line in audit_path.read_text().splitlines()] if audit_path.exists() else []
             generated = "".join(path.read_text() for path in (user_home / ".config").rglob("*") if path.is_file())
             return result, calls, generated
@@ -144,9 +141,14 @@ class DevelopmentToolingAuthTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, output)
         self.assertEqual(
             calls,
-            [["mise", "install"], ["gh", "extension", "list"], ["gh", "extension", "install", "example/gh-fixture"]],
+            [
+                ["mise", "install"],
+                ["gh", "extension", "list"],
+                ["gh", "extension", "install", "example/gh-fixture", "--pin", "v1.2.3"],
+                ["gh", "extension", "list"],
+            ],
         )
-        self.assertIn('"aqua:cli/cli" = "latest"', generated)
+        self.assertIn('"aqua:starship/starship" = "1.2.3"', generated)
         self.assertNotIn(TOKEN, generated + output)
 
     def test_missing_manager_token_preserves_native_authentication(self) -> None:
@@ -155,11 +157,11 @@ class DevelopmentToolingAuthTests(unittest.TestCase):
             with self.subTest(token=token):
                 result, calls, _ = self.run_installation(token=token)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertEqual(len(calls), 3)
+                self.assertEqual(len(calls), 4)
 
     def test_authenticated_failure_is_redacted(self) -> None:
         """Even a failing CLI that prints the supplied token must not expose it in Ansible output."""
-        for command in ("mise install", "gh extension install example/gh-fixture"):
+        for command in ("mise install", "gh extension list", "gh extension install example/gh-fixture --pin v1.2.3"):
             with self.subTest(command=command):
                 result, calls, _ = self.run_installation(token=TOKEN, failure_command=command)
                 output = result.stdout + result.stderr

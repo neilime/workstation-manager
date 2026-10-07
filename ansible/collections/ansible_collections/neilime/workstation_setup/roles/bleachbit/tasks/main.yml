@@ -10,15 +10,11 @@
   loop:
     - "{{ workstation_manager_resolved.user.home }}/.local/bin"
     - "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager"
-    - "{{ workstation_manager_resolved.user.home }}/.config/autostart"
-    - "{{ workstation_manager_resolved.user.home }}/.config/systemd"
-    - "{{ workstation_manager_resolved.user.home }}/.config/systemd/user"
-    - "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/timers.target.wants"
 
 - name: Install BleachBit preset helper
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.copy:
-    src: schedule/bleachbit_clean.py
+    src: clean/bleachbit_clean.py
     dest: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/bleachbit-clean.py"
     owner: "{{ workstation_manager_resolved.user.name }}"
     group: "{{ workstation_manager_resolved.user.name }}"
@@ -26,139 +22,12 @@
 
 - name: Install BleachBit clean command wrapper
   become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.template:
-    src: schedule/bleachbit-clean-wrapper.sh.j2
+  ansible.builtin.copy:
+    src: clean/bleachbit-clean.sh
     dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/workstation-manager-bleachbit-clean"
     owner: "{{ workstation_manager_resolved.user.name }}"
     group: "{{ workstation_manager_resolved.user.name }}"
     mode: "0755"
 
-- name: Install BleachBit timer activator
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.template:
-    src: schedule/bleachbit-clean-activate-timer.sh.j2
-    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/workstation-manager-bleachbit-clean-activate-timer"
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0755"
-
-- name: Install BleachBit user service unit
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.template:
-    src: schedule/bleachbit-clean.service.j2
-    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/workstation-manager-bleachbit-clean.service"
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0644"
-
-- name: Install BleachBit user timer unit
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.template:
-    src: schedule/bleachbit-clean.timer.j2
-    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/workstation-manager-bleachbit-clean.timer"
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0644"
-
-- name: Enable BleachBit timer for future sessions
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.file:
-    src: ../workstation-manager-bleachbit-clean.timer
-    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/timers.target.wants/workstation-manager-bleachbit-clean.timer"
-    state: link
-    force: true
-
-- name: Install BleachBit desktop autostart entry
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.template:
-    src: schedule/bleachbit-clean-autostart.desktop.j2
-    dest: "{{ workstation_manager_resolved.user.home }}/.config/autostart/workstation-manager-bleachbit-clean.desktop"
-    owner: "{{ workstation_manager_resolved.user.name }}"
-    group: "{{ workstation_manager_resolved.user.name }}"
-    mode: "0644"
-
-- name: Resolve target user id for BleachBit timer startup
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.command:
-    argv:
-      - id
-      - -u
-      - "{{ workstation_manager_resolved.user.name }}"
-  register: workstation_manager_bleachbit_user_id
-  changed_when: false
-  when: not ansible_check_mode
-
-- name: Check whether the target user session bus is available
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.stat:
-    path: "/run/user/{{ workstation_manager_bleachbit_user_id.stdout }}/bus"
-  register: workstation_manager_bleachbit_session_bus
-  changed_when: false
-  when: not ansible_check_mode
-
-- name: Reload the target user systemd manager for the BleachBit timer
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - --user
-      - daemon-reload
-  environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ workstation_manager_bleachbit_user_id.stdout }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ workstation_manager_bleachbit_user_id.stdout }}/bus"
-  changed_when: false
-  when:
-    - not ansible_check_mode
-    - workstation_manager_bleachbit_session_bus is defined
-    - workstation_manager_bleachbit_session_bus.stat.exists
-
-- name: Check whether the BleachBit timer is already active
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - --user
-      - is-active
-      - workstation-manager-bleachbit-clean.timer
-  environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ workstation_manager_bleachbit_user_id.stdout }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ workstation_manager_bleachbit_user_id.stdout }}/bus"
-  register: workstation_manager_bleachbit_timer_status
-  changed_when: false
-  failed_when: false
-  when:
-    - not ansible_check_mode
-    - workstation_manager_bleachbit_session_bus is defined
-    - workstation_manager_bleachbit_session_bus.stat.exists
-
-- name: Start the BleachBit timer in the active desktop session
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - --user
-      - start
-      - workstation-manager-bleachbit-clean.timer
-  environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ workstation_manager_bleachbit_user_id.stdout }}"
-    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ workstation_manager_bleachbit_user_id.stdout }}/bus"
-  changed_when: true
-  when:
-    - not ansible_check_mode
-    - workstation_manager_bleachbit_session_bus is defined
-    - workstation_manager_bleachbit_session_bus.stat.exists
-    - workstation_manager_bleachbit_timer_status.rc != 0
-
-- name: Report deferred activation for the BleachBit timer
-  ansible.builtin.debug:
-    msg:
-      - BleachBit weekly timer was installed for the managed user.
-      - The desktop autostart entry will activate it on the next graphical login.
-  when:
-    - not ansible_check_mode
-    - workstation_manager_bleachbit_session_bus is defined
-    - not workstation_manager_bleachbit_session_bus.stat.exists
+- name: Enable weekly BleachBit cleanup
+  ansible.builtin.import_tasks: schedule.yml

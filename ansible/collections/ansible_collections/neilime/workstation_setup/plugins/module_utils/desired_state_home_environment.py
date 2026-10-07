@@ -43,19 +43,11 @@ class HomeEnvironmentSectionNormalizer(desired_state_support.DesiredStateDefault
 
         return {
             "chezmoi": {
-                "version": self._string_or_default(
+                "version": self._resolver.release_version(
                     chezmoi.get("version"),
-                    default_chezmoi.get("version"),
                     "workstation_manager.home_environment.chezmoi.version",
                 ),
                 "source": source,
-                "apply": self._resolver.bool_value(
-                    chezmoi.get("apply"),
-                    self._resolver.bool_value(
-                        default_chezmoi.get("apply"),
-                        True,
-                    ),
-                ),
                 "bin_path": self._string_or_default(
                     chezmoi.get("bin_path"),
                     default_chezmoi.get("bin_path"),

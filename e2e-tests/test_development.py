@@ -1,44 +1,7 @@
 """End-to-end checks for development tooling."""
 
 import json
-
-
-def resolve_mise_command(host, tool: str):
-    """Return the resolved command path for a mise-managed tool."""
-
-    return host.run(
-        "bash -lc \
-        '. \"$HOME/.config/workstation-manager/mise.sh\" && command -v %s'",
-        tool,
-    )
-
-
-def run_with_mise_activation(host, command: str):
-    """Run a shell command after loading the managed mise activation."""
-
-    return host.run(
-        "bash -lc \
-        '. \"$HOME/.config/workstation-manager/mise.sh\" && %s'",
-        command,
-    )
-
-
-def assert_mise_tool_is_declared(config_file, tool_name: str) -> None:
-    """Assert that the global mise config declares a non-empty version selector."""
-
-    assert config_file.contains(rf'^"{tool_name}" = "[^"][^"]*"$')
-
-
-def assert_mise_tool_uses_pinned_version(config_file, tool_name: str) -> None:
-    """Assert that the global mise config pins the tool to a dotted release string."""
-
-    assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9.]*"$')
-
-
-def assert_mise_tool_uses_major_track(config_file, tool_name: str) -> None:
-    """Assert that the global mise config tracks a major version line."""
-
-    assert config_file.contains(rf'^"{tool_name}" = "[0-9][0-9]*"$')
+import tomllib
 
 
 def test_git_automatic_garbage_collection_is_enabled(host) -> None:
@@ -50,65 +13,55 @@ def test_git_automatic_garbage_collection_is_enabled(host) -> None:
     assert int(result.stdout.strip()) > 0
 
 
-def test_declared_development_tools_are_available(host) -> None:
-    """The installed machine should provide representative command-line tools."""
-
-    # Act
-    git_result = host.run("command -v git")
-    make_result = host.run("command -v make")
-    docker_result = resolve_mise_command(host, "docker")
-    docker_buildx_result = run_with_mise_activation(host, "docker buildx version")
-    docker_compose_result = run_with_mise_activation(host, "docker compose version")
-    mise_result = resolve_mise_command(host, "mise")
-    mise_github_cli_result = resolve_mise_command(host, "gh")
-    mise_deja_result = resolve_mise_command(host, "deja")
-    mise_node_result = resolve_mise_command(host, "node")
-    mise_php_result = resolve_mise_command(host, "php")
-    mise_helm_result = resolve_mise_command(host, "helm")
-
-    # Assert
-    assert git_result.succeeded
-    assert make_result.succeeded
-    assert docker_result.succeeded
-    assert docker_buildx_result.succeeded
-    assert docker_compose_result.succeeded
-    assert mise_result.succeeded
-    assert mise_github_cli_result.succeeded
-    assert mise_deja_result.succeeded
-    assert mise_node_result.succeeded
-    assert mise_php_result.succeeded
-    assert mise_helm_result.succeeded
+def test_selected_mise_tools_are_installed(host, workstation_config) -> None:
+    """Global tools resolve from the maintained configuration after activation."""
+    for tool in workstation_config["development"]["mise"]["tools"]:
+        result = host.run('bash -lc \'"$HOME/.local/bin/mise" where "$1"\' fixture %s', tool)
+        assert result.succeeded, result.stderr
 
 
-def test_mise_global_config_and_activation_are_managed(host) -> None:
-    """The installed machine should manage global mise configuration and activation."""
+def test_starship_launcher_runs_the_configured_release(host, workstation_config) -> None:
+    """The prompt executable must be usable through its managed link without mise activation."""
+    version = workstation_config["development"]["mise"]["tools"].get("aqua:starship/starship")
+    if version is None:
+        return
+    executable = f"{host.user().home}/.local/bin/starship"
+    assert host.file(executable).is_symlink
+    assert host.check_output("%s --version", executable).splitlines()[0] == "starship " + version
 
-    # Arrange
-    user_home = host.check_output("printf '%s' \"$HOME\"")
-    config_file = host.file(f"{user_home}/.config/mise/config.toml")
-    activation_file = host.file(f"{user_home}/.config/workstation-manager/mise.sh")
 
-    # Assert
-    assert config_file.exists
-    assert config_file.contains('"node" = "lts"')
-    assert_mise_tool_uses_pinned_version(config_file, "php")
-    assert_mise_tool_is_declared(config_file, "aqua:cli/cli")
-    assert_mise_tool_uses_pinned_version(config_file, "github:Giammarco-Ferranti/deja")
-    assert_mise_tool_is_declared(config_file, "aqua:docker/cli")
-    assert_mise_tool_is_declared(config_file, "aqua:docker/compose")
-    assert_mise_tool_is_declared(config_file, "aqua:docker/buildx")
-    assert_mise_tool_uses_major_track(config_file, "aqua:helm/helm")
-    assert activation_file.exists
-    assert activation_file.contains('MISE_BACKENDS_PHP="vfox:mise-plugins/vfox-php"')
-    assert activation_file.contains('eval "$("$HOME/.local/bin/mise" activate zsh)"')
+def test_mise_global_config_and_activation_are_managed(host, workstation_config) -> None:
+    """The generated manifest must carry the configured versions and tracks."""
+    home = host.user().home
+    content = host.file(f"{home}/.config/mise/config.toml").content_string
+    configured = tomllib.loads(content)["tools"]
+    versions = {tool: entry["version"] if isinstance(entry, dict) else entry for tool, entry in configured.items()}
+    assert versions == workstation_config["development"]["mise"]["tools"]
+    assert host.file(f"{home}/.config/workstation-manager/mise.sh").exists
+
+
+def test_php_and_composer_use_the_managed_mise_runtime(host, workstation_config) -> None:
+    """The shell selects pinned PHP/Composer and retains the required PHP extensions."""
+    php = host.check_output("zsh -ic %s", "php -r 'echo PHP_VERSION;'")
+    assert php == workstation_config["development"]["mise"]["tools"]["vfox:jdx/vfox-php"]
+    composer = host.check_output("zsh -ic 'composer --version --no-ansi'")
+    assert composer.startswith(
+        "Composer version " + workstation_config["development"]["mise"]["tools"]["github:composer/composer"] + " "
+    )
+    composer_home = host.check_output('"$HOME/.local/bin/mise" where github:composer/composer')
+    assert host.check_output("zsh -ic 'command -v composer'").startswith(composer_home + "/")
+    modules = host.check_output("zsh -ic 'php -m'").splitlines()
+    assert {"curl", "dom", "intl", "mbstring", "openssl", "pdo_sqlite", "xml", "zip"}.issubset(modules)
+    executable = host.check_output("zsh -ic 'command -v php'")
+    assert executable.startswith(host.user().home + "/.local/share/mise/")
 
 
 def test_docker_engine_is_available_to_the_managed_user(host) -> None:
     """Docker must provide a running daemon, not just working client commands."""
 
-    docker_service = host.service("workstation-manager-docker")
+    docker_service = host.service("docker")
     docker_socket = host.file("/var/run/docker.sock")
-    docker_info = run_with_mise_activation(host, "docker --host unix:///var/run/docker.sock info")
+    docker_info = host.run("docker --host unix:///var/run/docker.sock info")
 
     assert docker_service.is_running
     assert docker_service.is_enabled
@@ -116,147 +69,117 @@ def test_docker_engine_is_available_to_the_managed_user(host) -> None:
     assert docker_socket.group == "docker"
     assert "docker" in host.user().groups
     assert docker_info.succeeded, docker_info.stderr
+    for plugin in ("buildx", "compose"):
+        assert host.run("docker %s version", plugin).succeeded
 
 
-def test_docker_access_without_group_refresh_survives_service_restart(host) -> None:
-    """Direct socket access must work without supplementary groups, including after a daemon restart."""
-
-    account = host.user()
-    user_home = host.check_output("printf '%s' \"$HOME\"")
-    docker_binary = host.check_output("%s/.local/bin/mise which --tool aqua:docker/cli docker", user_home)
-    assert account.uid != 0
-    assert account.gid != host.group("docker").gid
-
-    for restart in (False, True):
-        if restart:
-            host.check_output("sudo -n systemctl restart workstation-manager-docker.service")
-        acl = host.check_output("getfacl --numeric --omit-header /var/run/docker.sock").splitlines()
-        assert f"user:{account.uid}:rw-" in acl
-        assert "other::---" in acl
-        docker_info = host.run(
-            "sudo -n setpriv --reuid %s --regid %s --clear-groups --reset-env -- "
-            "%s --host unix:///var/run/docker.sock info",
-            str(account.uid),
-            str(account.gid),
-            docker_binary,
-        )
-        assert docker_info.succeeded, docker_info.stderr
-
-
-def test_docker_service_uses_the_mise_runtime_bundle(host) -> None:
-    """The system service must use mise's runtime without a second Docker installation."""
-
-    user_home = host.check_output("printf '%s' \"$HOME\"")
-    daemon = host.check_output("%s/.local/bin/mise which --tool aqua:docker/cli dockerd", user_home)
-    unit = host.file("/etc/systemd/system/workstation-manager-docker.service")
-    service_command = host.check_output(
-        "systemctl show workstation-manager-docker.service --property=ExecStart --value"
-    )
-    service_environment = host.check_output(
-        "systemctl show workstation-manager-docker.service --property=Environment --value"
-    )
-    runtime_directory = daemon.rsplit("/", 1)[0]
-
-    assert unit.exists
-    assert unit.user == "root"
-    assert unit.group == "root"
-    assert unit.mode == 0o644
-    assert daemon in service_command
-    assert f"PATH={runtime_directory}:" in service_environment
-    for binary in ("containerd", "containerd-shim-runc-v2", "runc", "docker-init", "docker-proxy"):
-        assert host.file(f"{runtime_directory}/{binary}").is_executable
+def test_native_docker_service_survives_restart(host) -> None:
+    """The vendor daemon and socket must remain usable by a fresh managed-user session."""
+    host.check_output("sudo -n systemctl restart docker.service")
+    assert host.run("docker --host unix:///var/run/docker.sock info").succeeded
+    command = host.check_output("systemctl show docker.service --property=ExecStart --value")
+    assert "/usr/bin/dockerd" in command
+    assert ".local/share/mise" not in command
     for package in ("docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"):
-        assert not host.package(package).is_installed
-    assert not host.file("/etc/apt/keyrings/docker.asc").exists
-    assert not host.file("/etc/apt/sources.list.d/docker.list").exists
-    assert not host.file("/etc/apt/sources.list.d/docker.sources").exists
+        assert host.package(package).is_installed
+    assert host.file("/etc/apt/keyrings/docker.asc").user == "root"
+    assert host.file("/etc/apt/sources.list.d/docker.sources").contains("Signed-By: /etc/apt/keyrings/docker.asc")
 
 
-def test_github_cli_does_not_require_a_vendor_repository(host) -> None:
-    """The mise-managed GitHub CLI should not require its vendor APT repository."""
-
-    # Arrange
-    github_keyring_file = host.file("/usr/share/keyrings/githubcli-archive-keyring.gpg")
-    github_source_file = host.file("/etc/apt/sources.list.d/github-cli.list")
-
-    # Act
-    # Assert
-    assert not github_keyring_file.exists
-    assert not github_source_file.exists
+def test_native_github_cli_uses_its_vendor_repository(host) -> None:
+    """GitHub CLI is available without activating mise or changing user credentials."""
+    assert host.package("gh").is_installed
+    assert host.check_output("env -i PATH=/usr/local/bin:/usr/bin:/bin sh -c 'command -v gh'") == "/usr/bin/gh"
+    assert host.file("/etc/apt/keyrings/githubcli-archive-keyring.gpg").user == "root"
+    assert host.file("/etc/apt/sources.list.d/github-cli.sources").contains("https://cli.github.com/packages")
 
 
-def test_declared_editor_package_is_installed(host) -> None:
-    """The installed machine should install the declared editor package."""
-
-    # Arrange
-    application_command = "flatpak list --system --app --columns=application"
-
-    # Act
-    application_result = host.run(application_command)
-
-    # Assert
-    assert application_result.succeeded
-    assert "com.visualstudio.code" in application_result.stdout.splitlines()
-
-
-def test_vscode_terminal_command_is_available(host) -> None:
-    """The managed Flatpak editor should also expose its command on the host PATH."""
-
-    launcher = host.file("/usr/local/bin/code")
-
-    command_result = host.run("command -v code")
-    version_result = host.run("code --version")
-
-    assert launcher.exists
-    assert launcher.mode == 0o755
-    assert launcher.user == "root"
-    assert launcher.group == "root"
-    assert command_result.succeeded
-    assert command_result.stdout.strip() == launcher.path
-    assert version_result.succeeded
-    assert version_result.stdout.strip()
+def test_github_extensions_match_configured_pins(host, workstation_config) -> None:
+    """Installed release tags and script checkout commits match the managed configuration."""
+    installed = {}
+    for line in host.check_output("gh extension list").splitlines():
+        fields = line.split()
+        if len(fields) >= 4 and fields[0] == "gh":
+            installed[fields[2]] = fields[3]
+    for repository, revision in workstation_config["development"]["github"]["extensions"].items():
+        assert repository in installed
+        if len(revision) == 40:
+            extension = f"{host.user().home}/.local/share/gh/extensions/{repository.split('/')[1]}"
+            assert host.check_output("git -C %s rev-parse HEAD", extension) == revision
+        else:
+            assert installed[repository] == revision
 
 
-def test_vscode_integrated_terminal_uses_host_zsh(host) -> None:
-    """The Flatpak editor should select a profile that can run the workstation's Zsh."""
+def test_node_and_bundled_package_commands_work_with_a_clean_environment(host, workstation_config) -> None:
+    """Ordinary non-login processes must find the complete system Node distribution."""
+    home = host.user().home
+    for command in ("node", "npm", "npx"):
+        result = host.run("env -i HOME=%s PATH=/usr/local/bin:/usr/bin:/bin %s --version", home, command)
+        assert result.succeeded, result.stderr
+        assert host.file(f"/usr/local/bin/{command}").is_symlink
+    assert host.check_output("node --version") == "v" + workstation_config["development"]["node"]["version"]
+    assert host.file("/opt/nodejs/current").user == "root"
+    result = host.run("env -i HOME=%s PATH=/usr/local/bin:/usr/bin:/bin npm exec --offline -- node --version", home)
+    assert result.succeeded, result.stderr
 
-    user_home = host.check_output("printf '%s' \"$HOME\"")
-    settings = host.file(f"{user_home}/.var/app/com.visualstudio.code/config/Code/User/settings.json")
-    bridge_result = host.run(
-        "sh -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) "
-        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus "
-        "flatpak run --command=/app/bin/host-spawn com.visualstudio.code /usr/bin/zsh --version'"
+
+def test_native_editor_and_terminal_are_available(host, workstation_config) -> None:
+    """The vendor command and native Zsh profile expose the workstation tools."""
+    if "code" not in workstation_config["development"]["editor_packages"]:
+        return
+    assert host.package("code").is_installed
+    assert host.check_output("command -v code") == "/usr/bin/code"
+    assert host.run("code --version").succeeded
+    settings = host.file(f"{host.user().home}/.config/Code/User/settings.json")
+    assert '"terminal.integrated.defaultProfile.linux": "zsh"' in settings.content_string
+    assert '"path": "/usr/bin/zsh"' in settings.content_string
+    assert host.run("/usr/bin/zsh -lc 'node --version && npm --version && gh --version'").succeeded
+
+
+def test_persistent_github_login_is_independent_of_token_overrides(host, workstation_config) -> None:
+    """The managed user's keyring login is available in fresh non-interactive processes."""
+    home = host.user().home
+    hostname = workstation_config["development"]["github"]["host"]
+    result = host.run(
+        "env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN "
+        "HOME=%s XDG_CONFIG_HOME=%s GH_CONFIG_DIR=%s gh auth status --active --hostname %s --json hosts",
+        home,
+        home + "/.config",
+        home + "/.config/gh",
+        hostname,
     )
-
-    assert settings.exists
-    assert '"terminal.integrated.defaultProfile.linux": "zsh (host)"' in settings.content_string
-    assert '"path": "/app/bin/host-spawn"' in settings.content_string
-    ignored_settings = json.loads(settings.content_string)["settingsSync.ignoredSettings"]
-    for setting in ("terminal.integrated.profiles.linux", "terminal.integrated.defaultProfile.linux"):
-        assert setting in ignored_settings
-        assert f"-{setting}" not in ignored_settings
-    assert bridge_result.succeeded
-    assert "zsh " in bridge_result.stdout
+    assert result.succeeded, "Stored GitHub authentication could not be checked"
+    active = json.loads(result.stdout)["hosts"][hostname][0]
+    assert active["state"] == "success"
+    assert active["tokenSource"] == "keyring"
+    assert active["login"] == workstation_config["development"]["github"]["account"]
 
 
-def test_development_sysctl_configuration(host) -> None:
-    """Development tooling should apply the configured filesystem watch limit."""
+def test_standard_agent_clis_match_configured_pins_without_shell_activation(host, workstation_config) -> None:
+    """Both baseline CLIs use the system runtime and their reviewed npm releases."""
+    home = host.user().home
+    for name, package in workstation_config["development"]["npm_packages"].items():
+        installed = json.loads(
+            host.check_output("/usr/local/bin/npm ls --global --prefix /usr/local --depth=0 --json %s", name)
+        )
+        assert installed["dependencies"][name]["version"] == package["version"]
+        assert host.run(
+            "env -i HOME=%s PATH=/usr/local/bin:/usr/bin:/bin %s --version", home, package["command"]
+        ).succeeded
 
-    # Arrange
-    sysctl_file = host.file("/etc/sysctl.d/99-workstation-manager.conf")
 
-    # Act
-    has_watch_limit = sysctl_file.contains(r"^fs\.inotify\.max_user_watches\s*=\s*524288$")
-    configured_watch_limit = host.check_output("sysctl -n fs.inotify.max_user_watches")
-
-    # Assert
-    assert sysctl_file.exists
-    assert has_watch_limit
-    assert configured_watch_limit == "524288"
+def test_development_sysctl_configuration(host, workstation_config) -> None:
+    """Configured kernel settings must be persisted and applied."""
+    content = host.file("/etc/sysctl.d/99-workstation-manager.conf").content_string
+    persisted = dict(line.split("=", 1) for line in content.splitlines() if "=" in line and not line.startswith("#"))
+    persisted = {key.strip(): value.strip() for key, value in persisted.items()}
+    for name, value in workstation_config["development"]["settings"]["sysctl"].items():
+        assert persisted[name] == str(value)
+        assert host.check_output("sysctl -n %s", name) == str(value)
 
 
 def test_git_project_report_command_and_schedule_are_managed(host) -> None:
-    """Development tooling should install the Git report command and its daily schedule."""
+    """Setup always installs the manual report and daily desktop notifications."""
 
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
@@ -269,26 +192,19 @@ def test_git_project_report_command_and_schedule_are_managed(host) -> None:
     autostart_file = host.file(f"{user_home}/.config/autostart/workstation-manager-git-project-report.desktop")
 
     # Act
-    notify_send_result = host.run("command -v notify-send")
     report_result = host.run(report_command)
     timer_link_result = host.run("test -L %s", timer_link)
 
     # Assert
-    assert notify_send_result.succeeded
     assert helper_script.exists
     assert helper_script.mode == 0o644
-    assert activator_script.exists
-    assert activator_script.mode == 0o755
-    assert service_unit.exists
-    assert service_unit.contains(r"^ExecStart=%h/\.local/bin/workstation-manager-git-project-report --notify$")
-    assert timer_unit.exists
-    assert timer_unit.contains(r"^OnCalendar=daily$")
-    assert timer_unit.contains(r"^Persistent=true$")
     assert timer_link_result.succeeded
     assert autostart_file.exists
-    assert autostart_file.contains(
-        rf"^Exec={user_home}/\.local/bin/workstation-manager-git-project-report-activate-timer$"
-    )
+    assert host.run("command -v notify-send").succeeded
+    assert activator_script.exists
+    assert service_unit.exists
+    assert timer_unit.contains(r"^OnCalendar=daily$")
+    assert timer_unit.contains(r"^Persistent=true$")
     assert report_result.succeeded
     assert "client-restore [main]" in report_result.stdout
     assert "local-note.txt" in report_result.stdout

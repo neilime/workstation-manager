@@ -1,0 +1,66 @@
+---
+- name: Plan APT updates without installing packages or restarting services
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv: [apt-get, --simulate, dist-upgrade]
+  environment:
+    LC_ALL: C
+  register: workstation_manager_cleanup_apt_plan
+  changed_when: false
+  check_mode: false
+
+- name: Inspect the pending reboot marker
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: workstation_manager_cleanup_reboot
+
+- name: Reclaim old dangling Docker images and build cache
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv: "{{ item }}"
+  loop:
+    - - docker
+      - image
+      - prune
+      - --force
+      - --filter
+      - until=168h
+    - - docker
+      - builder
+      - prune
+      - --force
+      - --filter
+      - until=168h
+      - --keep-storage
+      - 10GB
+  register: workstation_manager_cleanup_docker_prune
+  changed_when: >-
+    'Total reclaimed space: 0B' not in workstation_manager_cleanup_docker_prune.stdout
+    and 'Total:\t0B' not in workstation_manager_cleanup_docker_prune.stdout
+  when:
+    - not ansible_check_mode
+    - workstation_manager_cleanup_docker_command.rc == 0
+
+- name: Clean obsolete APT package downloads
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    autoclean: true
+  when: not ansible_check_mode
+
+- name: Apply journal retention and size limits
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - --vacuum-time=14days
+      - --vacuum-size=1024M
+  register: workstation_manager_cleanup_journal_vacuum
+  changed_when: "'Deleted' in workstation_manager_cleanup_journal_vacuum.stderr"
+  when: not ansible_check_mode
+
+- name: Report updates and restart planning separately from cleanup
+  ansible.builtin.debug:
+    msg:
+      - "APT update simulation (cached package metadata): {{ workstation_manager_cleanup_apt_plan.stdout_lines }}"
+      - "Reboot required: {{ workstation_manager_cleanup_reboot.stat.exists }}"
+      - Review sudo apt update and sudo apt upgrade separately; schedule service restarts and any reboot.

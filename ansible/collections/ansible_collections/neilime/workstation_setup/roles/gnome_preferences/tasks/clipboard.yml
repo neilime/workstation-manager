@@ -1,0 +1,184 @@
+---
+- name: Install the extension archive dependencies
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+
+- name: Prepare the versioned clipboard extension directory
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ workstation_manager_resolved.user.home }}/.local/share/gnome-shell/extensions"
+    - "{{ workstation_manager_clipboard_directory }}"
+
+- name: Download the pinned reviewed clipboard extension
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.get_url:
+    url: >-
+      {{ 'https://extensions.gnome.org/extension-data/clipboard-indicatortudmotu.com.v'
+         ~ workstation_manager_resolved.desktop.clipboard_indicator.version ~ '.shell-extension.zip' }}
+    dest: "{{ workstation_manager_clipboard_directory }}/extension.zip"
+    checksum: "sha256:{{ workstation_manager_resolved.desktop.clipboard_indicator.sha256 }}"
+    mode: "0644"
+  when: not ansible_check_mode
+
+- name: Detect GNOME Shell version
+  ansible.builtin.command:
+    argv: [gnome-shell, --version]
+  changed_when: false
+  check_mode: false
+  register: workstation_manager_clipboard_shell
+
+- name: Validate the clipboard archive before extraction
+  neilime.workstation_setup.clipboard_archive_info:
+    path: "{{ workstation_manager_clipboard_directory }}/extension.zip"
+    sha256: "{{ workstation_manager_resolved.desktop.clipboard_indicator.sha256 }}"
+    version: "{{ workstation_manager_resolved.desktop.clipboard_indicator.version }}"
+    shell_version: "{{ workstation_manager_clipboard_shell.stdout }}"
+  when: not ansible_check_mode
+
+- name: Extract the reviewed clipboard extension
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.unarchive:
+    src: "{{ workstation_manager_clipboard_directory }}/extension.zip"
+    dest: "{{ workstation_manager_clipboard_directory }}"
+    remote_src: true
+  when: not ansible_check_mode
+
+- name: Register the pinned extension with GNOME
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    src: "{{ workstation_manager_clipboard_directory }}"
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com"
+    state: link
+  when: not ansible_check_mode
+
+- name: Read the Chezmoi-owned clipboard profile
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.slurp:
+    src: "{{ workstation_manager_resolved.user.home }}/.config/clipboard-indicator/settings.ini"
+  register: workstation_manager_clipboard_preferences
+  when: not ansible_check_mode
+
+- name: Apply the Chezmoi-owned clipboard preferences
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: "/org/gnome/shell/extensions/clipboard-indicator/{{ item.key }}"
+    value: "{{ item.value }}"
+  loop: "{{ (workstation_manager_clipboard_preferences.content | b64decode | community.general.from_ini)['clipboard'] | dict2items }}"
+  when: not ansible_check_mode
+
+- name: Keep GNOME extension compatibility validation enabled
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/disable-extension-version-validation
+    value: "false"
+
+- name: Inspect the managed user's running CopyQ process
+  ansible.builtin.command:
+    argv:
+      [
+        pgrep,
+        --uid,
+        "{{ workstation_manager_resolved.user.name }}",
+        --exact,
+        copyq,
+      ]
+  register: workstation_manager_clipboard_copyq
+  changed_when: false
+  failed_when: workstation_manager_clipboard_copyq.rc not in [0, 1]
+  check_mode: false
+
+- name: Discover the current desktop session before switching clipboard managers
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.desktop_session_info:
+  register: workstation_manager_clipboard_session
+  when: workstation_manager_clipboard_copyq.rc == 0
+
+- name: Close CopyQ gracefully before enabling the replacement
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv: [flatpak, run, com.github.hluk.copyq, exit]
+  environment: "{{ workstation_manager_clipboard_session.environment }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - workstation_manager_clipboard_copyq.rc == 0
+
+- name: Remove CopyQ applications while retaining their history and configuration
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak:
+    name: com.github.hluk.copyq
+    state: absent
+    method: system
+
+- name: Remove the user CopyQ installation while retaining its data
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.flatpak:
+    name: com.github.hluk.copyq
+    state: absent
+    method: user
+
+- name: Read enabled GNOME extensions
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/enabled-extensions
+    state: read
+  register: workstation_manager_clipboard_enabled
+
+- name: Enable Clipboard Indicator without replacing other extensions
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/enabled-extensions
+    value: >-
+      @as {{ ((workstation_manager_clipboard_enabled.value
+      | default('[]', true)
+      | regex_replace('^@as ', '')
+      | from_yaml) + ['clipboard-indicator@tudmotu.com'])
+      | unique
+      | list
+      | to_json }}
+
+- name: Read explicitly disabled GNOME extensions
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/disabled-extensions
+    state: read
+  register: workstation_manager_clipboard_disabled
+
+- name: Remove the selected clipboard extension from the disabled list
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/disabled-extensions
+    value: >-
+      @as {{ (workstation_manager_clipboard_disabled.value
+      | default('[]', true)
+      | regex_replace('^@as ', '')
+      | from_yaml)
+      | reject('equalto', 'clipboard-indicator@tudmotu.com')
+      | list
+      | to_json }}
+
+- name: Report clipboard activation and preserved recovery data
+  ansible.builtin.debug:
+    msg:
+      - Log out and back in to load the pinned Clipboard Indicator release into GNOME Shell.
+      - CopyQ history remains in ~/.var/app/com.github.hluk.copyq and ~/.config/copyq; it is not converted or deleted.

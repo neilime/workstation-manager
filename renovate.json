@@ -1,4 +1,19 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["group:all"]
+  "extends": ["group:all"],
+  "packageRules": [
+    {
+      "matchPackageNames": ["clipboard-indicator"],
+      "automerge": false,
+      "prBodyNotes": [
+        "Download the reviewed GNOME Extensions archive, update its SHA-256 in all.yml, and repeat the clipboard Wayland acceptance checks before accepting this update."
+      ]
+    },
+    {
+      "matchPackageNames": ["ubuntu-workstation"],
+      "groupName": "Ubuntu workstation baseline",
+      "automerge": false,
+      "ignoreUnstable": true
+    }
+  ]
 }

@@ -5,17 +5,21 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import pwd
 import subprocess
-import sys
 
 import pytest
 from ansible.parsing.dataloader import DataLoader
-
-TASK_DIRECTORY = (
-    pathlib.Path(__file__).parents[2]
-    / "ansible/collections/ansible_collections/neilime/workstation_setup/roles/gnome_preferences/tasks"
+from ansible_test_helpers import (
+    SETUP_ROLES,
+    ansible_environment,
+    managed_user,
+    run_playbook,
+    write_local_playbook,
 )
+
+pytestmark = pytest.mark.integration
+
+TASK_DIRECTORY = SETUP_ROLES / "gnome_preferences/tasks"
 
 
 @pytest.fixture(name="bookmarks_setup")
@@ -30,39 +34,17 @@ def fixture_bookmarks_setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[
         if task.get("ansible.builtin.import_tasks") == "file_bookmarks.yml"
     )
     task["ansible.builtin.import_tasks"] = str(TASK_DIRECTORY / "file_bookmarks.yml")
-    (tmp_path / "playbook.json").write_text(
-        json.dumps(
-            [
-                {
-                    "hosts": "localhost",
-                    "connection": "local",
-                    "gather_facts": False,
-                    "vars": {
-                        "ansible_python_interpreter": sys.executable,
-                        "workstation_manager_use_become": False,
-                        "workstation_manager_resolved": {
-                            "user": {
-                                "name": pwd.getpwuid(os.getuid()).pw_name,
-                                "home": str(home),
-                                "projects_directory": "{{ fixture_projects_directory }}",
-                            },
-                        },
-                    },
-                    "tasks": [task],
-                }
-            ]
-        )
+    write_local_playbook(
+        tmp_path / "playbook.json",
+        [task],
+        {
+            "workstation_manager_use_become": False,
+            "workstation_manager_resolved": {
+                "user": managed_user(home, projects_directory="{{ fixture_projects_directory }}"),
+            },
+        },
     )
-    config = tmp_path / "ansible.cfg"
-    config.write_text("[defaults]\n")
-    environment = {
-        "PATH": os.environ["PATH"],
-        "HOME": str(tmp_path),
-        "XDG_CONFIG_HOME": str(tmp_path / "ide-config"),
-        "LC_ALL": "C.UTF-8",
-        "ANSIBLE_CONFIG": str(config),
-        "ANSIBLE_HOME": str(tmp_path / ".ansible"),
-    }
+    environment = ansible_environment(tmp_path, XDG_CONFIG_HOME=str(tmp_path / "ide-config"))
     return tmp_path, environment
 
 
@@ -81,11 +63,17 @@ def run_setup(
     ]
     if check:
         command.append("--check")
-    return subprocess.run(command, env=environment, capture_output=True, text=True, check=False, timeout=60)
+    return run_playbook(command, environment)
 
 
-@pytest.mark.parametrize("directory", ["home/Documents/dev-projects", "custom projects/café #1%"])
-@pytest.mark.parametrize("existing_label", [None, "", "/ My projects"])
+@pytest.mark.parametrize(
+    "directory,existing_label",
+    [
+        ("home/Documents/dev-projects", ""),
+        ("custom projects/café #1%", None),
+        ("custom projects/café #1%", "/ My projects"),
+    ],
+)
 def test_setup_preserves_bookmarks_and_is_idempotent(bookmarks_setup, directory, existing_label) -> None:
     """Add an encoded project URI once, preserving existing entries and labels."""
     root, _ = bookmarks_setup

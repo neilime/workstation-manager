@@ -27,21 +27,11 @@ class SystemSectionNormalizer:
 
         system = self._resolver.mapping(config.get("system"), "workstation_manager.system")
         packages = self._resolver.mapping(system.get("packages"), "workstation_manager.system.packages")
-        repositories = self._resolver.mapping(system.get("repositories"), "workstation_manager.system.repositories")
-        services = self._resolver.mapping(system.get("services"), "workstation_manager.system.services")
         settings = self._resolver.mapping(system.get("settings"), "workstation_manager.system.settings")
         default_packages = self._resolver.mapping(
             defaults.get("packages"), "workstation_manager.system.defaults.packages"
         )
         default_cache_valid_time = self._resolver.int_value(default_packages.get("cache_valid_time"), 86400)
-        default_repositories = self._resolver.mapping(
-            defaults.get("repositories"),
-            "workstation_manager.system.defaults.repositories",
-        )
-        default_services = self._resolver.mapping(
-            defaults.get("services"),
-            "workstation_manager.system.defaults.services",
-        )
         default_settings = self._resolver.mapping(
             defaults.get("settings"), "workstation_manager.system.defaults.settings"
         )
@@ -77,34 +67,6 @@ class SystemSectionNormalizer:
                 ),
                 "cache_valid_time": self._resolver.int_value(
                     packages.get("cache_valid_time"), default_cache_valid_time
-                ),
-            },
-            "repositories": self._resolver.apt_repositories(
-                repositories,
-                default_repositories,
-                "workstation_manager.system.repositories",
-            ),
-            "directories": self._resolver.list_value(
-                self._resolver.value_or_default(
-                    system.get("directories"),
-                    defaults.get("directories"),
-                ),
-                "workstation_manager.system.directories",
-            ),
-            "services": {
-                "enabled": self._resolver.list_value(
-                    self._resolver.value_or_default(
-                        services.get("enabled"),
-                        default_services.get("enabled"),
-                    ),
-                    "workstation_manager.system.services.enabled",
-                ),
-                "disabled": self._resolver.list_value(
-                    self._resolver.value_or_default(
-                        services.get("disabled"),
-                        default_services.get("disabled"),
-                    ),
-                    "workstation_manager.system.services.disabled",
                 ),
             },
             "settings": self._resolver.sysctl_settings(

@@ -106,7 +106,7 @@ def test_ssh_sync_planner_skips_matching_remote_item() -> None:
         "/home/emilien",
     )
 
-    assert actions == []
+    assert isinstance(actions, list) and not actions
 
 
 def test_ssh_sync_planner_rejects_duplicate_remote_names() -> None:
@@ -243,7 +243,7 @@ def test_gpg_sync_planner_skips_matching_remote_item() -> None:
         ],
     )
 
-    assert actions == []
+    assert isinstance(actions, list) and not actions
 
 
 @pytest.mark.parametrize("kind", ["ssh", "gpg"])
@@ -263,4 +263,4 @@ def test_remote_only_keys_are_not_flagged_for_backup(kind: str) -> None:
         actions = BitwardenSshKeySyncPlanner().build([], [item], "/home/fixture")
     else:
         actions = BitwardenGpgKeySyncPlanner().build([], [item])
-    assert actions == []
+    assert isinstance(actions, list) and not actions

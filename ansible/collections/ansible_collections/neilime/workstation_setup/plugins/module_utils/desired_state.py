@@ -27,7 +27,7 @@ class DesiredStateConfigNormalizer:
         raw_config: dict[str, object] | None,
         env: dict[str, str] | None = None,
     ) -> dict[str, dict[str, Any]]:
-        """Return normalized configuration sections with safe defaults."""
+        """Normalize merged configuration, requiring dependency versions from config."""
 
         resolver = desired_state_support.DesiredStateValueResolver()
         defaults_factory = desired_state_support.DesiredStateDefaultsFactory(self._state_slug)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import pathlib
 import subprocess
@@ -10,6 +9,9 @@ import sys
 import tempfile
 
 import pytest
+from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
+
+pytestmark = pytest.mark.integration
 
 COLLECTIONS_PATH = pathlib.Path(__file__).parents[2] / "ansible" / "collections"
 TASK_FILE = (
@@ -31,7 +33,6 @@ def run_gpg_collection(
 
     with tempfile.TemporaryDirectory() as temporary_dir:
         fixture = pathlib.Path(temporary_dir)
-        (fixture / "ansible.cfg").write_text("[defaults]\n")
         user_home = fixture / "home"
         user_home.mkdir()
         gpg = fixture / "gpg"
@@ -65,48 +66,30 @@ def run_gpg_collection(
             },
         }
         playbook = fixture / "playbook.json"
-        playbook.write_text(
-            json.dumps(
-                [
-                    {
-                        "name": "Verify GPG backup collection",
-                        "hosts": "localhost",
-                        "connection": "local",
-                        "gather_facts": False,
-                        "vars": variables,
-                        "tasks": [
-                            {"ansible.builtin.include_tasks": str(TASK_FILE)},
-                            {
-                                "name": "Verify collected key and optional ownertrust",
-                                "ansible.builtin.assert": {
-                                    "that": ["workstation_backup_local_gpg_keys == [expected_key]"]
-                                },
-                                "no_log": True,
-                            },
-                        ],
-                    }
-                ]
-            )
+        write_local_playbook(
+            playbook,
+            [
+                {"ansible.builtin.include_tasks": str(TASK_FILE)},
+                {
+                    "name": "Verify collected key and optional ownertrust",
+                    "ansible.builtin.assert": {"that": ["workstation_backup_local_gpg_keys == [expected_key]"]},
+                    "no_log": True,
+                },
+            ],
+            variables,
+            name="Verify GPG backup collection",
         )
         command = ["ansible-playbook", "--inventory", "localhost,", str(playbook)]
         if check_mode:
             command.append("--check")
-        return subprocess.run(
+        return run_playbook(
             command,
+            ansible_environment(
+                fixture,
+                PATH=str(fixture) + os.pathsep + os.environ["PATH"],
+                GNUPGHOME=str(fixture / "controller-gnupg"),
+            ),
             cwd=fixture,
-            env={
-                "PATH": str(fixture) + os.pathsep + os.environ["PATH"],
-                "HOME": str(fixture),
-                "GNUPGHOME": str(fixture / "controller-gnupg"),
-                "LC_ALL": "C.UTF-8",
-                "ANSIBLE_CONFIG": str(fixture / "ansible.cfg"),
-                "ANSIBLE_HOME": str(fixture / ".ansible"),
-                "ANSIBLE_COLLECTIONS_PATH": str(COLLECTIONS_PATH),
-            },
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
         )
 
 

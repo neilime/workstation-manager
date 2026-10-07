@@ -1,185 +1,70 @@
 ---
-- name: Require the Ubuntu mise-managed Docker bundle
-  ansible.builtin.assert:
-    that:
-      - ansible_facts['distribution'] == 'Ubuntu'
-      - "'aqua:docker/cli' in workstation_manager_resolved.development.mise.tools"
-    fail_msg: >-
-      Docker setup requires Ubuntu and aqua:docker/cli in development.mise.tools.
-
-- name: Inspect existing Docker services
+- name: Install the Docker repository signing key
   become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - list-unit-files
-      - --no-legend
-      - --no-pager
-      - docker.service
-      - docker.socket
-  register: workstation_manager_development_existing_docker_services
-  changed_when: false
-  # systemctl returns 1 without output when neither requested unit exists.
-  failed_when:
-    - workstation_manager_development_existing_docker_services.rc != 0
-    - >-
-      workstation_manager_development_existing_docker_services.rc != 1
-      or workstation_manager_development_existing_docker_services.stdout | trim | length > 0
-      or workstation_manager_development_existing_docker_services.stderr | trim | length > 0
-  check_mode: false
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
 
-- name: Require separately installed Docker services to be reconciled explicitly
-  ansible.builtin.assert:
-    that:
-      - workstation_manager_development_existing_docker_services.stdout | trim | length == 0
-    fail_msg: >-
-      Another Docker installation provides docker.service or docker.socket.
-      Reconcile that installation before running setup with the mise-managed daemon.
-
-- name: Resolve the mise-managed Docker daemon binary
+- name: Configure Docker for the actual Ubuntu release
   become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv:
-      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
-      - which
-      - --tool
-      - aqua:docker/cli
-      - dockerd
-    chdir: "{{ workstation_manager_resolved.user.home }}"
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-  register: workstation_manager_development_docker_binary
-  changed_when: false
-  failed_when: false
-  check_mode: false
-  when: not ansible_check_mode or workstation_manager_development_mise_binary.stat.exists
+  ansible.builtin.deb822_repository:
+    name: docker
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: stable
+    architectures: "{{ workstation_manager_native_arch }}"
+    signed_by: /etc/apt/keyrings/docker.asc
+  register: workstation_manager_docker_repository
 
-- name: Require an installed mise-managed Docker daemon
-  ansible.builtin.assert:
-    that:
-      - workstation_manager_development_docker_binary.rc == 0
-    fail_msg: >-
-      Cannot resolve dockerd from aqua:docker/cli for
-      {{ workstation_manager_resolved.user.name }}:
-      {{ workstation_manager_development_docker_binary.stderr | default('') }}.
-      Check the mise installation and rerun setup.
+- name: Install Docker Engine and official CLI plugins
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: "{{ workstation_manager_docker_repository is changed }}"
+    install_recommends: false
+
+- name: Enable the native Docker service
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.systemd_service:
+    name: docker.service
+    enabled: true
+    state: started
   when: not ansible_check_mode
 
-- name: Configure the installed mise-managed Docker daemon
-  when: workstation_manager_development_docker_binary.rc | default(1) == 0
-  block:
-    - name: Inspect the mise-managed Docker runtime binaries
-      become: "{{ workstation_manager_use_become }}"
-      ansible.builtin.stat:
-        path: "{{ workstation_manager_development_docker_binary.stdout | dirname }}/{{ item }}"
-        follow: true
-      loop:
-        - docker
-        - dockerd
-        - containerd
-        - containerd-shim-runc-v2
-        - runc
-        - docker-init
-        - docker-proxy
-      register: workstation_manager_development_docker_runtime_binaries
+- name: Grant the managed account Docker group access
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.user:
+    name: "{{ workstation_manager_resolved.user.name }}"
+    groups:
+      - docker
+    append: true
+  when: not ansible_check_mode
 
-    - name: Require the complete executable Docker runtime bundle
-      ansible.builtin.assert:
-        that:
-          - item.stat.exists
-          - item.stat.isreg | default(false)
-          - item.stat.executable | default(false)
-        fail_msg: >-
-          Docker runtime binary {{ item.item }} is missing or not executable
-          beside the mise-managed dockerd. Reinstall aqua:docker/cli and rerun setup.
-      loop: "{{ workstation_manager_development_docker_runtime_binaries.results }}"
-      loop_control:
-        label: "{{ item.item }}"
+- name: Verify native Docker service access
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      # Start a fresh account context even when Ansible itself runs as this user.
+      - /usr/sbin/runuser
+      - --user
+      - "{{ workstation_manager_resolved.user.name }}"
+      - --
+      - /usr/bin/docker
+      - --host
+      - unix:///var/run/docker.sock
+      - info
+  changed_when: false
+  when: not ansible_check_mode
 
-    - name: Install Docker networking and socket permission prerequisites
-      become: "{{ workstation_manager_use_become }}"
-      ansible.builtin.apt:
-        name:
-          - acl
-          - iptables
-        state: present
-        update_cache: true
-        cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
-
-    - name: Ensure Docker access group exists
-      become: "{{ workstation_manager_use_become }}"
-      ansible.builtin.group:
-        name: docker
-        state: present
-      register: workstation_manager_development_docker_group
-
-    - name: Grant the managed user access to Docker
-      become: "{{ workstation_manager_use_become }}"
-      ansible.builtin.user:
-        name: "{{ workstation_manager_resolved.user.name }}"
-        groups:
-          - docker
-        append: true
-      when: not ansible_check_mode or workstation_manager_development_docker_group is not changed
-
-    - name: Inspect the existing managed Docker service unit
-      become: "{{ workstation_manager_use_become }}"
-      ansible.builtin.stat:
-        path: /etc/systemd/system/workstation-manager-docker.service
-      register: workstation_manager_development_docker_service_stat
-
-    - name: Render the mise-managed Docker service unit
-      become: "{{ workstation_manager_use_become }}"
-      ansible.builtin.template:
-        src: docker/workstation-manager-docker.service.j2
-        dest: /etc/systemd/system/workstation-manager-docker.service
-        owner: root
-        group: root
-        mode: "0644"
-      register: workstation_manager_development_docker_service
-
-    - name: Enable and start the mise-managed Docker daemon
-      become: "{{ workstation_manager_use_become }}"
-      ansible.builtin.systemd_service:
-        name: workstation-manager-docker.service
-        daemon_reload: "{{ workstation_manager_development_docker_service is changed }}"
-        enabled: true
-        state: "{{ 'restarted' if workstation_manager_development_docker_service is changed else 'started' }}"
-      when: not ansible_check_mode or workstation_manager_development_docker_service_stat.stat.exists
-
-    - name: Grant Docker socket access to existing managed-user sessions
-      become: "{{ workstation_manager_use_become }}"
-      ansible.posix.acl:
-        path: /var/run/docker.sock
-        etype: user
-        entity: "{{ workstation_manager_resolved.user.name }}"
-        permissions: rw
-        state: present
-      # The socket and ACL utilities may not exist until a normal setup run.
-      when: not ansible_check_mode
-
-    - name: Verify the managed user can connect to Docker Engine
-      become: "{{ workstation_manager_use_become }}"
-      become_user: "{{ workstation_manager_resolved.user.name }}"
-      ansible.builtin.command:
-        argv:
-          - "{{ workstation_manager_development_docker_binary.stdout | dirname }}/docker"
-          - --host
-          - unix:///var/run/docker.sock
-          - info
-      environment:
-        HOME: "{{ workstation_manager_resolved.user.home }}"
-      changed_when: false
-      when: not ansible_check_mode
-
-- name: Report Docker daemon configuration deferred until mise tools are installed
+- name: Explain Docker access for already running desktop sessions
   ansible.builtin.debug:
-    msg: >-
-      Docker daemon configuration and verification are deferred in this preview
-      because mise cannot resolve the installed dockerd binary. Run setup normally
-      to install the configured Docker bundle.
-  when:
-    - ansible_check_mode
-    - workstation_manager_development_docker_binary.rc | default(1) != 0
+    msg: Log out and back in once if this session predates Docker group membership.
