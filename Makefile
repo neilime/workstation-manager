@@ -122,7 +122,7 @@ define run_linter
 		--rm \
 		-e ANSIBLE_CONFIG_FILE=.ansible-lint \
 		-e DEFAULT_WORKSPACE="$$DEFAULT_WORKSPACE" \
-		-e FILTER_REGEX_EXCLUDE="(^|.*/)(\.cache|\.env|\.git|\.mypy_cache|\.pytest_cache|\.reports[^/]*|\.tmp|__pycache__|venvs|ansible/vars/private\.override\.yml|ansible/vendor-collections|ansible/collections/ansible_collections/community|ansible/collections/ansible_collections/community\.general-[^/]*|ansible/collections/ansible_collections/neilime/[^/]+/tests/output)(/.*)?$$" \
+		-e FILTER_REGEX_EXCLUDE="(^|.*/)(\.agents/skills|\.skillshare/(skills|logs|backups|trash)|\.cache|\.env|\.git|\.mypy_cache|\.pytest_cache|\.reports[^/]*|\.tmp|__pycache__|venvs|ansible/vars/private\.override\.yml|ansible/vendor-collections|ansible/collections/ansible_collections/community|ansible/collections/ansible_collections/community\.general-[^/]*|ansible/collections/ansible_collections/neilime/[^/]+/tests/output)(/.*)?$$" \
 		-e FILTER_REGEX_INCLUDE="$(filter-out $@,$(MAKECMDGOALS))" \
 		-e IGNORE_GITIGNORED_FILES=false \
 		-e VALIDATE_GIT_COMMITLINT=false \

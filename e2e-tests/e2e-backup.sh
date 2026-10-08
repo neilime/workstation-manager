@@ -40,6 +40,11 @@ git init --initial-branch main '$projects_dir/tools/vendor/phpstan/extension-ins
 printf '%s\n' 'ignored-dependency' >'$projects_dir/tools/vendor/phpstan/extension-installer/ignored.txt'
 printf '%s\n' 'ignored-private-file' >'$projects_dir/ignored.private'
 printf '%s\n' 'restored-project' >'$projects_dir/project.txt'
+mkdir -p '$projects_dir/.skillshare' '$projects_dir/skill-source'
+printf '%s\n' 'targets: [codex]' 'skills:' '  - name: e2e-project-skill' '    source: ./skill-source' \
+	>'$projects_dir/.skillshare/config.yaml'
+printf '%s\n' '---' 'name: e2e-project-skill' 'description: An isolated project skill for setup validation.' '---' \
+	'Report the fixture name.' >'$projects_dir/skill-source/SKILL.md'
 printf '%s\n' 'local-untracked' >'$projects_dir/local-note.txt'
 printf '%s\n' 'local-change' >>'$projects_dir/tracked.txt'
 printf '%s\n' 'managed-config-fixture' >'$managed_config_dir/restore-fixture.txt'
@@ -92,7 +97,7 @@ done
 
 # shellcheck disable=SC1091
 source "$fixture_dir/wrapper-definitions.sh"
-prepare_action_dependencies backup
+prepare_action_dependencies
 download_github_file "$E2E_REPOSITORY_PATH" "$REPOSITORY_BRANCH" \
 	ansible/group_vars/all.yml "$fixture_dir/public.yml"
 mkdir -p "$fixture_dir/seed" "$(dirname "$config_path")"
@@ -106,6 +111,11 @@ private_path, fixture_path, source_path, config_path = sys.argv[1:]
 fixture = pathlib.Path(fixture_path)
 config = yaml.safe_load(pathlib.Path(private_path).read_text())
 public = yaml.safe_load((fixture / "public.yml").read_text())["workstation_manager"]
+# Preserve real installation and MCP declarations while keeping browser approval manual.
+config.setdefault("development", {}).setdefault("ai_tools", {})["authenticate"] = False
+setup_override = pathlib.Path.home() / ".local/state/workstation-manager/e2e/private.override.yml"
+setup_override.parent.mkdir(parents=True, exist_ok=True)
+setup_override.write_text(yaml.safe_dump(config))
 config.setdefault("secrets", {}).setdefault("bitwarden", {})["browser_profiles_collection_id"] = ""
 chezmoi = config.setdefault("home_environment", {}).setdefault("chezmoi", {})
 version = chezmoi.get("version") or public["home_environment"]["chezmoi"]["version"]
@@ -135,7 +145,7 @@ test -z "$(CHEZMOI_CONFIG_FILE="$config_path" "$fixture_dir/chezmoi" status)"
 # A fresh VM has no local keys. Restore them before backup so its recovery
 # checks can verify the configured collections without an interactive decision.
 PRIVATE_OVERRIDE_LOCAL_FILE="$source_dir/private.override.yml"
-run_ansible_pull ansible/prepare_e2e_backup.yml 0
+run_ansible_pull ansible/prepare_e2e_backup.yml 0 </dev/null
 FIXTURE
 
 run_e2e_workstation_action \

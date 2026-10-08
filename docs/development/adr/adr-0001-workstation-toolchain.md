@@ -281,8 +281,10 @@ protections and verify the actual command-execution environment.
 
 Authentication must survive terminal/editor restarts, setup reruns, CLI upgrades,
 and logout/login or reboot after the user session unlocks. Require the non-secret
-`development.github.account` in configuration; credentials belong in the OS
-keyring, with bootstrap tokens supplied privately. Validate the active
+`development.github.account` in configuration. Bootstrap establishes the OS-keyring
+login before private configuration is fetched, using native browser sign-in or a
+CI token supplied to `gh auth login --with-token`. Bitwarden authentication follows
+configuration loading. Validate the active
 account, keyring storage, and Git credential helper during setup and acceptance
 checks, without adding a network probe to every shell startup. Expired or revoked
 credentials, a locked credential store, and unavailable network access need distinct

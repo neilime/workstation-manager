@@ -52,7 +52,6 @@ run_e2e_workstation_action() {
         (WORKSPACE / "workstation.sh").read_text().rsplit('\nmain "$@"', 1)[0]
         + r"""
 prepare_action_dependencies() {
-    [[ "$1" == backup ]]
     PRIVATE_OVERRIDE_LOCAL_FILE="$TEST_FIXTURE/private.yml"
 }
 download_github_file() { cp "$TEST_WORKSPACE/$3" "$4"; }
@@ -70,14 +69,15 @@ run_ansible_pull() {
 main "$@"
 """
     )
+    skills = [{"name": "fixture-skill", "source": "~/.agents/skills/example"}]
+    bitwarden = {
+        "ssh_collection_id": "fixture-ssh",
+        "gpg_collection_id": "fixture-gpg",
+        "browser_profiles_collection_id": "fixture-browser",
+    }
     private = {
-        "secrets": {
-            "bitwarden": {
-                "ssh_collection_id": "fixture-ssh",
-                "gpg_collection_id": "fixture-gpg",
-                "browser_profiles_collection_id": "fixture-browser",
-            }
-        }
+        "development": {"ai_tools": {"skills": skills}},
+        "secrets": {"bitwarden": bitwarden},
     }
     (tmp_path / "private.yml").write_text(json.dumps(private))
     (tmp_path / "chezmoi").write_text(
@@ -89,6 +89,9 @@ main "$@"
     )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    dpkg = bin_dir / "dpkg"
+    dpkg.write_text('#!/bin/sh\n[ "$1" = --print-architecture ] || exit 99\nprintf amd64\n')
+    dpkg.chmod(0o755)
     curl = bin_dir / "curl"
     curl.write_text('#!/bin/bash\nset -euo pipefail\n[[ "$3" == -o ]]\ncp "$TEST_FIXTURE/chezmoi" "$4"\n')
     curl.chmod(0o755)
@@ -120,9 +123,17 @@ main "$@"
     assert phases == (["restore", "backup"] if restore_status == 0 else ["restore"])
     prepared = DataLoader().load_from_file(str(tmp_path / "prepared.yml"))
     assert prepared["secrets"]["bitwarden"] == {
-        **private["secrets"]["bitwarden"],
+        **bitwarden,
         "browser_profiles_collection_id": "",
     }
+    setup_override = user_home / ".local/state/workstation-manager/e2e/private.override.yml"
+    setup = DataLoader().load_from_file(str(setup_override))
+    assert setup == {
+        **private,
+        "development": {"ai_tools": {"skills": skills, "authenticate": False}},
+    }
+    assert setup_override.stat().st_mode & 0o777 == 0o600
+    assert json.loads((tmp_path / "private.yml").read_text()) == private
     assert not (user_home / ".local/share/chezmoi").exists()
     assert not (user_home / ".config/chezmoi/chezmoi.yaml").exists()
     assert not list(tmp_path.glob("recovery.*"))

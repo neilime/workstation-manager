@@ -1,0 +1,9 @@
+---
+- name: Ensure the managed user's codex login is available
+  neilime.workstation_setup.ai_provider_auth:
+    home: "{{ workstation_manager_resolved.user.home }}"
+    provider: codex
+    executable: "/usr/local/bin/{{ workstation_ai_config.providers.codex.command }}"
+    terminal: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY')
+         if lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') == '1' else '' }}

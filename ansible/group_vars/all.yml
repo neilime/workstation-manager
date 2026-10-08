@@ -100,13 +100,6 @@ workstation_manager:
     # Native editor packages; Microsoft APT owns code and its updates.
     editor_packages:
       - code
-    orca:
-      # renovate: datasource=github-releases depName=stablyai/orca
-      version: "1.4.223"
-      # Seed only missing settings; preserve existing workspaces and preferences.
-      settings:
-        theme: system
-        terminalFontFamily: Fira Code
     mise:
       version: "2026.10.5"
       # Project mise.toml files may select their own tools and versions.
@@ -121,16 +114,63 @@ workstation_manager:
         "vfox:jdx/vfox-php": "8.5.11"
         # renovate: datasource=github-releases depName=composer/composer
         "github:composer/composer": "2.10.3"
-    # Standard workstation CLIs, installed with the system Node runtime.
-    npm_packages:
-      "@openai/codex":
-        # renovate: datasource=npm depName=@openai/codex
-        version: "0.162.0"
-        command: codex
-      "@github/copilot":
-        # renovate: datasource=npm depName=@github/copilot
-        version: "1.0.94"
-        command: copilot
+        # renovate: datasource=github-releases depName=runkids/skillshare
+        "github:runkids/skillshare": "0.25.3"
+    # Define AI applications and extensions here.
+    ai_tools:
+      # Set false only when provider sign-in will be completed separately.
+      authenticate: true
+      orca:
+        # renovate: datasource=github-releases depName=stablyai/orca
+        version: "1.4.223"
+        # Seed only missing settings; preserve existing workspaces and preferences.
+        settings:
+          theme: system
+          terminalFontFamily: Fira Code
+      # Each provider entry installs its CLI, verifies native sign-in and configures its extensions.
+      providers:
+        codex:
+          npm: "@openai/codex"
+          # renovate: datasource=npm depName=@openai/codex
+          version: "0.162.0"
+          command: codex
+        copilot:
+          npm: "@github/copilot"
+          # renovate: datasource=npm depName=@github/copilot
+          version: "1.0.94"
+          command: copilot
+      # Agent Skills (SKILL.md) shared by providers; custom skills come from workstation-config.
+      skills:
+        - name: review-loop
+          source: ~/.agents/skills/review-loop
+        - name: migrate-lib
+          source: ~/.agents/skills/migrate-lib
+      # Each server entry defines its installation and launch settings.
+      mcp_servers:
+        - name: context7
+          npm: "@upstash/context7-mcp"
+          # renovate: datasource=npm depName=@upstash/context7-mcp
+          version: "4.2.0"
+          binary: context7-mcp
+          args: ["--transport", "stdio"]
+          env:
+            CONTEXT7_API_KEY:
+              bitwarden_secret: context7-api-key
+          # Read-only service check also validates an optional Bitwarden-backed API key.
+          auth_check:
+            tool: resolve-library-id
+            arguments:
+              libraryName: playwright
+              query: How do I open a page?
+            expect_text: /microsoft/playwright
+        - name: playwright
+          npm: "@playwright/mcp"
+          # renovate: datasource=npm depName=@playwright/mcp
+          version: "0.0.83"
+          binary: playwright-mcp
+          args: ["--headless", "--isolated"]
+          playwright:
+            browser: chromium
     settings:
       # Development tooling often needs a higher filesystem watch limit.
       sysctl:
@@ -148,7 +188,7 @@ workstation_manager:
       config_path: .config/chezmoi/chezmoi.yaml
 
   secrets:
-    # Secret restoration is driven by declared Bitwarden collection IDs.
+    # Secrets are selected by Bitwarden collection and item IDs.
     bitwarden:
       server: https://vault.bitwarden.eu
       # Bitwarden collection UUID for SSH key items.
@@ -157,3 +197,5 @@ workstation_manager:
       gpg_collection_id:
       # Profile names, stable IDs, directories, and Sync recovery words live here.
       browser_profiles_collection_id:
+      # Required Context7 API key item UUID; its password field supplies the key.
+      context7-api-key:

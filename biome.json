@@ -6,6 +6,8 @@
       "**",
       "!!.env*",
       "!!.git",
+      "!!.agents/skills",
+      "!!.skillshare/{skills,logs,backups,trash}",
       "!!.cache",
       "!!.mypy_cache",
       "!!.pytest_cache",

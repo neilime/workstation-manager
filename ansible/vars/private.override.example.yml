@@ -14,6 +14,9 @@ development:
   github:
     # Required non-secret username for the persistent managed-user login.
     account: "<your-github-username>"
+  # AI provider sign-in is required by default. Defer it only for installation-only runs.
+  # ai_tools:
+  #   authenticate: false
 
 home_environment:
   chezmoi:
@@ -28,3 +31,5 @@ secrets:
     gpg_collection_id: "<your-gpg-collection-uuid>"
     # Each secure note: name=profile label, custom fields id/directory, notes=Sync words.
     browser_profiles_collection_id: "<your-browser-profiles-collection-uuid>"
+    # Required Context7 API key item UUID; store the key in its password field.
+    context7-api-key: "<your-context7-item-uuid>"

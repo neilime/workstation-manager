@@ -88,13 +88,11 @@
 - name: Inspect the managed user's running CopyQ process
   ansible.builtin.command:
     argv:
-      [
-        pgrep,
-        --uid,
-        "{{ workstation_manager_resolved.user.name }}",
-        --exact,
-        copyq,
-      ]
+      - pgrep
+      - --uid
+      - "{{ workstation_manager_resolved.user.name }}"
+      - --exact
+      - copyq
   register: workstation_manager_clipboard_copyq
   changed_when: false
   failed_when: workstation_manager_clipboard_copyq.rc not in [0, 1]

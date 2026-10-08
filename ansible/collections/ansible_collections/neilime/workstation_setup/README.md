@@ -18,7 +18,7 @@ collection reads use `community.general.bitwarden` with the shared managed-user
 cache described in the [integration guide](../../../../../docs/development/README.md#bitwarden-integration).
 Bitwarden email login prompts privately once per challenge, ignores terminal redraws, and
 retries rejected codes with a fresh login attempt. Developer tool installation uses the GitHub credentials described in the
-[configuration guide](../../../../../docs/usage/configuration.md#automated-runs).
+[configuration guide](../../../../../docs/usage/configuration.md#edit-your-private-override).
 Chezmoi owns the wallpaper asset and Clipboard Indicator preferences. Setup
 installs and enables the checksum-pinned GNOME extension, applies the companion
 profile, and removes CopyQ applications while preserving their history.
@@ -41,15 +41,30 @@ and [developer tools](../../../../../docs/usage/configuration.md#developer-tools
 for update ownership, recovery archives, and access verification.
 Visual Studio Code uses Microsoft's native APT package and native Zsh. Setup
 preserves unrelated editor settings and personal profiles.
+The `ai_tools` role owns Orca, the baseline AI CLIs, pinned MCP packages, browser
+prerequisites and declared skills under `development.ai_tools` in the public
+`all.yml`. Codex and Copilot adapters
+merge private native configuration. Each `providers` entry defines its CLI
+installation and selects its adapter together. Setup reuses native provider
+ChatGPT and Copilot sessions or starts native sign-in, resolves MCP keys from
+Bitwarden and runs declared read-only access checks. Installation-only runs can
+explicitly defer provider login; setup reports that authentication is unverified.
+See [AI tool configuration](../../../../../docs/usage/ai-tools.md) and the
+[adapter contract](../../../../../docs/development/ai-tools.md).
 PHP and Composer are mandatory mise tools with
 pinned releases. Setup installs PHP build prerequisites; mise downloads and
 verifies the official Composer release.
-Setup always installs pinned Codex and GitHub Copilot CLIs, Orca, Helm, Dive,
-gh-act, and gh-stack. The default GitHub extensions use published binary release tags.
+The default providers install pinned Codex and GitHub Copilot CLIs. Setup also
+installs Orca, Helm, Dive, Skillshare, gh-act, and gh-stack.
+Setup provisions declared [project skills](../../../../../docs/development/README.md#project-skills)
+after restoring projects and establishing GitHub authentication. The default GitHub extensions use published binary release tags.
 The Starship launcher uses mise's resolved executable path for the configured release.
 The Git project report provides a manual command and daily desktop notifications.
-GitHub authentication must match the required `development.github.account` and
-persist in the managed user's OS credential store. See the
+GitHub authentication runs before private-repository access through
+`ansible/github_bootstrap.yml`. It reuses a saved login or performs native browser
+sign-in, with token input for automation. The login persists in the managed user's
+OS credential store and must match `development.github.account` once configuration
+is loaded. Context7 requires a Bitwarden API-key item selector. See the
 [developer-tool configuration](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
 for selections and sign-in steps.
 SSH restoration rejects private-key material in a Bitwarden `public_key` field

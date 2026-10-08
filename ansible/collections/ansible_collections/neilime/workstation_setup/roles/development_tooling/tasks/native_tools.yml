@@ -26,6 +26,9 @@
 - name: Install the complete system Node runtime
   ansible.builtin.import_tasks: node.yml
 
+- name: Ensure GitHub CLI and its credential-store dependencies are installed
+  ansible.builtin.import_tasks: github_cli.yml
+
 - name: Ensure native vendor keyring directory exists
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
@@ -34,34 +37,6 @@
     owner: root
     group: root
     mode: "0755"
-
-- name: Install GitHub CLI repository keyring
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.get_url:
-    url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
-    dest: /etc/apt/keyrings/githubcli-archive-keyring.gpg
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Configure the official GitHub CLI repository
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.deb822_repository:
-    name: github-cli
-    uris: https://cli.github.com/packages
-    suites: stable
-    components: main
-    architectures: "{{ workstation_manager_native_arch }}"
-    signed_by: /etc/apt/keyrings/githubcli-archive-keyring.gpg
-  register: workstation_manager_github_repository
-
-- name: Install native GitHub CLI
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.apt:
-    name: gh
-    state: present
-    update_cache: "{{ workstation_manager_github_repository is changed }}"
-    install_recommends: false
 
 - name: Install the official Docker service and plugins
   ansible.builtin.import_tasks: docker.yml

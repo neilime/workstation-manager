@@ -13,7 +13,7 @@ short_description: Establish persistent GitHub authentication in the OS credenti
 version_added: "1.0.0"
 description:
   - Verifies stored authentication with inherited token overrides removed from child processes.
-  - Reuses valid logins or authenticates using a supplied token or an interactive terminal.
+  - Reuses valid logins or starts native browser sign-in, with token input for automation.
   - Requires a working OS credential store and rejects plaintext credential storage.
   - Configures the Git credential helper for the managed user's login.
 options:
@@ -26,15 +26,15 @@ options:
     type: str
     required: true
   account:
-    description: Required GitHub username for the persistent login.
+    description: Expected GitHub username. Leave empty during bootstrap before private configuration is available.
     type: str
-    required: true
+    default: ''
   token:
-    description: Optional authentication token, passed privately on standard input.
+    description: Optional automation token passed privately on standard input when a login is needed.
     type: str
     default: ''
   terminal:
-    description: Interactive terminal path; empty disables interactive login.
+    description: User terminal for browser sign-in when stored credentials and an automation token are unavailable.
     type: path
     default: ''
 author:
@@ -87,7 +87,7 @@ def main() -> None:
         argument_spec={
             "home": {"type": "path", "required": True},
             "host": {"type": "str", "required": True},
-            "account": {"type": "str", "required": True},
+            "account": {"type": "str", "default": ""},
             "token": {"type": "str", "default": "", "no_log": True},
             "terminal": {"type": "path", "default": ""},
         },
@@ -118,7 +118,7 @@ def main() -> None:
         )
     except OSError:
         module.fail_json(
-            msg="Cannot access the GitHub CLI, credential store, or terminal; run setup from the managed user's desktop"
+            msg="Cannot access the GitHub CLI or credential store; run setup from the managed user's desktop"
         )
     except ValueError as error:
         module.fail_json(msg=str(error))

@@ -1,0 +1,35 @@
+---
+- name: Ensure the private skill cache exists
+  ansible.builtin.file:
+    path: "{{ workstation_ai_skill_cache }}/skills"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+
+- name: Configure Skillshare's managed download directory
+  ansible.builtin.template:
+    src: skills/skillshare.yaml.j2
+    dest: "{{ workstation_ai_skill_cache }}/config.yaml"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0600"
+
+- name: Install the pinned skill source
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_ai_skillshare_binary.stdout | trim }}"
+      - install
+      - -g
+      - "{{ workstation_ai_skill.source }}"
+      - --name
+      - "{{ workstation_ai_skill.name }}"
+    chdir: "{{ workstation_manager_resolved.user.home }}"
+    creates: "{{ workstation_ai_skill_cache }}/skills/{{ workstation_ai_skill.name }}/SKILL.md"
+  environment: >-
+    {{ {'SKILLSHARE_CONFIG': workstation_ai_skill_cache ~ '/config.yaml',
+        'NO_COLOR': '1', 'GIT_TERMINAL_PROMPT': '0'}
+       | combine({'GH_TOKEN': workstation_ai_skill_token} if workstation_ai_skill_token | length > 0 else {}) }}
+  no_log: "{{ workstation_ai_skill_token | length > 0 }}"
+  vars:
+    workstation_ai_skill_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"

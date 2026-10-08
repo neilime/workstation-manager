@@ -15,7 +15,8 @@ You need the latest stable Ubuntu release selected in
 [the supported baseline](ansible/ubuntu-version), internet access, `wget`, `sudo`, and:
 
 - Access to your configured private configuration and dotfiles sources.
-- Bitwarden credentials and configured SSH/GPG key collections.
+- A GitHub account with access to your private configuration repository.
+- Bitwarden credentials, configured SSH/GPG key collections, and a Context7 API-key vault item.
 - A browser profile collection if you want managed Brave profiles.
 
 Use a conventional Ubuntu installation whose boot and encryption do not require
@@ -23,8 +24,10 @@ Snap. Setup removes Snap after preserving its application data; see
 [application delivery](docs/usage/configuration.md#application-delivery).
 
 Set up your [private configuration](docs/usage/configuration.md) first. Run the
-commands below from a terminal in your desktop session. Setup prompts for GitHub
-authentication when needed; setup, backup, and cleanup prompt for Bitwarden access.
+commands below from a terminal in your desktop session with its keyring unlocked.
+Setup, backup, and cleanup first reuse your saved GitHub CLI login or open GitHub's
+browser sign-in. After downloading your private configuration, they prompt for
+Bitwarden access. Setup reuses the same GitHub login throughout installation.
 Password and emailed Bitwarden verification-code input are hidden. If Bitwarden
 rejects the entered email, verification code, or vault password, the script asks
 again. Press Ctrl-C to cancel a prompt.

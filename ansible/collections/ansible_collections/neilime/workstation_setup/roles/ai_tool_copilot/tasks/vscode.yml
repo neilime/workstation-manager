@@ -1,0 +1,38 @@
+---
+- name: Inspect the native VS Code client
+  ansible.builtin.stat:
+    path: /usr/bin/code
+  register: workstation_ai_vscode_client
+
+- name: Require native VS Code before writing its MCP configuration
+  ansible.builtin.assert:
+    that:
+      - workstation_ai_vscode_client.stat.exists
+    fail_msg: Native VS Code is selected but missing after editor provisioning.
+  when: not ansible_check_mode
+
+- name: Add the VS Code stdio transport discriminator
+  ansible.builtin.set_fact:
+    workstation_ai_vscode_servers: {}
+  no_log: true
+
+- name: Translate common entries to the VS Code schema
+  ansible.builtin.set_fact:
+    workstation_ai_vscode_servers: >-
+      {{ workstation_ai_vscode_servers | combine({item.key: item.value | combine({'type': 'stdio'})}) }}
+  loop: "{{ workstation_ai_servers | dict2items }}"
+  no_log: true
+
+- name: Merge private VS Code MCP entries
+  neilime.workstation_setup.ai_provider_config:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/Code/User/mcp.json"
+    state_path: "{{ workstation_ai_state }}/vscode-servers.json"
+    format: json
+    key: servers
+    servers: "{{ workstation_ai_vscode_servers }}"
+  no_log: true
+
+- name: Clear the temporary VS Code credential map
+  ansible.builtin.set_fact:
+    workstation_ai_vscode_servers: {}
+  no_log: true

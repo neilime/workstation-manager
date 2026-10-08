@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -19,7 +20,7 @@ def entrypoint_source_with_mock_controller() -> str:
     fixture_controller = r"""
 fixture_commands="${PATH%%:*}"
 case "$fixture_commands" in
-/tmp/*)
+TEMPORARY_ROOT/*)
     mkdir -p "$fixture_commands/controller"
     if [ ! -L "$fixture_commands/controller/bin" ]; then
         ln -s "$fixture_commands" "$fixture_commands/controller/bin"
@@ -28,6 +29,7 @@ case "$fixture_commands" in
     ;;
 esac
 """
+    fixture_controller = fixture_controller.replace("TEMPORARY_ROOT", shlex.quote(tempfile.gettempdir()))
     return source.rsplit('main "$@"', 1)[0] + fixture_controller + '\nmain "$@"\n'
 
 

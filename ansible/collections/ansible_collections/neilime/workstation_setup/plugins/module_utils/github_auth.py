@@ -15,9 +15,7 @@ from typing import Any
 class GitHubAuthentication:
     """Keep authentication in the managed user's OS credential store."""
 
-    def __init__(self, home: Path, host: str, account: str) -> None:
-        if not account.strip():
-            raise ValueError("A GitHub account is required for persistent authentication")
+    def __init__(self, home: Path, host: str, account: str = "") -> None:
         account = account.strip()
         self.home, self.host, self.account = home, host, account
         self.environment = dict(os.environ)
@@ -96,17 +94,17 @@ class GitHubAuthentication:
 
     def _login(self, token: str, terminal: str) -> None:
         if not token and not terminal:
-            raise ValueError("Persistent GitHub login is missing or expired; run setup from an unlocked GNOME terminal")
+            raise ValueError("GitHub sign-in is required; run setup from a desktop terminal or supply a CI token")
         self._check_credential_store()
         command = ["/usr/bin/gh", "auth", "login", "--hostname", self.host, "--git-protocol", "https"]
         if token:
             result = self._run([*command, "--with-token"], data=token)
         else:
             environment = {key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"}
-            with open(terminal, "r+", encoding="utf-8") as tty:
+            with open(terminal, "r+b", buffering=0) as tty:
                 if not tty.isatty():
-                    raise ValueError("GitHub login requires the managed user's terminal")
-                # Browser/device login needs the real terminal, never Ansible-captured output.
+                    raise ValueError("GitHub sign-in requires an interactive terminal")
+                # Display device codes in the user's terminal, outside Ansible's result stream.
                 # pylint: disable-next=unknown-option-value
                 # pylint: disable-next=ansible-bad-function
                 result = subprocess.run(
@@ -115,6 +113,7 @@ class GitHubAuthentication:
                     stdout=tty,
                     stderr=tty,
                     env=environment,
+                    cwd=self.home,
                     text=True,
                     check=False,
                     timeout=300,
@@ -152,24 +151,19 @@ class GitHubAuthentication:
         status = self._status()
         authenticated = status.get("state") == "success"
         secure = authenticated and status.get("tokenSource") == "keyring"
-        if authenticated and status.get("login") != self.account:
+        if authenticated and self.account and status.get("login") != self.account:
             raise ValueError(
                 f"Select the configured GitHub account with gh auth switch --hostname {self.host} --user {self.account}"
             )
         changed = not secure
         if not secure and not check_mode:
-            if authenticated and not token:
-                existing = self._run(["/usr/bin/gh", "auth", "token", "--hostname", self.host])
-                if existing.returncode:
-                    raise ValueError("Cannot migrate the existing GitHub credential into the OS credential store")
-                token = existing.stdout.strip()
             self._login(token, terminal)
             status = self._status()
             if status.get("state") != "success" or status.get("tokenSource") != "keyring":
                 raise ValueError(
                     "GitHub login is not verified in the OS credential store; repair the keyring and rerun setup"
                 )
-            if status.get("login") != self.account:
+            if self.account and status.get("login") != self.account:
                 raise ValueError(
                     "GitHub authenticated a different account; select the configured account and rerun setup"
                 )

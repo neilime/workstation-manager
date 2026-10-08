@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
+    desired_state_ai_tools,
     desired_state_support,
 )
 
@@ -13,7 +14,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the development section of the desired-state schema."""
 
-    def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+    def normalize(
+        self, config: dict[str, object], defaults: dict[str, object], bitwarden: dict[str, object]
+    ) -> dict[str, object]:
         """Return the normalized development section."""
 
         development = self._resolver.mapping(config.get("development"), "workstation_manager.development")
@@ -25,8 +28,7 @@ class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSec
 
         return {
             **self._tools(development, defaults),
-            "orca": self._orca(development),
-            "npm_packages": self._npm_packages(development),
+            "ai_tools": desired_state_ai_tools.AiToolsNormalizer().normalize(development, bitwarden=bitwarden),
             "packages": self._packages(development, defaults),
             "editor_packages": self._packages(development, defaults, "editor_packages"),
             "settings": self._resolver.sysctl_settings(
@@ -114,14 +116,6 @@ class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSec
                 result[repository] = "v" + self._resolver.release_version(revision, f"GitHub extension {repository}")
         return result
 
-    def _orca(self, development: dict[str, object]) -> dict[str, object]:
-        """Require the configured release for the managed Orca installation."""
-        orca = self._resolver.mapping(development.get("orca"), "development.orca")
-        return {
-            "version": self._resolver.release_version(orca.get("version"), "development.orca.version"),
-            "settings": self._resolver.mapping(orca.get("settings"), "development.orca.settings"),
-        }
-
     def _packages(
         self, development: dict[str, object], defaults: dict[str, object], key: str = "packages"
     ) -> list[object]:
@@ -133,21 +127,3 @@ class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSec
         if any(not isinstance(package, str) or not package.strip() for package in packages):
             raise ValueError("Development packages must be nonempty APT package names")
         return list(dict.fromkeys(packages))
-
-    def _npm_packages(self, development: dict[str, object]) -> dict[str, object]:
-        """Require a pinned npm package and an explicit executable verification command."""
-        packages = self._resolver.mapping(development.get("npm_packages"), "development.npm_packages")
-        missing = {"@openai/codex", "@github/copilot"} - packages.keys()
-        if missing:
-            raise ValueError(
-                f"development.npm_packages requires standard workstation tools: {', '.join(sorted(missing))}"
-            )
-        for name, value in packages.items():
-            package = self._resolver.mapping(value, f"development.npm_packages.{name}")
-            self._resolver.release_version(package.get("version"), f"npm package {name}.version")
-            command = package.get("command")
-            if not isinstance(command, str) or re.fullmatch(r"[a-zA-Z0-9][\w-]*", command) is None:
-                raise ValueError(f"npm package {name} requires an executable command name")
-            if re.fullmatch(r"(?:@[\w.-]+/)?[\w.-]+", name) is None:
-                raise ValueError(f"Invalid npm package name: {name}")
-        return packages

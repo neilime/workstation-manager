@@ -33,10 +33,14 @@ def test_github_download_preserves_arguments_and_status(
     definitions = (ROOT / "workstation.sh").read_text().rsplit('main "$@"', 1)[0]
     result = subprocess.run(
         ["/bin/sh", "-s"],
-        input=definitions + '\ndownload_github_file example/project feature/test "path/file.yml" "$TEST_DESTINATION"\n',
+        input=definitions
+        + """
+GITHUB_TOKEN_VALUE="$TEST_TOKEN"
+download_github_file example/project feature/test "path/file.yml" "$TEST_DESTINATION"
+""",
         env={
             "PATH": str(tmp_path),
-            "WORKSTATION_MANAGER_GITHUB_TOKEN": token,
+            "TEST_TOKEN": token,
             "TEST_ARGUMENTS": str(arguments_file),
             "TEST_DESTINATION": str(destination),
             "TEST_EXIT_CODE": str(exit_code),

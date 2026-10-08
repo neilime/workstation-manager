@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from unittest.mock import mock_open
 
 import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.github_auth import (
@@ -30,16 +31,22 @@ def authentication_fixture(tmp_path, monkeypatch):
         output, status = "", 0
         if command[1:3] == ["auth", "status"]:
             output = json.dumps({"hosts": {"github.com": [state["login"]] if state["login"] else []}})
-        elif command[1:3] == ["auth", "token"]:
-            output = "stored-secret"
         elif command[1:3] == ["auth", "login"]:
-            assert options["input"] in ("supplied-secret", "stored-secret")
+            if "--with-token" in command:
+                assert options["input"] == "supplied-secret"
+            else:
+                assert "--web" in command
+                assert options["stdin"].isatty()
+                assert options["stdin"] is options["stdout"] is options["stderr"]
+                assert "GH_PROMPT_DISABLED" not in environment
+                assert "input" not in options
             state["login"] = {
                 "state": "success",
                 "active": True,
                 "login": state.get("new_account", "fixture"),
-                "tokenSource": "keyring",
+                "tokenSource": state.get("new_storage", "keyring"),
             }
+            status = state.get("login_status", 0)
         elif command[0] == "secret-tool":
             if command[1] == "store":
                 state["probe"] = options["input"]
@@ -73,14 +80,14 @@ def test_missing_or_plaintext_credentials_are_saved_in_the_keyring(authenticatio
     auth, state = authentication
     state["login"] = dict(state["login"], tokenSource="/home/fixture/.config/gh/hosts.yml") if existing else {}
     state["helper"] = ""
-    assert auth.ensure(token="" if existing else "supplied-secret")["authenticated"]
+    assert auth.ensure(token="supplied-secret")["authenticated"]
     assert any(command[1:3] == ["auth", "login"] for command in state["calls"])
     assert not any("secret" in part for command in state["calls"] for part in command if part != "secret-tool")
     assert not auth.ensure()["changed"]
 
 
 def test_locked_keyring_stops_before_gh_can_write_plaintext(authentication):
-    """A temporary automation token must not become a plaintext permanent credential."""
+    """A supplied token must not become a plaintext permanent credential."""
     auth, state = authentication
     state.update(login={}, keyring=False)
     with pytest.raises(ValueError, match="Unlock the GNOME credential store") as error:
@@ -98,20 +105,48 @@ def test_preview_does_not_log_in_or_modify_credentials(authentication):
     assert len(state["calls"]) == 1
 
 
-def test_missing_noninteractive_login_is_actionable(authentication):
-    """Unattended setup cannot claim authentication it did not establish."""
+@pytest.mark.parametrize("existing", [False, True])
+def test_unattended_login_requires_stored_credentials_or_a_token(authentication, existing):
+    """Unattended runs cannot start browser prompts or reuse plaintext credentials."""
+    auth, state = authentication
+    state["login"] = dict(state["login"], tokenSource="hosts.yml") if existing else {}
+    with pytest.raises(ValueError, match="GitHub sign-in is required"):
+        auth.ensure()
+    assert len(state["calls"]) == 1
+
+
+def test_bootstrap_discovers_account_before_private_configuration(authentication):
+    """Bootstrap can authenticate before the expected account is available from private configuration."""
     auth, state = authentication
     state["login"] = {}
-    with pytest.raises(ValueError, match="unlocked GNOME terminal"):
-        auth.ensure()
+    bootstrap = GitHubAuthentication(auth.home, auth.host)
+    assert bootstrap.ensure(token="supplied-secret")["account"] == "fixture"
 
 
-def test_blank_account_is_rejected_before_credential_access(authentication):
-    """Calling the authentication module directly cannot bypass the account requirement."""
+def test_interactive_login_uses_browser_authorization_once(authentication, monkeypatch):
+    """Native sign-in uses the caller's terminal and the saved login is reused afterward."""
     auth, state = authentication
-    with pytest.raises(ValueError, match="account is required"):
-        GitHubAuthentication(auth.home, auth.host, " \t")
-    assert state["calls"] == []
+    state["login"] = {}
+    terminal = mock_open()
+    terminal.return_value.isatty.return_value = True
+    monkeypatch.setattr("builtins.open", terminal)
+    assert auth.ensure(terminal="/dev/fixture-terminal")["authenticated"]
+    assert not auth.ensure()["changed"]
+    assert sum(command[1:3] == ["auth", "login"] for command in state["calls"]) == 1
+
+
+@pytest.mark.parametrize("failure", ["login", "plaintext"])
+def test_failed_or_insecure_login_cannot_complete_setup(authentication, failure):
+    """A successful credential probe cannot hide a failed login or insecure saved result."""
+    auth, state = authentication
+    state.update(
+        login={},
+        login_status=1 if failure == "login" else 0,
+        new_storage="hosts.yml" if failure == "plaintext" else "keyring",
+    )
+    with pytest.raises(ValueError, match="GitHub login") as error:
+        auth.ensure(token="supplied-secret")
+    assert "private-failure-secret" not in str(error.value)
 
 
 def test_new_login_must_match_the_configured_account(authentication):
