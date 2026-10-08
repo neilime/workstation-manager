@@ -262,7 +262,10 @@ errors fail the workflow; inspect the preceding messages for the dependency and 
 Install cURL, Python 3, Lima, `qemu-img`, and `qemu-system-x86_64` on the host.
 The VM uses the selected Ubuntu release, currently 26.04, on amd64 with 2 CPUs,
 6 GiB RAM, and a 40 GiB disk. Readiness checks require a GNOME Wayland session;
-Ptyxis is the managed terminal.
+Ptyxis is the managed terminal. The fixture installs GNOME Keyring before login
+and initializes an encrypted keyring with a random password held in the guest's
+private runtime directory. It unlocks that keyring after desktop restarts so
+native recovery tests have the same credential-store access as an unlocked desktop.
 
 Provide these credentials through the environment without committing them:
 

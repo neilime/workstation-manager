@@ -242,7 +242,8 @@ restart_e2e_desktop_session() {
 				tr -d '\r' || true
 		)"
 		if [[ -n "$new_shell_pid" && "$new_shell_pid" != "$old_shell_pid" ]]; then
-			return 0
+			run_e2e_lima_control_command 15 bash /workspace/e2e-tests/e2e-keyring.sh unlock
+			return $?
 		fi
 		sleep 2
 	done
