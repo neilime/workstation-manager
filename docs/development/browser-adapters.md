@@ -124,6 +124,10 @@ Diagnostic node contents are reduced inside Brave to boolean status; browsing
 data never reaches an Ansible result. Child environments exclude vault credentials.
 Native automation errors identify the failed operation without including scripts,
 arguments, recovery words, or raw browser errors.
+Before accessing recovery codes, the adapter waits for Brave's native OS encryption
+status because [desktop keyring initialization is asynchronous](https://github.com/brave/brave-core/blob/master/components/sync/service/brave_sync_service_impl.cc).
+Unavailable encryption
+or a saved-seed decryption error stops recovery without replacing the chain.
 Browser automation uses a desktop-session query that reads the managed user's live
 systemd environment. GNOME's initial `/proc` environment lacks the display variables
 created later by Wayland. Only allowed desktop variables reach application children;

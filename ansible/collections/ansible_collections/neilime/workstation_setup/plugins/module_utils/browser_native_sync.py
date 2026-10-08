@@ -147,6 +147,15 @@ _ENABLE_EVERYTHING = r"""(async () => {
 })()"""
 
 
+_ENCRYPTION_STATUS = r"""(async () => {
+  const status = await window.workstationSyncSettings.sendWithPromise('SyncSetupGetSyncStatus');
+  return {
+    available: status.isOsEncryptionAvailable === true,
+    decryptionFailed: status.hasSyncWordsDecryptionError !== false
+  };
+})()"""
+
+
 def recovery_words(value: object) -> str:
     """Accept the stable code, tolerating copied case and surrounding note text."""
 
@@ -201,6 +210,7 @@ class NativeSync:
         self.settings = pipe.page("brave://settings/braveSync/setup")
         if self._evaluate(self.settings, _SETTINGS_BRIDGE, "initializing settings callbacks") is not True:
             raise BrowserProtocolError("Brave's native Sync callbacks are unavailable")
+        self._wait_for_encryption()
 
     def _evaluate(self, session: str, expression: str, operation: str, timeout: float = 30) -> object:
         """Identify the failed operation without exposing scripts, responses, or recovery words."""
@@ -209,6 +219,21 @@ class NativeSync:
             return self.pipe.evaluate(session, expression, timeout=timeout)
         except BrowserProtocolError as error:
             raise BrowserProtocolError(f"Brave Sync failed while {operation}: {error}") from error
+
+    def _wait_for_encryption(self, timeout: float = 30) -> None:
+        """Wait for asynchronous OS encryption before reading or changing a recovery chain."""
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            status = self._evaluate(self.settings, _ENCRYPTION_STATUS, "waiting for desktop encryption")
+            if isinstance(status, dict) and status.get("available") is True:
+                if status.get("decryptionFailed") is not False:
+                    raise BrowserProtocolError(
+                        "Brave could not decrypt its saved recovery code; check desktop keyring access"
+                    )
+                return
+            time.sleep(0.2)
+        raise BrowserProtocolError("Brave desktop encryption is unavailable; unlock the desktop keyring and retry")
 
     def _request(self, method: str, *arguments: object) -> object:
         encoded = ", ".join(json.dumps(value) for value in (method, *arguments))
