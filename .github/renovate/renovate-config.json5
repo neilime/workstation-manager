@@ -85,13 +85,23 @@
     },
     {
       customType: "regex",
-      description: "Update reviewed development-tool releases and npm CLIs",
+      description: "Update reviewed development tools, npm CLIs and MCP servers",
       managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: [
         '# renovate: datasource=(?<datasource>[^ ]+) depName=(?<depName>[^\\s]+)\\n\\s+[^\\n]+?:\\s+"(?<currentValue>[^"\\n]+)"',
       ],
       extractVersionTemplate: "^v?(?<version>.+)$",
       versioningTemplate: "semver",
+    },
+    {
+      customType: "regex",
+      description: "Propose reviewed Git skill revisions from their annotated branches",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: [
+        '# renovate: datasource=git-refs depName=(?<depName>[^\\s]+) branch=(?<currentValue>[^\\s]+)\\n\\s*source:\\s*"(?:https://github\\.com/)?[^"/]+/[^"/]+/tree/(?<currentDigest>[0-9a-f]{40})/[^"\\n]+"',
+      ],
+      datasourceTemplate: "git-refs",
+      packageNameTemplate: "https://github.com/{{{depName}}}.git",
     },
     {
       customType: "regex",

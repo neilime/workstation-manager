@@ -109,9 +109,6 @@
 - name: Install selected pinned GitHub CLI extensions
   ansible.builtin.import_tasks: github_extensions.yml
 
-- name: Install standard workstation agent CLIs
-  ansible.builtin.import_tasks: npm_tools.yml
-
 - name: Remove managed development sysctl configuration when no values are declared
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.file:
@@ -146,7 +143,3 @@
   loop_control:
     label: "{{ item.key }}"
   when: workstation_manager_resolved.development.settings.sysctl | length > 0
-
-- name: Install and configure Orca
-  ansible.builtin.import_role:
-    name: neilime.workstation_setup.orca

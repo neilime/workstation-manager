@@ -1,0 +1,11 @@
+---
+- name: Ensure the managed user's copilot login is available
+  neilime.workstation_setup.ai_provider_auth:
+    home: "{{ workstation_manager_resolved.user.home }}"
+    provider: copilot
+    executable: "/usr/local/bin/{{ workstation_ai_config.providers.copilot.command }}"
+    host: "{{ workstation_manager_resolved.development.github.host }}"
+    account: "{{ workstation_manager_resolved.development.github.account }}"
+    terminal: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY')
+         if lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') == '1' else '' }}

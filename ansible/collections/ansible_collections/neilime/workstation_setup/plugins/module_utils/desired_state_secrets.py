@@ -18,14 +18,20 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
         r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     )
 
-    def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+    def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, dict[str, object]]:
         """Return the normalized secrets section."""
 
         secrets = self._resolver.mapping(config.get("secrets"), "workstation_manager.secrets")
         bitwarden = self._resolver.mapping(
             secrets.get("bitwarden"),
             "workstation_manager.secrets.bitwarden",
-            allowed_keys={"server", "ssh_collection_id", "gpg_collection_id", "browser_profiles_collection_id"},
+            allowed_keys={
+                "server",
+                "ssh_collection_id",
+                "gpg_collection_id",
+                "browser_profiles_collection_id",
+                "context7-api-key",
+            },
         )
         default_bitwarden = self._resolver.mapping(
             defaults.get("bitwarden"), "workstation_manager.secrets.defaults.bitwarden"
@@ -58,9 +64,13 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             ),
             "workstation_manager.secrets.bitwarden.browser_profiles_collection_id",
         )
-        has_declared_collection = bool(ssh_collection_id or gpg_collection_id or browser_profiles_collection_id)
-
-        if has_declared_collection and not server:
+        context7_api_key = self._required_uuid_string_value(
+            self._resolver.value_or_default(
+                bitwarden.get("context7-api-key"), default_bitwarden.get("context7-api-key")
+            ),
+            "workstation_manager.secrets.bitwarden.context7-api-key",
+        )
+        if not server:
             raise ValueError("workstation_manager.secrets.bitwarden.server must not be empty")
 
         return {
@@ -69,6 +79,7 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                 "ssh_collection_id": ssh_collection_id,
                 "gpg_collection_id": gpg_collection_id,
                 "browser_profiles_collection_id": browser_profiles_collection_id,
+                "context7-api-key": context7_api_key,
             },
         }
 
@@ -78,7 +89,8 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
         if value is None:
             return ""
         if not isinstance(value, str):
-            raise ValueError(f"{name} must be a string")
+            # Schema failures consistently use ValueError for actionable configuration errors.
+            raise ValueError(f"{name} must be a string")  # noqa: TRY004
 
         return value.strip()
 
@@ -89,4 +101,11 @@ class SecretsSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
         if normalized_value and not self._UUID_PATTERN.match(normalized_value):
             raise ValueError(f"{name} must be a UUID string")
 
+        return normalized_value
+
+    def _required_uuid_string_value(self, value: object, name: str) -> str:
+        """Require a vault item selector without accessing its secret."""
+        normalized_value = self._optional_uuid_string_value(value, name)
+        if not normalized_value:
+            raise ValueError(f"{name} is required; set its Bitwarden item UUID in private configuration")
         return normalized_value

@@ -36,7 +36,8 @@ class DesiredStateValueResolver:
             if value is None:
                 continue
             if not isinstance(value, str):
-                raise ValueError("string value expected")
+                # Schema failures consistently use ValueError for actionable configuration errors.
+                raise ValueError("string value expected")  # noqa: TRY004
             if value:
                 return value
         raise ValueError("string value expected")
@@ -145,6 +146,7 @@ class DesiredStateDefaultsFactory:
             },
             "development": {
                 "github": {"extensions": {}},
+                "ai_tools": {"providers": {}, "skills": [], "mcp_servers": []},
                 "packages": [],
                 "editor_packages": [],
                 "mise": {
@@ -164,6 +166,7 @@ class DesiredStateDefaultsFactory:
                     "server": "",
                     "ssh_collection_id": "",
                     "gpg_collection_id": "",
+                    "context7-api-key": "",
                 }
             },
         }

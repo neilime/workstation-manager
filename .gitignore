@@ -1,5 +1,9 @@
 .pytest_cache/
 .cache/
+/.agents/skills/
+/.skillshare/*
+!/.skillshare/config.yaml
+!/.skillshare/skills.lock.json
 __pycache__/
 .mypy_cache/
 *.pyc

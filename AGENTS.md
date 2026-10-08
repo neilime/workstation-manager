@@ -14,6 +14,10 @@ more specific `AGENTS.md` files when working in their directories.
   `--dry-run` for previews. Archive restoration is part of setup.
 - Keep `Makefile` commands for development and validation. Preserve the public
   bootstrap workflow that downloads the entrypoint and pipes it to `sh`.
+- Optional project skills are declared in `.skillshare/config.yaml` and applied
+  automatically during workstation setup for projects under `user.projects_directory`.
+  Skillshare owns its lockfile and generated skill content. See the
+  [project skill guide](docs/development/README.md#project-skills).
 
 ## Architecture and configuration
 

@@ -8,9 +8,11 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_
 )
 
 
-def test_public_defaults_preserve_configured_versions_and_desktop_preferences(public_defaults) -> None:
+def test_public_defaults_preserve_configured_versions_and_desktop_preferences(
+    public_defaults, private_overrides
+) -> None:
     """Normalization consumes maintained configuration without copying its values into tests."""
-    config = merge_hash(public_defaults, {"development": {"github": {"account": "fixture"}}})
+    config = merge_hash(public_defaults, private_overrides)
     resolved = DesiredStateConfigNormalizer().normalize(config, {"USER": "fixture"})
     for section, tool in (
         ("development", "node"),
@@ -20,7 +22,8 @@ def test_public_defaults_preserve_configured_versions_and_desktop_preferences(pu
     ):
         assert resolved[section][tool]["version"] == public_defaults[section][tool]["version"]
     assert resolved["development"]["mise"]["tools"] == public_defaults["development"]["mise"]["tools"]
-    assert resolved["development"]["npm_packages"] == public_defaults["development"]["npm_packages"]
+    assert resolved["development"]["ai_tools"]["providers"] == public_defaults["development"]["ai_tools"]["providers"]
+    assert resolved["development"]["ai_tools"]["orca"] == public_defaults["development"]["ai_tools"]["orca"]
     for repository, revision in public_defaults["development"]["github"]["extensions"].items():
         # The default extensions publish binaries; gh requires release tags for them.
         assert re.fullmatch(r"v?\d+\.\d+\.\d+", revision), repository
@@ -28,3 +31,16 @@ def test_public_defaults_preserve_configured_versions_and_desktop_preferences(pu
         assert resolved["development"]["github"]["extensions"][repository] == expected
     assert resolved["desktop"]["browser"] == public_defaults["desktop"]["browser"]
     assert resolved["desktop"]["gnome"] == public_defaults["desktop"]["gnome"]
+
+
+def test_public_context7_uses_the_required_private_key_selector(public_defaults, private_overrides):
+    """The default MCP declaration resolves the required item password from private configuration."""
+    config = merge_hash(public_defaults, private_overrides)
+    resolved = DesiredStateConfigNormalizer().normalize(config, {"USER": "fixture"})
+    context7 = next(
+        server for server in resolved["development"]["ai_tools"]["mcp_servers"] if server["name"] == "context7"
+    )
+    assert context7["env"]["CONTEXT7_API_KEY"] == {
+        "bitwarden_item_id": private_overrides["secrets"]["bitwarden"]["context7-api-key"],
+        "field": "login.password",
+    }

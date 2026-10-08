@@ -1,0 +1,36 @@
+---
+- name: Initialize the private Copilot launch map
+  ansible.builtin.set_fact:
+    workstation_ai_copilot_servers: {}
+  no_log: true
+
+- name: Translate common entries to the Copilot CLI schema
+  ansible.builtin.set_fact:
+    workstation_ai_copilot_servers: >-
+      {{ workstation_ai_copilot_servers | combine({item.key: item.value | combine({'type': 'stdio', 'tools': ['*']})}) }}
+  loop: "{{ workstation_ai_servers | dict2items }}"
+  no_log: true
+
+- name: Merge private Copilot CLI and Agent Host MCP entries
+  neilime.workstation_setup.ai_provider_config:
+    path: "{{ workstation_manager_resolved.user.home }}/.copilot/mcp-config.json"
+    state_path: "{{ workstation_ai_state }}/copilot-servers.json"
+    format: json
+    key: mcpServers
+    servers: "{{ workstation_ai_copilot_servers }}"
+  no_log: true
+
+- name: Clear the temporary Copilot credential map
+  ansible.builtin.set_fact:
+    workstation_ai_copilot_servers: {}
+  no_log: true
+
+- name: Configure native VS Code MCP entries
+  ansible.builtin.include_tasks: vscode.yml
+  when: "'code' in workstation_manager_resolved.development.editor_packages"
+
+- name: Expose declared skills to Copilot clients
+  neilime.workstation_setup.ai_skill_links:
+    directory: "{{ workstation_manager_resolved.user.home }}/.copilot/skills"
+    state_path: "{{ workstation_ai_state }}/copilot-skills.json"
+    skills: "{{ workstation_ai_skills }}"

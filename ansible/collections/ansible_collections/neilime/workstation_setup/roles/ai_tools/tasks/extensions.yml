@@ -1,0 +1,110 @@
+---
+- name: Manage selected AI extensions
+  when: workstation_manager_resolved.development.ai_tools.providers | length > 0
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+    PATH: /usr/local/bin:/usr/bin:/bin
+  block:
+    - name: Resolve AI extension paths and selectors
+      ansible.builtin.set_fact:
+        workstation_ai_root: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/ai-tools"
+        workstation_ai_state: "{{ workstation_manager_resolved.user.home }}/.local/state/workstation-manager/ai-tools"
+        workstation_ai_config: "{{ workstation_manager_resolved.development.ai_tools }}"
+        workstation_ai_records: []
+        workstation_ai_skills: []
+      no_log: true
+
+    - name: Check selected provider installations after provisioning
+      ansible.builtin.include_role:
+        name: "neilime.workstation_setup.ai_tool_{{ workstation_ai_provider }}"
+        tasks_from: preflight
+      loop: "{{ workstation_ai_config.providers | list }}"
+      loop_control:
+        loop_var: workstation_ai_provider
+
+    - name: Report AI execution deferred in previews
+      ansible.builtin.debug:
+        msg: >-
+          AI package and skill downloads, provider sign-in, credential resolution, MCP launches and provider configuration
+          are deferred in check mode. No startup or service verification is claimed.
+      when: ansible_check_mode
+
+    - name: Provision and configure AI resources
+      when: not ansible_check_mode
+      block:
+        - name: Ensure private AI resource directories exist
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: "{{ workstation_manager_resolved.user.name }}"
+            group: "{{ workstation_manager_resolved.user.name }}"
+            mode: "0700"
+          loop:
+            - "{{ workstation_ai_root }}"
+            - "{{ workstation_ai_state }}"
+
+        - name: Establish selected provider account sessions
+          when: workstation_ai_config.authenticate
+          ansible.builtin.include_role:
+            name: "neilime.workstation_setup.ai_tool_{{ workstation_ai_provider }}"
+            tasks_from: authenticate
+          loop: "{{ workstation_ai_config.providers | list }}"
+          loop_control:
+            loop_var: workstation_ai_provider
+
+        - name: Provision declared MCP packages
+          ansible.builtin.include_tasks: mcp/package.yml
+          loop: "{{ workstation_ai_config.mcp_servers }}"
+          loop_control:
+            loop_var: workstation_ai_server
+            label: "{{ workstation_ai_server.name }}"
+          when: workstation_ai_server.npm | length > 0
+
+        - name: Materialize declared skills
+          ansible.builtin.import_tasks: skills/main.yml
+
+        - name: Resolve private MCP credentials
+          ansible.builtin.import_tasks: mcp/credentials.yml
+
+        - name: Build private native launch configuration
+          ansible.builtin.set_fact:
+            workstation_ai_servers: >-
+              {{ workstation_ai_config.mcp_servers | neilime.workstation_setup.ai_runtime_servers(
+                   workstation_manager_resolved.user.home, workstation_ai_records) }}
+          no_log: true
+
+        - name: Verify MCP startup and declared authentication checks
+          neilime.workstation_setup.ai_mcp_probe:
+            home: "{{ workstation_manager_resolved.user.home }}"
+            servers: "{{ workstation_ai_servers }}"
+            authentication_checks: >-
+              {{ workstation_ai_config.mcp_servers | items2dict(key_name='name', value_name='auth_check') }}
+          no_log: true
+
+        - name: Configure selected AI providers
+          ansible.builtin.include_role:
+            name: "neilime.workstation_setup.ai_tool_{{ workstation_ai_provider }}"
+          loop: "{{ workstation_ai_config.providers | list }}"
+          loop_control:
+            loop_var: workstation_ai_provider
+
+        - name: Report the verified AI setup boundary
+          ansible.builtin.debug:
+            msg: >-
+              {{ 'Native provider logins are available.' if workstation_ai_config.authenticate else
+                 'Provider sign-in is deferred by development.ai_tools.authenticate=false; provider logins are not verified.
+                  Complete Codex ChatGPT and Copilot OAuth login separately.' }}
+              Declared AI resources are installed and MCP startup
+              and configured authentication/access checks passed. Desktop client startup and browser operations are
+              not verified.
+      always:
+        - name: Clear temporary AI credential facts
+          ansible.builtin.set_fact:
+            workstation_ai_records: []
+            workstation_ai_servers: {}
+            workstation_ai_copilot_servers: {}
+            workstation_ai_vscode_servers: {}
+          no_log: true

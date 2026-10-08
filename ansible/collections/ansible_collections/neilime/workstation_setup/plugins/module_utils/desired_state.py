@@ -36,6 +36,11 @@ class DesiredStateConfigNormalizer:
         defaults = defaults_factory.build()
         user = desired_state_user.UserSectionNormalizer(resolver, self._state_slug).normalize(config, environment)
 
+        secrets = desired_state_secrets.SecretsSectionNormalizer(resolver).normalize(
+            config,
+            resolver.mapping(defaults.get("secrets"), "workstation_manager.secrets.defaults"),
+        )
+
         return {
             "user": user,
             "system": desired_state_system.SystemSectionNormalizer(resolver).normalize(
@@ -53,6 +58,7 @@ class DesiredStateConfigNormalizer:
                     defaults.get("development"),
                     "workstation_manager.development.defaults",
                 ),
+                secrets["bitwarden"],
             ),
             "home_environment": desired_state_home_environment.HomeEnvironmentSectionNormalizer(resolver).normalize(
                 config,
@@ -61,11 +67,5 @@ class DesiredStateConfigNormalizer:
                     "workstation_manager.home_environment.defaults",
                 ),
             ),
-            "secrets": desired_state_secrets.SecretsSectionNormalizer(resolver).normalize(
-                config,
-                resolver.mapping(
-                    defaults.get("secrets"),
-                    "workstation_manager.secrets.defaults",
-                ),
-            ),
+            "secrets": secrets,
         }

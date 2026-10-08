@@ -86,7 +86,7 @@ class OrcaReleaseAuthTests(unittest.TestCase):
             "ansible_python_interpreter": sys.executable,
             "ansible_facts": {"architecture": "x86_64"},
             "workstation_manager_resolved": {
-                "development": {"orca": {"version": "1.2.3", "settings": {}}},
+                "development": {"ai_tools": {"orca": {"version": "1.2.3", "settings": {}}}},
                 "user": {
                     "projects_directory": "/home/fixture/Documents/dev-projects",
                     "home": "/home/fixture",

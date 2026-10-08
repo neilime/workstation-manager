@@ -1,0 +1,26 @@
+---
+- name: Install Ubuntu dependencies required by the pinned Playwright version
+  become: "{{ workstation_manager_use_become }}"
+  become_user: root
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/node
+      - "{{ workstation_ai_package_dir }}/node_modules/playwright/cli.js"
+      - install-deps
+      - "{{ workstation_ai_server.playwright.browser }}"
+  environment:
+    LC_ALL: C
+  register: workstation_ai_browser_dependencies
+  changed_when: "'0 upgraded, 0 newly installed' not in workstation_ai_browser_dependencies.stdout"
+
+- name: Install the bundled browser matching the MCP package
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/node
+      - "{{ workstation_ai_package_dir }}/node_modules/playwright/cli.js"
+      - install
+      - "{{ workstation_ai_server.playwright.browser }}"
+  environment:
+    PLAYWRIGHT_BROWSERS_PATH: "{{ workstation_ai_root }}/browsers/{{ workstation_ai_server.name }}/{{ workstation_ai_server.npm.version }}"
+  register: workstation_ai_browser_install
+  changed_when: workstation_ai_browser_install.stdout | length > 0

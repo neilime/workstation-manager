@@ -1,0 +1,37 @@
+---
+- name: Establish GitHub authentication before loading private configuration
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    workstation_manager_use_become: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_USE_BECOME') | default('true', true) | bool }}
+    workstation_manager_resolved:
+      user:
+        name: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_USER') }}"
+        home: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_USER_HOME') }}"
+      system: "{{ workstation_manager.system }}"
+
+  tasks:
+    - name: Require the bootstrap user's home
+      ansible.builtin.assert:
+        that:
+          - workstation_manager_resolved.user.name | length > 0
+          - workstation_manager_resolved.user.home is match('^/')
+        fail_msg: Run GitHub credential bootstrap through workstation.sh setup.
+
+    - name: Install GitHub CLI and its credential-store dependencies
+      ansible.builtin.import_role:
+        name: neilime.workstation_setup.development_tooling
+        tasks_from: github_cli
+
+    - name: Sign into GitHub and configure Git access
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      neilime.workstation_setup.github_auth:
+        home: "{{ workstation_manager_resolved.user.home }}"
+        host: "{{ workstation_manager.development.github.host }}"
+        token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+        terminal: >-
+          {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY')
+             if lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') == '1' else '' }}

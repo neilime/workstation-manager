@@ -1,8 +1,8 @@
 ---
-- name: Install pinned system npm commands
+- name: Install pinned AI provider CLIs
   become: "{{ workstation_manager_use_become }}"
   community.general.npm:
-    name: "{{ item.key }}"
+    name: "{{ item.value.npm }}"
     version: "{{ item.value.version }}"
     global: true
     executable: /usr/local/bin/npm
@@ -11,7 +11,7 @@
     PATH: /usr/local/bin:/usr/bin:/bin
     NPM_CONFIG_PREFIX: /usr/local
     NPM_CONFIG_USERCONFIG: /dev/null
-  loop: "{{ workstation_manager_resolved.development.npm_packages | dict2items }}"
+  loop: "{{ workstation_manager_resolved.development.ai_tools.providers | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
 
@@ -27,7 +27,7 @@
       - "/usr/local/bin/{{ item.value.command }}"
       - --version
   changed_when: false
-  loop: "{{ workstation_manager_resolved.development.npm_packages | dict2items }}"
+  loop: "{{ workstation_manager_resolved.development.ai_tools.providers | dict2items }}"
   loop_control:
     label: "{{ item.value.command }}"
   when: not ansible_check_mode

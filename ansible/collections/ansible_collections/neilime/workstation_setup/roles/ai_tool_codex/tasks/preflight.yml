@@ -1,0 +1,13 @@
+---
+- name: Inspect the installed codex client
+  ansible.builtin.stat:
+    path: /usr/local/bin/codex
+  register: workstation_ai_codex_client
+
+- name: Require the selected codex client after provisioning
+  ansible.builtin.assert:
+    that:
+      - workstation_ai_codex_client.stat.exists
+      - workstation_ai_codex_client.stat.executable | default(false)
+    fail_msg: "The codex client is not installed; provision development.ai_tools.providers.codex first."
+  when: not ansible_check_mode

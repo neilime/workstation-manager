@@ -27,6 +27,7 @@ EOF
 
 run_e2e_workstation_action \
 	setup \
+	"WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=$target_user_home/.local/state/workstation-manager/e2e/private.override.yml" \
 	"BITWARDEN_CLIENT_ID=${BITWARDEN_CLIENT_ID}" \
 	"BITWARDEN_CLIENT_SECRET=${BITWARDEN_CLIENT_SECRET}" \
 	"BITWARDEN_PASSWORD=${BITWARDEN_PASSWORD}" \

@@ -1,0 +1,13 @@
+---
+- name: Inspect the installed copilot client
+  ansible.builtin.stat:
+    path: /usr/local/bin/copilot
+  register: workstation_ai_copilot_client
+
+- name: Require the selected copilot client after provisioning
+  ansible.builtin.assert:
+    that:
+      - workstation_ai_copilot_client.stat.exists
+      - workstation_ai_copilot_client.stat.executable | default(false)
+    fail_msg: "The copilot client is not installed; provision development.ai_tools.providers.copilot first."
+  when: not ansible_check_mode

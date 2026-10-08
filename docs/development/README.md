@@ -48,7 +48,8 @@ and verification in their owning roles. Each decision starts with an empty resul
 callers must execute only the currently approved action and recheck its outcome.
 
 See [browser adapters](browser-adapters.md) for that extension contract and
-[AGENTS.md](../../AGENTS.md) for repository-wide contribution rules.
+[AGENTS.md](../../AGENTS.md) for repository-wide contribution rules. Record
+significant architectural decisions as [decision records](adr/README.md).
 
 ## Documentation and test contract
 
@@ -84,6 +85,65 @@ Keep implementation and verification instructions aligned with this contract in
 instructions under `home/dot_agents/`; update their source files there when the
 same rule applies across repositories.
 
+## Project skills
+
+Workstation setup installs [Skillshare](https://skillshare.runkids.cc) globally.
+Each project needs one hand-maintained file:
+[`.skillshare/config.yaml`](../../.skillshare/config.yaml).
+
+```yaml
+targets: [universal]
+skills:
+  - name: example
+    source: owner/repository/path/to/skill
+```
+
+Workstation setup discovers these configs under `user.projects_directory`
+after restoring project files and verifying GitHub authentication. It installs
+missing skills and syncs each project's configured targets as the managed user.
+Add a skill to the config and run your normal workstation setup; no project
+installer or task file is needed. Dry runs list the projects without running
+Skillshare. Configs in dependency/cache directories are ignored, and discovery
+does not follow symlinked directories.
+
+For immediate application to a single project, or a project outside that
+directory, you can also run:
+
+```sh
+skillshare install -p && skillshare sync -p
+```
+
+Skillshare downloads standard [Agent Skills](https://agentskills.io/home) and
+links them into `.agents/skills/`. The `universal` target serves both Codex and
+Copilot from this one directory. This repository selects Ansible Community's
+`write-content` for Ansible YAML and `write-module` for Python modules. Existing
+installed skills are preserved; setup does not upgrade their revisions.
+
+For a project used with Claude Code, change the same config's target list to:
+
+```yaml
+targets: [universal, claude]
+```
+
+Skillshare then also links the same skills into `.claude/skills/`, Claude Code's
+supported project location. No separate skill content or plugin package is
+needed. Ignore those generated links as well. Target selection does not install
+an assistant or configure its account.
+
+Commit the config and the generated `.skillshare/skills.lock.json`, which pins
+exact Git commits. Skillshare ignores its downloaded sources automatically;
+keep generated `.agents/skills/` links ignored as in this repository's
+[`.gitignore`](../../.gitignore). Let Skillshare manage lockfile hashes.
+
+To update, run `skillshare update --all -p && skillshare sync -p` and review the
+lockfile diff. To remove a skill, run
+`skillshare uninstall NAME -p && skillshare sync -p`.
+The CLI version is maintained in the public
+[workstation defaults](../../ansible/group_vars/all.yml) with Renovate coverage.
+
+For private GitHub sources, use `gh auth login` and `gh auth setup-git`.
+Global skills remain managed by [workstation setup](../usage/ai-tools.md#skills).
+
 ## Local checks
 
 ```sh
@@ -96,7 +156,8 @@ make test
 
 - `make setup` builds the tooling image, reusing Docker layers when its inputs
   are unchanged. CI pulls the image published by its build job.
-- `make lint` builds and runs the separate repository linter image.
+- `make lint` builds and runs the separate repository linter image, including
+  Ansible Lint.
 - `make check-ansible` checks all top-level playbooks against the local inventory.
 - `make check-collections` runs `ansible-test sanity` for first-party collections.
 - `make test-unit` runs fast host and collection unit tests together in one pytest
@@ -135,8 +196,9 @@ again. Bootstrap and the image use the same collection manifest and
 Ubuntu release against [the supported baseline](../../ansible/ubuntu-version).
 Run `make setup` after changing these manifests.
 
-CI runs lint independently. Ansible checks, unit/integration tests, and end-to-end tests run
-in parallel once the tooling image is available. Each publishes its own result.
+CI runs Super-Linter, including Ansible Lint, independently. Ansible syntax and
+sanity checks, unit/integration tests, and end-to-end tests run in parallel once
+the tooling image is available. Each job publishes its own result.
 The Ansible job caches only sanity virtual environments in `.cache/ansible-test`,
 keyed by runner architecture and tooling image filesystem layers. Changes to the
 runtime invalidate that cache; changes to image labels alone do not.
@@ -152,15 +214,24 @@ Use `make tool-shell` for an interactive tooling container. `make lint-fix`
 rewrites files; `make ci` runs it before syntax, collection sanity, and test checks. Review its diff.
 Documentation-only changes need applicable lint and local link checks.
 
+## Entrypoint and automation
+
 Running `./workstation.sh` from a local checkout defaults to that checkout and
 its current branch or detached commit. Direct local runs execute Ansible from
 the local working tree, including uncommitted changes. The piped `curl ... | sh`
 bootstrap still uses the published GitHub repository unless you override
 `REPOSITORY_URL`.
 
-Keep the public entrypoint self-contained for piped execution. Its `run_action`
-dispatcher shares dependency preparation and authentication across commands;
-`run_ansible_pull` selects the local or remote controller command. Both direct
+Keep the public entrypoint self-contained for piped execution. Its environment
+inputs are grouped at the top as optional user inputs, automation credentials,
+and development/CI source overrides. Internal runtime state and test handoffs are
+labeled separately. Keep CI input preparation distinct from workstation behavior:
+`main` always calls `run_action`, and the VM runners use the same public commands.
+Bootstrap establishes a GitHub CLI keyring login before fetching private
+configuration. `run_action` then collects Bitwarden credentials;
+`run_ansible_pull` selects the local or remote controller command. Terminal
+availability determines prompting and output capture. See
+[automated runs](#automated-runs) for CI inputs. Both direct
 execution and terminal capture use the same session environment helper. Temporary
 bootstrap manifests and capture files use scoped cleanup traps, including on
 failure or interruption. Exercise these paths with the isolated entrypoint tests
@@ -179,6 +250,71 @@ managed-user verification prompts can share the same input path. When the entryp
 script has no source file on disk. Local runs reuse their entrypoint source.
 The runner validates shell syntax before execution and removes its temporary
 source and credential files afterward.
+
+### Source overrides
+
+Development and CI can select the source and private override through these
+environment variables:
+
+| Environment variable                        | Purpose                                             |
+| ------------------------------------------- | --------------------------------------------------- |
+| `REPOSITORY_URL`                            | GitHub repository URL or local checkout to execute. |
+| `REPOSITORY_BRANCH`                         | Branch, tag, or full commit SHA to apply.           |
+| `WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE` | Absolute path to a local private override file.     |
+
+To use a local override:
+
+```sh
+WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=/absolute/path/private.override.yml ./workstation.sh setup
+```
+
+To exercise the remote bootstrap at a reviewed immutable revision, use the same
+full commit for the entrypoint and its Ansible checkout:
+
+```sh
+revision="<reviewed-40-character-commit>"
+wget -qO- "https://raw.githubusercontent.com/neilime/workstation-manager/${revision}/workstation.sh" | \
+  REPOSITORY_BRANCH="$revision" sh -s -- setup
+```
+
+### Automated runs
+
+CI and interactive use run the same `setup`, `backup`, and `cleanup` commands.
+For unattended execution, supply the inputs that would otherwise be prompted for
+through your automation's secret store.
+
+All three Bitwarden values must be supplied to skip the credential prompts.
+Missing Bitwarden credentials without a terminal stop the workstation action;
+a missing backup destination stops before bootstrap. Ensure sudo can run unattended.
+Terminal availability controls prompting and authentication retries; the `CI`
+and `GITHUB_ACTIONS` environment flags do not change execution.
+
+| Environment variable               | Purpose                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `WORKSTATION_MANAGER_GITHUB_TOKEN` | Token for GitHub CLI sign-in when no valid saved keyring login exists. |
+| `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.                                               |
+| `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.                                           |
+| `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.                                            |
+
+Unattended runs require an unlocked desktop keyring and either a valid saved
+GitHub CLI login or a token accepted by `gh auth login --with-token`. They run
+the same GitHub authentication and Git integration steps as interactive use.
+Bootstrap and installation downloads reuse the verified saved login.
+
+Setup passes the GitHub token to mise and GitHub CLI extension commands through
+their environment and uses it for the Orca release lookup, including previews.
+The Orca request keeps the token out of logs and redirected requests. Setup does
+not write it to application configuration or shell activation files.
+
+Selected AI providers also need existing native account logins for unattended
+setup unless authentication is explicitly deferred; see
+[AI authentication](../usage/ai-tools.md#authentication).
+
+Unattended backup also requires `WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR`.
+Recovery checks that require a human decision stop noninteractive backup; browser
+Sync completion requires interactive confirmation.
+
+Do not put credential values in command examples, configuration files, or Git.
 
 ## Bitwarden integration
 
@@ -233,8 +369,17 @@ The [Renovate workflow](../../.github/workflows/renovate.yml) runs every Friday
 and supports manual dispatch. Its [configuration](../../.github/renovate/renovate-config.json5)
 updates Ansible dependencies, Node LTS, mise, Chezmoi, Oh My Zsh, and reviewed
 development-tool pins in one grouped pull request. Inline Renovate annotations
-cover Orca, Starship, Helm, Dive, gh-act, gh-stack, Composer, Codex, and Copilot
-release versions. PHP follows stable `php-*` tags from
+cover Orca, Starship, Helm, Dive, gh-act, gh-stack, Composer, Codex,
+Copilot, and MCP release versions. AI application and MCP pins live under
+`development.ai_tools`; the extraction check in
+`e2e-tests/unit/test_ai_tools_pins.py` verifies their Renovate coverage
+against the public configuration. GitHub skill annotations use
+`datasource=git-refs`, `depName` and `branch`; a separate manager proposes updated
+commit digests embedded in Skillshare `source` URLs while keeping setup pinned to full SHAs. The extraction tests
+verify these pins in public workstation defaults, along with GitHub-backed mise
+tools such as Skillshare. Skillshare generates and updates project skill pins
+through its own lockfile commands; Renovate does not natively support that format.
+PHP follows stable `php-*` tags from
 `php/php-src`; mise owns its runtime and Ubuntu owns its build prerequisites.
 Renovate's `ansible-galaxy` manager automatically discovers and updates
 the collection pins in [the tooling requirements](../../ansible/collections/requirements.yml).
@@ -304,7 +449,9 @@ The suite runs three phases, with assertions after each:
    backup. The temporary override keeps those collections and disables managed
    browser profiles. Recovery checks must pass without prompts or skipped sources.
 2. **Setup:** remove the temporary recovery fixture, run setup with the generated
-   archive, and verify the installed workstation and restored files.
+   archive and an isolated private override, and verify the installed workstation
+   and restored files. The override defers provider sign-in with
+   `development.ai_tools.authenticate: false`.
 3. **Cleanup:** run cleanup and check its report and preservation behavior.
 
 The backup fixture requires a fresh VM without Chezmoi or Brave profile state.
@@ -312,6 +459,9 @@ The suite uses the configured Bitwarden collections and private configuration;
 it is not an offline simulation. Setup requires verified live Brave Sync recovery
 for configured profiles. The separate native browser smoke test uses disposable
 profiles with a disabled Sync endpoint.
+AI tooling is covered by [unit and isolated integration tests](ai-tools.md#testing).
+The VM suite has no dedicated AI assertions; account sign-in remains part of
+normal workstation setup.
 For focused investigation, `make e2e-backup`, `make e2e-setup`, and
 `make e2e-cleanup` run their action without the assertion phase; setup expects the
 backup fixture archive.

@@ -1,4 +1,9 @@
 ---
+- name: Verify the configured GitHub account before workstation changes
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.development_tooling
+    tasks_from: github_auth
+
 - name: Apply system base configuration
   ansible.builtin.import_role:
     name: neilime.workstation_setup.system_base
@@ -67,6 +72,16 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.development_tooling
     tasks_from: github_auth
+
+- name: Provision AI applications and extensions after dotfiles
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.ai_tools
+
+- name: Provision project skills after restoration and GitHub authentication
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.development_tooling
+    tasks_from: project_skills
+  when: '"github:runkids/skillshare" in workstation_manager_resolved.development.mise.tools'
 
 - name: Apply managed state markers
   ansible.builtin.import_role:

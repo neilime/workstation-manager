@@ -1,0 +1,28 @@
+---
+- name: Resolve the pinned Skillshare executable for remote skills
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+      - which
+      - skillshare
+      - --tool
+      - "github:runkids/skillshare@{{ workstation_manager_resolved.development.mise.tools['github:runkids/skillshare'] }}"
+    chdir: "{{ workstation_manager_resolved.user.home }}"
+  register: workstation_ai_skillshare_binary
+  changed_when: false
+  when: workstation_ai_config.skills | selectattr('kind', 'equalto', 'remote') | list | length > 0
+
+- name: Install declared remote skills with Skillshare
+  ansible.builtin.include_tasks: skills/remote.yml
+  vars:
+    workstation_ai_skill_cache: "{{ workstation_ai_root }}/skillshare/{{ workstation_ai_skill.source | hash('sha256') }}"
+  loop: "{{ workstation_ai_config.skills | selectattr('kind', 'equalto', 'remote') | list }}"
+  loop_control:
+    loop_var: workstation_ai_skill
+    label: "{{ workstation_ai_skill.name }}"
+
+- name: Resolve declared skill sources
+  ansible.builtin.set_fact:
+    workstation_ai_skills: >-
+      {{ workstation_ai_config.skills | neilime.workstation_setup.ai_skill_sources(
+           workstation_manager_resolved.user.home) }}

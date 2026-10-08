@@ -75,7 +75,7 @@ def test_normalize_returns_complete_shape_with_defaults(with_tool_versions) -> N
         "version": "1.2.3",
     }
     assert normalized["home_environment"] == build_home_environment()
-    assert normalized["secrets"]["bitwarden"]["server"] == ""
+    assert normalized["secrets"]["bitwarden"]["server"] == with_tool_versions({})["secrets"]["bitwarden"]["server"]
     assert normalized["secrets"]["bitwarden"]["ssh_collection_id"] == ""
     assert normalized["secrets"]["bitwarden"]["gpg_collection_id"] == ""
     assert normalized["secrets"]["bitwarden"]["browser_profiles_collection_id"] == ""
@@ -112,7 +112,6 @@ def test_runtime_versions_require_reproducible_stable_releases(
     [
         ("development", "node"),
         ("development", "mise"),
-        ("development", "orca"),
         ("home_environment", "chezmoi"),
     ],
 )
@@ -131,7 +130,6 @@ def test_missing_tool_versions_do_not_fall_back_to_python_defaults(with_tool_ver
     [
         ("development", "node"),
         ("development", "mise"),
-        ("development", "orca"),
         ("home_environment", "chezmoi"),
     ],
 )
@@ -464,3 +462,35 @@ def test_gnome_favorites_require_a_list(with_tool_versions) -> None:
         DesiredStateConfigNormalizer().normalize(
             with_tool_versions({"desktop": {"gnome": {"favorites": "browser"}}}), {"USER": "fixture"}
         )
+
+
+@pytest.mark.parametrize("identifier", ["synthetic-secret", 42, [], {}])
+def test_context7_selector_requires_a_uuid(with_tool_versions, identifier):
+    """A raw API key or malformed selector fails privately before accessing Bitwarden."""
+    config = with_tool_versions({"secrets": {"bitwarden": {"context7-api-key": identifier}}})
+    with pytest.raises(ValueError, match="context7-api-key.*must be") as error:
+        DesiredStateConfigNormalizer().normalize(config)
+    assert "synthetic-secret" not in str(error.value)
+
+
+def test_required_credentials_need_a_bitwarden_server(with_tool_versions):
+    """Required item selectors need an explicit vault server."""
+    config = with_tool_versions({"secrets": {"bitwarden": {"server": ""}}})
+    with pytest.raises(ValueError, match="bitwarden.server must not be empty"):
+        DesiredStateConfigNormalizer().normalize(config)
+
+
+@pytest.mark.parametrize("value", [None, "", " "])
+def test_empty_context7_selector_fails_before_setup(with_tool_versions, value):
+    """Context7 requires a nonempty vault selector before setup."""
+    config = with_tool_versions({"secrets": {"bitwarden": {"context7-api-key": value}}})
+    with pytest.raises(ValueError, match="context7-api-key.*is required"):
+        DesiredStateConfigNormalizer().normalize(config)
+
+
+def test_missing_context7_selector_fails_before_setup(with_tool_versions):
+    """Public placeholders cannot supply the user's required vault item ID."""
+    config = with_tool_versions({})
+    del config["secrets"]["bitwarden"]["context7-api-key"]
+    with pytest.raises(ValueError, match="context7-api-key.*is required"):
+        DesiredStateConfigNormalizer().normalize(config)

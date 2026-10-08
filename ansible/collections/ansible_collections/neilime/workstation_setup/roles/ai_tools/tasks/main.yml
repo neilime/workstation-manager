@@ -1,0 +1,10 @@
+---
+- name: Install selected AI provider CLIs
+  ansible.builtin.import_tasks: npm_tools.yml
+
+- name: Install and configure Orca
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.orca
+
+- name: Configure selected AI extensions
+  ansible.builtin.import_tasks: extensions.yml

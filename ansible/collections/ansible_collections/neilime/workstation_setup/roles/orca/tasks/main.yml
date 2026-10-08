@@ -12,7 +12,7 @@
       }}
     workstation_manager_orca_settings: >-
       {{
-        workstation_manager_resolved.development.orca.settings
+        workstation_manager_resolved.development.ai_tools.orca.settings
         | combine({'workspaceDir': workstation_manager_resolved.user.projects_directory ~ '/workspaces/orca'})
       }}
     workstation_manager_orca_data_path: "{{ workstation_manager_resolved.user.home }}/.config/orca/orca-data.json"
@@ -28,7 +28,7 @@
 
 - name: Fetch the selected stable Orca release
   ansible.builtin.uri:
-    url: https://api.github.com/repos/stablyai/orca/releases/tags/v{{ workstation_manager_resolved.development.orca.version }}
+    url: https://api.github.com/repos/stablyai/orca/releases/tags/v{{ workstation_manager_resolved.development.ai_tools.orca.version }}
     headers: >-
       {{
         {'Accept': 'application/vnd.github+json'} | combine(
@@ -52,7 +52,7 @@
 
 - name: Resolve the configured Orca version
   ansible.builtin.set_fact:
-    workstation_manager_orca_version: "{{ workstation_manager_resolved.development.orca.version }}"
+    workstation_manager_orca_version: "{{ workstation_manager_resolved.development.ai_tools.orca.version }}"
 
 - name: Select the Orca Debian release asset for this architecture
   ansible.builtin.set_fact:

@@ -17,6 +17,20 @@ from entrypoint_test_helpers import (
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
 
 
+def run_backup_interactively(command, fixture, environment, answers=()):
+    """Enter user credentials before answering the backup's recovery prompts."""
+    return run_interactive(
+        command,
+        fixture,
+        environment,
+        [
+            ("Bitwarden email: ", "fixture@example.test"),
+            ("Bitwarden vault password: ", environment["TEST_BITWARDEN_PASSWORD"]),
+            *answers,
+        ],
+    )
+
+
 class PipedBackupTests(unittest.TestCase):
     """Exercise the public piped backup with a real terminal and isolated commands."""
 
@@ -147,8 +161,10 @@ class PipedBackupTests(unittest.TestCase):
             command.chmod(0o700)
         entrypoint = fixture / "workstation.sh"
         source = entrypoint_source_with_mock_controller().rsplit('main "$@"', 1)[0]
-        # Bootstrap dependency installation is covered separately; these tests exercise the terminal relay.
-        entrypoint.write_text(source + '\ninstall_ansible_packages() { :; }\nmain "$@"\n')
+        # Installation and GitHub sign-in are covered separately; exercise the terminal relay here.
+        entrypoint.write_text(
+            source + '\ninstall_ansible_packages() { :; }\nprepare_github_authentication() { :; }\nmain "$@"\n'
+        )
         return {
             "PATH": f"{commands}:/usr/bin:/bin",
             "HOME": str(fixture),
@@ -158,9 +174,7 @@ class PipedBackupTests(unittest.TestCase):
             "REPOSITORY_BRANCH": "fixture-ref",
             "WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE": str(fixture / "private.override.yml"),
             "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR": str(fixture / "backup's files"),
-            "BITWARDEN_CLIENT_ID": "fixture-client",
-            "BITWARDEN_CLIENT_SECRET": "fixture-secret",
-            "BITWARDEN_PASSWORD": "fixture'password $HOME `false` $(false)",
+            "TEST_BITWARDEN_PASSWORD": "fixture'password $HOME `false` $(false)",
             "TEST_ENTRYPOINT_FILE": str(entrypoint),
             "TEST_DOWNLOAD_LOG": str(fixture / "downloads.txt"),
             "TEST_INVOCATION_FILE": str(fixture / "invocation.json"),
@@ -184,7 +198,7 @@ class PipedBackupTests(unittest.TestCase):
                 command = 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'
                 if dry_run:
                     command += " --dry-run"
-                returncode, output = run_interactive(
+                returncode, output = run_backup_interactively(
                     ["sh", "-c", command],
                     fixture,
                     environment,
@@ -192,7 +206,7 @@ class PipedBackupTests(unittest.TestCase):
                 )
                 self.assertEqual(returncode, 0, output)
                 invocation = json.loads((fixture / "invocation.json").read_text())
-                self.assertEqual(invocation["password"], environment["BITWARDEN_PASSWORD"])
+                self.assertEqual(invocation["password"], environment["TEST_BITWARDEN_PASSWORD"])
                 self.assertEqual(
                     invocation["output_dir"],
                     environment["WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR"],
@@ -206,7 +220,7 @@ class PipedBackupTests(unittest.TestCase):
                 self.assertEqual("--diff" in invocation["args"], dry_run)
                 self.assertEqual(output.count("Running workstation backup from"), 1)
                 self.assertIn("Workstation command completed", output)
-                self.assertNotIn(environment["BITWARDEN_PASSWORD"], output)
+                self.assertNotIn(environment["TEST_BITWARDEN_PASSWORD"], output)
                 self.assertEqual(
                     (fixture / "downloads.txt").read_text().splitlines(),
                     [
@@ -224,7 +238,7 @@ class PipedBackupTests(unittest.TestCase):
             fixture = pathlib.Path(temporary_dir)
             environment = self._prepare_fixture(fixture)
             environment["TEST_BITWARDEN_CODE"] = "1"
-            returncode, output = run_interactive(
+            returncode, output = run_backup_interactively(
                 ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'],
                 fixture,
                 environment,
@@ -245,7 +259,7 @@ class PipedBackupTests(unittest.TestCase):
             fixture = pathlib.Path(temporary_dir)
             environment = self._prepare_fixture(fixture)
             environment["TEST_TERMINAL_OWNER_FAILURE"] = "1"
-            returncode, output = run_interactive(
+            returncode, output = run_backup_interactively(
                 ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'], fixture, environment
             )
             self.assertNotEqual(returncode, 0)
@@ -258,7 +272,7 @@ class PipedBackupTests(unittest.TestCase):
             fixture = pathlib.Path(temporary_dir)
             environment = self._prepare_fixture(fixture)
             environment["TEST_CAPTURE_READ_FAILURE"] = "1"
-            returncode, output = run_interactive(
+            returncode, output = run_backup_interactively(
                 ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'],
                 fixture,
                 environment,
@@ -280,7 +294,7 @@ class PipedBackupTests(unittest.TestCase):
                 fixture = pathlib.Path(temporary_dir)
                 environment = self._prepare_fixture(fixture)
                 environment[failure] = "1"
-                returncode, output = run_interactive(
+                returncode, output = run_backup_interactively(
                     ["sh", "-c", 'cat "$TEST_ENTRYPOINT_FILE" | sh -s -- backup'],
                     fixture,
                     environment,
