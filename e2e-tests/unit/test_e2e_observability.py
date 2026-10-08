@@ -199,6 +199,39 @@ wait_for_e2e_clipboard_extension
     assert result.returncode == expected, result.stdout + result.stderr
 
 
+@pytest.mark.parametrize("unlock_status", [0, 37])
+def test_desktop_restart_requires_the_fixture_keyring_to_unlock(tmp_path: pathlib.Path, unlock_status: int) -> None:
+    """A new GNOME process alone must not let recovery assertions run with a locked keyring."""
+
+    trace = tmp_path / "trace"
+    script = r"""
+source "$1/e2e-common.sh"
+run_e2e_lima_control_command() {
+    case "$2" in
+        id) printf '1234\n' ;;
+        pgrep) if [[ -f "$TEST_TRACE" ]]; then printf '200\n'; else printf '100\n'; fi ;;
+        sudo) printf 'restart\n' >"$TEST_TRACE" ;;
+        bash)
+            printf 'unlock\n' >>"$TEST_TRACE"
+            return "$TEST_UNLOCK_STATUS"
+            ;;
+        *) return 99 ;;
+    esac
+}
+restart_e2e_desktop_session
+"""
+    result = subprocess.run(
+        ["bash", "-c", script, "--", str(E2E_PATH)],
+        env={**os.environ, "TEST_TRACE": str(trace), "TEST_UNLOCK_STATUS": str(unlock_status)},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == unlock_status, result.stdout + result.stderr
+    assert trace.read_text().splitlines() == ["restart", "unlock"]
+
+
 class SuiteFailureTests(unittest.TestCase):
     """Exercise suite orchestration with fake actions and no VM or external services."""
 

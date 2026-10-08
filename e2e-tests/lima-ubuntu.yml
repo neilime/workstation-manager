@@ -62,8 +62,11 @@ provision:
         dconf-cli \
         flatpak \
         gdm3 \
+        gnome-keyring \
+        libpam-gnome-keyring \
         ptyxis \
         ubuntu-desktop-minimal
+      systemctl stop gdm3
 
       netplan generate
       netplan apply
@@ -107,7 +110,13 @@ provision:
 
       systemctl enable gdm3
       systemctl set-default graphical.target
-      systemctl restart gdm3
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      bash /workspace/e2e-tests/e2e-keyring.sh prepare
+      sudo systemctl start gdm3
 
 probes:
   - mode: readiness
@@ -122,6 +131,16 @@ probes:
       set -euo pipefail
       test "$(sudo netplan get network.renderer)" = "networkd"
       systemctl is-active --quiet systemd-networkd
+  - mode: readiness
+    description: "desktop keyring is unlocked"
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      bash /workspace/e2e-tests/e2e-keyring.sh check
+    hint: |
+      The disposable desktop keyring could not be initialized or unlocked.
+      Check the user provisioning output and gnome-keyring-daemon.service.
+      Recreate a stopped fixture with `make e2e-reset`.
   - mode: readiness
     description: "desktop session is available"
     script: |
