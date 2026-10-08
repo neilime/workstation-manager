@@ -24,6 +24,8 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     _request_close,
 )
 
+_ENCRYPTION_READY = {"available": True, "decryptionFailed": False}
+
 # Exercise actual anonymous-pipe framing with a tiny stand-in for the browser.
 _CHILD = r"""
 import json,os
@@ -127,7 +129,7 @@ def test_native_request_failure_identifies_the_operation_without_recovery_words(
 
     pipe = object.__new__(BrowserPipe)
     monkeypatch.setattr(pipe, "page", Mock(return_value="fixture"))
-    response = Mock(side_effect=[{"result": {"value": True}}, {"result": {"value": True}}])
+    response = Mock(side_effect=[{"result": {"value": value}} for value in (True, True, _ENCRYPTION_READY)])
     monkeypatch.setattr(pipe, "call", response)
     instance = native.NativeSync(pipe, "/fixture/Default")
     code = " ".join(["private"] * 24)
@@ -139,6 +141,52 @@ def test_native_request_failure_identifies_the_operation_without_recovery_words(
     with pytest.raises(BrowserProtocolError, match="calling SyncSetupSetSyncCode") as error:
         instance.restore(code)
     assert "private" not in str(error.value)
+
+
+def test_recovery_code_access_waits_for_native_desktop_encryption(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Code generation starts only after Brave's asynchronous OS encryption initialization completes."""
+
+    code = " ".join(["synthetic"] * 24)
+    pipe = Mock()
+    pipe.evaluate.side_effect = [
+        True,
+        True,
+        {"available": False, "decryptionFailed": False},
+        _ENCRYPTION_READY,
+        code,
+    ]
+    sleep = Mock()
+    monkeypatch.setattr(native.time, "sleep", sleep)
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    assert instance.code() == code
+    sleep.assert_called_once()
+    assert "SyncSetupGetPureSyncCode" in pipe.evaluate.call_args.args[1]
+
+
+@pytest.mark.parametrize("status", [{"available": False, "decryptionFailed": False}, {}])
+def test_unavailable_encryption_stops_before_recovery_code_access(
+    status: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A locked or unsupported encryption backend times out without reading or replacing a chain."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, True, status]
+    ticks = iter([0, 0, 31])
+    monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
+    with pytest.raises(BrowserProtocolError, match="unlock the desktop keyring"):
+        native.NativeSync(pipe, "/fixture/Default")
+    assert pipe.evaluate.call_count == 3
+
+
+def test_saved_seed_decryption_failure_stops_before_recovery_code_access() -> None:
+    """An available keyring must still decrypt an existing seed before any chain change is allowed."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, True, {"available": True, "decryptionFailed": True}]
+    with pytest.raises(BrowserProtocolError, match="could not decrypt its saved recovery code"):
+        native.NativeSync(pipe, "/fixture/Default")
+    assert pipe.evaluate.call_count == 3
 
 
 @pytest.mark.parametrize(
@@ -155,8 +203,8 @@ def test_native_wait_rejects_errors_pending_uploads_and_stale_success(
     """A current download and repeated clean state are both required for verification."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, True, dirty]
-    ticks = iter([0, 0, 0, 2, 2])
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty]
+    ticks = iter([0, 0, 0, 0, 0, 2, 2])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
     instance = native.NativeSync(pipe, "/fixture/Default")
@@ -168,11 +216,11 @@ def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyP
 
     clean = {"healthy": True, "pending": False, "fresh": True}
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, True, clean, {**clean, "pending": True}, clean, clean]
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, clean, {**clean, "pending": True}, clean, clean]
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
     instance = native.NativeSync(pipe, "/fixture/Default")
     assert instance.wait() is True
-    assert pipe.evaluate.call_count == 7
+    assert pipe.evaluate.call_count == 8
 
 
 def test_restore_uses_native_pairing_and_checks_the_result() -> None:
@@ -180,7 +228,7 @@ def test_restore_uses_native_pairing_and_checks_the_result() -> None:
 
     code = " ".join(["synthetic"] * 24)
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, True, code + " suffix", True, code, True]
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, code + " suffix", True, code, True]
     instance = native.NativeSync(pipe, "/fixture/Default")
     instance.restore(code, reset=True)
     expressions = "\n".join(call.args[1] for call in pipe.evaluate.call_args_list)
