@@ -150,6 +150,9 @@ configured `home_environment.chezmoi.config_path`, and target home explicitly,
 including when your terminal or IDE sets a different `XDG_DATA_HOME`. Existing
 baseline directory permissions are preserved, including private `.config`
 permissions applied by your dotfiles.
+The generated Chezmoi config uses permission mask `022`, keeping ordinary files
+at `0644` regardless of the calling shell's mask. Private source attributes retain
+their restricted permissions.
 
 Every normal setup checks pending changes with `chezmoi status` and applies them.
 Dry runs do not apply dotfiles. If local changes conflict with the source, setup

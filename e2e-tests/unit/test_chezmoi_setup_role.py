@@ -109,6 +109,7 @@ def fixture_chezmoi_setup(
             "Resolve the managed Chezmoi command paths",
             "Inspect existing baseline user directory permissions",
             "Ensure baseline user directories exist without resetting their permissions",
+            "Render the managed Chezmoi machine-data config",
             "Initialize the managed Chezmoi source repository",
         }:
             tasks.append(task)
@@ -128,6 +129,7 @@ def fixture_chezmoi_setup(
             "workstation_manager_home_environment_chezmoi_source_dir": str(source),
             "workstation_manager_home_environment_chezmoi_source_url": "https://github.com/fixture/dotfiles.git",
             "workstation_manager_home_environment_chezmoi_source_dir_stat": {"stat": {"exists": False}},
+            "workstation_manager_home_environment_chezmoi_template_data": {"fixture": "machine-data"},
         },
     )
     env = ansible_environment(
@@ -146,7 +148,7 @@ def run_setup(fixture: tuple[pathlib.Path, dict[str, str]], *options: str) -> su
 
 @pytest.mark.parametrize("authenticated", [False, True])
 def test_explicit_paths_apply_dotfiles_and_repeated_setup_is_unchanged(chezmoi_setup, authenticated: bool) -> None:
-    """Honor the managed source and custom config despite an inherited IDE data path."""
+    """Pin source, target, and permissions independently of inherited shell and IDE settings."""
     root, env = chezmoi_setup
     if authenticated:
         env["WORKSTATION_MANAGER_GITHUB_TOKEN"] = "fixture-token"
@@ -155,6 +157,9 @@ def test_explicit_paths_apply_dotfiles_and_repeated_setup_is_unchanged(chezmoi_s
     assert (root / "home/.zshrc").read_text() == "# fixture configuration\n"
     assert not (root / "ide-data").exists()
     assert (root / "home/.config").stat().st_mode & 0o777 == 0o700
+    config = root / "home/.config/custom-chezmoi/machine.yaml"
+    assert config.stat().st_mode & 0o777 == 0o600
+    assert DataLoader().load_from_file(str(config)) == {"umask": 0o022, "data": {"fixture": "machine-data"}}
     repeated = run_setup(chezmoi_setup)
     assert repeated.returncode == 0, repeated.stdout + repeated.stderr
     assert "changed=0" in repeated.stdout

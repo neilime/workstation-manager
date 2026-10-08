@@ -58,7 +58,7 @@ workstation_manager:
         - browser
         - com.slack.Slack.desktop
         - com.spotify.Client.desktop
-        - code.desktop
+        - com.microsoft.VSCode.desktop
         - org.gnome.Ptyxis.desktop
   development:
     # Complete system runtime, available without shell or mise activation.

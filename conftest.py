@@ -29,8 +29,11 @@ def workstation_config(host, public_defaults):
         DesiredStateConfigNormalizer,
     )
 
-    path = f"{host.user().home}/.local/share/chezmoi/ansible/private.override.yml"
+    user = host.user()
+    path = f"{user.home}/.local/share/chezmoi/ansible/private.override.yml"
     override_file = host.file(path)
     overrides = (DataLoader().load(override_file.content_string) or {}) if override_file.exists else {}
     merged = merge_hash(public_defaults, overrides, list_merge="replace")
-    return DesiredStateConfigNormalizer().normalize(merged, {"USER": host.user().name})
+    return DesiredStateConfigNormalizer().normalize(
+        merged, {"WORKSTATION_MANAGER_USER": user.name, "WORKSTATION_MANAGER_USER_HOME": user.home}
+    )
