@@ -34,9 +34,10 @@ jobs:
 
   build-tooling-image:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@f8255a6a37eb141fa331527f5aed9b9e1d598c77 # 0.38.0
+    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@5ffc3c81daacc57700a14bb91d67edbc67eedc1d # 0.39.0
     # yamllint enable rule:line-length
     permissions:
+      attestations: write
       contents: read
       id-token: write
       issues: read
@@ -45,6 +46,7 @@ jobs:
     with:
       oci-registry: ghcr.io
       sign: false
+      attest: false
       images: |
         [
           {
