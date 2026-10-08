@@ -323,6 +323,9 @@ The suite logs elapsed time and exit status for each action, assertion phase, an
 desktop capture step. Set `E2E_PROFILE_TASKS=1` to also collect Ansible task timings;
 CI enables this automatically. Profiling temporarily updates the disposable
 VM's Ansible configuration and restores it when the suite exits.
+Each assertion phase uses an SSH control socket inside its test container. Lima's
+configuration stays mounted read-only, and a fresh connection sees group changes
+made during setup.
 
 The Lima workspace mount uses QEMU 9p without caching; this keeps Ubuntu AppArmor
 enabled and makes the guest see host edits in the read-only repository mount. The toolchain ADR records the
