@@ -8,7 +8,7 @@ def test_supported_ubuntu_and_isolated_controller(host) -> None:
     expected = (Path(__file__).parents[1] / "ansible/ubuntu-version").read_text().strip()
     assert host.check_output(". /etc/os-release; printf '%s' \"$VERSION_ID\"") == expected
     expected_core = (Path(__file__).parents[1] / "ansible/requirements.txt").read_text().strip().split("==")[1]
-    version = host.check_output("/opt/workstation-manager/venv/bin/ansible --version")
+    version = host.check_output("/opt/workstation-manager/venv/bin/ansible-pull --version")
     assert f"core {expected_core}" in version
     assert host.run("/opt/workstation-manager/venv/bin/python -m pip check").succeeded
 

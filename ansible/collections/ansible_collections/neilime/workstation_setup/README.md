@@ -5,7 +5,9 @@ home-environment setup (including the Zsh login shell, Oh My Zsh, and Chezmoi),
 developer tooling, and browser adapters. GNOME setup bookmarks the configured
 projects directory in Files while preserving existing bookmarks and labels.
 Chezmoi initialization and application use the managed source, configuration file,
-and target home explicitly. Setup
+and target home explicitly. The generated configuration keeps
+[dotfile permissions](../../../../../docs/usage/configuration.md#dotfiles-and-application-settings)
+consistent between setup and user commands. Setup
 requests approval before replacing conflicting local dotfiles, then checks the
 approved paths before continuing application. An explicit skip preserves local
 changes and continues setup without applying Chezmoi dotfiles or scripts for that

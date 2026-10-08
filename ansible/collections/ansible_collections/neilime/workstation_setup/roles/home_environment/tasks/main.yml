@@ -128,7 +128,8 @@
     group: "{{ workstation_manager_resolved.user.name }}"
     mode: "0600"
     content: >-
-      {{ {'data': workstation_manager_home_environment_chezmoi_template_data} | to_nice_yaml(indent=2) }}
+      {{ {'umask': '022' | int(base=8), 'data': workstation_manager_home_environment_chezmoi_template_data}
+         | to_nice_yaml(indent=2) }}
 
 - name: Check whether the managed Chezmoi source directory exists
   become: "{{ workstation_manager_use_become }}"
