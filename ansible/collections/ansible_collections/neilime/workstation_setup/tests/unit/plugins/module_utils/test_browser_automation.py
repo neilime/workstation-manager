@@ -120,6 +120,27 @@ def test_native_sync_requires_the_existing_page_callbacks() -> None:
     assert pipe.evaluate.call_count == 2
 
 
+def test_native_request_failure_identifies_the_operation_without_recovery_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected chain join names its native operation while keeping arguments and browser errors private."""
+
+    pipe = object.__new__(BrowserPipe)
+    monkeypatch.setattr(pipe, "page", Mock(return_value="fixture"))
+    response = Mock(side_effect=[{"result": {"value": True}}, {"result": {"value": True}}])
+    monkeypatch.setattr(pipe, "call", response)
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    code = " ".join(["private"] * 24)
+    response.side_effect = [
+        {"result": {"value": code + " suffix"}},
+        {"exceptionDetails": {"text": "private-browser-error"}},
+    ]
+
+    with pytest.raises(BrowserProtocolError, match="calling SyncSetupSetSyncCode") as error:
+        instance.restore(code)
+    assert "private" not in str(error.value)
+
+
 @pytest.mark.parametrize(
     "dirty",
     [

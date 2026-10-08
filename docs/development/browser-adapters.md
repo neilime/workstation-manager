@@ -122,6 +122,8 @@ responses and listeners. Importing a separate `cr.js` into the bundled settings
 page would initialize Chromium's WebUI callbacks twice and fail.
 Diagnostic node contents are reduced inside Brave to boolean status; browsing
 data never reaches an Ansible result. Child environments exclude vault credentials.
+Native automation errors identify the failed operation without including scripts,
+arguments, recovery words, or raw browser errors.
 Browser automation uses a desktop-session query that reads the managed user's live
 systemd environment. GNOME's initial `/proc` environment lacks the display variables
 created later by Wayland. Only allowed desktop variables reach application children;

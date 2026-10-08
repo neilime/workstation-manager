@@ -191,20 +191,31 @@ class NativeSync:
     def __init__(self, pipe: BrowserPipe, profile_path: str) -> None:
         self.pipe = pipe
         version = pipe.page("brave://version")
-        matches = pipe.evaluate(
-            version, f"document.querySelector('#profile_path')?.textContent === {json.dumps(profile_path)}"
+        matches = self._evaluate(
+            version,
+            f"document.querySelector('#profile_path')?.textContent === {json.dumps(profile_path)}",
+            "checking the selected profile",
         )
         if matches is not True:
             raise BrowserProtocolError("Brave opened a different profile; browser synchronization stopped")
         self.settings = pipe.page("brave://settings/braveSync/setup")
-        if pipe.evaluate(self.settings, _SETTINGS_BRIDGE) is not True:
+        if self._evaluate(self.settings, _SETTINGS_BRIDGE, "initializing settings callbacks") is not True:
             raise BrowserProtocolError("Brave's native Sync callbacks are unavailable")
+
+    def _evaluate(self, session: str, expression: str, operation: str, timeout: float = 30) -> object:
+        """Identify the failed operation without exposing scripts, responses, or recovery words."""
+
+        try:
+            return self.pipe.evaluate(session, expression, timeout=timeout)
+        except BrowserProtocolError as error:
+            raise BrowserProtocolError(f"Brave Sync failed while {operation}: {error}") from error
 
     def _request(self, method: str, *arguments: object) -> object:
         encoded = ", ".join(json.dumps(value) for value in (method, *arguments))
-        return self.pipe.evaluate(
+        return self._evaluate(
             self.settings,
             f"window.workstationSyncSettings.sendWithPromise({encoded})",
+            f"calling {method}",
         )
 
     def code(self) -> str:
@@ -232,19 +243,24 @@ class NativeSync:
             raise BrowserProtocolError("Brave did not join the selected recovery chain")
         # Joining resets Brave's selected types to its defaults. Restore explicitly
         # re-enables the full selection required by backup, through the native API.
-        if self.pipe.evaluate(self.settings, _ENABLE_EVERYTHING) is not True:
+        if self._evaluate(self.settings, _ENABLE_EVERYTHING, "enabling Sync everything") is not True:
             raise BrowserProtocolError("Brave did not enable Sync everything after joining the recovery chain")
 
     def wait(self, timeout: float = 120) -> bool:
         """Require a fresh successful download and two clean observations without pending changes."""
 
         session = self.pipe.page("brave://sync-internals")
-        if self.pipe.evaluate(session, _START) is not True:
+        if self._evaluate(session, _START, "starting Sync diagnostics") is not True:
             raise BrowserProtocolError("Brave could not request a fresh Sync cycle")
         deadline = time.monotonic() + timeout
         clean = 0
         while time.monotonic() < deadline:
-            snapshot = self.pipe.evaluate(session, _SNAPSHOT, timeout=min(30, max(1, deadline - time.monotonic())))
+            snapshot = self._evaluate(
+                session,
+                _SNAPSHOT,
+                "reading Sync diagnostics",
+                timeout=min(30, max(1, deadline - time.monotonic())),
+            )
             if not isinstance(snapshot, dict) or any(
                 not isinstance(snapshot.get(key), bool) for key in ("healthy", "pending", "fresh")
             ):
