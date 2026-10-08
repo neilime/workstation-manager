@@ -54,12 +54,6 @@ run_phase_tests() {
 	local phase_report_file=""
 	shift
 
-	# Setup can add groups. Reauthenticate the test connection so assertions see
-	# the same permissions as a new terminal session after login.
-	if [[ "$phase_name" == setup ]] && ssh -F "$ssh_config_path" -O check "$ssh_host" >/dev/null 2>&1; then
-		ssh -F "$ssh_config_path" -O exit "$ssh_host"
-	fi
-
 	if [[ -n "$report_dir" ]]; then
 		phase_report_file="$report_dir/tests/e2e-${phase_name}.junit.xml"
 		mkdir -p "$(dirname "$phase_report_file")"
@@ -77,10 +71,9 @@ run_phase_tests() {
 		--volume "$host_home/.lima:$host_home/.lima:ro" \
 		--workdir /workspace \
 		"$tooling_image" \
-		python3 -m pytest \
+		bash /workspace/e2e-tests/run-assertions.sh "$ssh_config_path" \
 		-q \
 		-o cache_dir=/tmp/pytest-cache \
-		--ssh-config="$ssh_config_path" \
 		--hosts="ssh://$ssh_host" \
 		"${phase_report_option[@]}" \
 		"$@"
