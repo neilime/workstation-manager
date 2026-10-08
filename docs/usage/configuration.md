@@ -28,14 +28,16 @@ secrets:
     ssh_collection_id: "<your-ssh-collection-uuid>"
     gpg_collection_id: "<your-gpg-collection-uuid>"
     browser_profiles_collection_id: "<your-browser-profiles-collection-uuid>"
+    context7-api-key: "<your-context7-item-uuid>"
 ```
 
-Set your GitHub username and replace the collection placeholders with your
-Bitwarden collection UUIDs. Commit and push the file, then run `setup` using the
+Set your GitHub username and replace the item and collection placeholders with
+your Bitwarden UUIDs. Commit and push the file, then run `setup` using the
 [Readme command](../../README.md#set-up-or-update-the-workstation).
-Setup, backup, and cleanup fetch that published override unless you select a local
-file. Nested mappings are merged with the defaults; lists replace the
-corresponding default list.
+Setup, backup, and cleanup fetch that published override.
+Nested mappings are merged with the defaults; lists replace the
+corresponding default list. See [AI tools](ai-tools.md) for AI application
+and extension configuration.
 
 The GitHub account is required: missing or blank `development.github.account`
 stops configuration validation before Ansible applies workstation roles. The
@@ -43,14 +45,24 @@ username is not a secret; it identifies the account whose persistent login setup
 must verify.
 
 Keep passwords, tokens, private keys, and browser recovery words in Bitwarden. Only
-non-secret settings and collection identifiers belong in Git.
+non-secret settings, item selectors, and collection identifiers belong in Git.
 
-To use a local override instead:
+`secrets.bitwarden.context7-api-key` is required, including for dry runs. Missing,
+blank, or invalid UUIDs stop configuration validation. Store the Context7 API key
+in its item's password field; see [MCP configuration](ai-tools.md#mcp-servers).
 
-```sh
-wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
-  WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE=/absolute/path/private.override.yml sh -s -- setup
-```
+GitHub authentication runs before downloading private configuration. Bootstrap
+installs GitHub CLI from its official APT repository and reuses a valid login
+saved in your desktop keyring. If sign-in is needed, it starts
+[`gh auth login --web`](https://cli.github.com/manual/gh_auth_login); approve access
+in your browser. Keep your desktop keyring unlocked so the login can be saved.
+Git then uses this login to download `workstation-config`.
+
+After downloading configuration, the entrypoint asks for your Bitwarden email and
+password. Bitwarden uses the configured server to retrieve keys and application
+secrets. Setup verifies that the GitHub login matches `development.github.account`
+after loading configuration and reuses it throughout installation. GitHub
+bootstrap authentication also runs when needed during `--dry-run`.
 
 ## Application delivery
 
@@ -79,15 +91,6 @@ An APT preference prevents automatic snapd reinstallation.
 GNOME Software and its Flatpak plugin manage applications and updates, with
 automatic downloads enabled for the managed account. Setup installs Ptyxis and
 includes it in the default dock favorites while preserving existing terminal profiles.
-
-To run a reviewed immutable revision, use the same full commit for the entrypoint
-and its Ansible checkout:
-
-```sh
-revision="<reviewed-40-character-commit>"
-wget -qO- "https://raw.githubusercontent.com/neilime/workstation-manager/${revision}/workstation.sh" | \
-  REPOSITORY_BRANCH="$revision" sh -s -- setup
-```
 
 ## Prepare Bitwarden collections
 
@@ -211,6 +214,9 @@ and extensions. Brave recovery is covered in the [browser guide](browser.md).
 
 ## Developer tools and project files
 
+For Orca, Codex/Copilot CLIs, shared MCP servers, credentials and skills, see
+[AI tool configuration](ai-tools.md).
+
 Manage Git preferences, including `gc.auto`, `commit.gpgsign`, and `tag.gpgsign`,
 in your Chezmoi `~/.gitconfig`. The companion repository enables automatic garbage
 collection with `gc.auto = 6700` and enables commit and tag signing. Repository-local
@@ -232,10 +238,13 @@ may override the selected terminal. Settings Sync uses the native configuration
 directory.
 
 Public [development defaults](../../ansible/group_vars/all.yml) own software
-selection and release pins. Setup always installs Codex and GitHub Copilot as
-system-wide npm commands. Their reviewed versions live in `development.npm_packages`
-and are maintained by Renovate. Both commands are verified without shell activation;
-complete each product's sign-in when first using it.
+selection and release pins. AI applications and extensions are configured together
+in `development.ai_tools`; see [AI applications](ai-tools.md#applications).
+
+Setup installs Skillshare globally and applies each `.skillshare/config.yaml`
+under `user.projects_directory` after archive restoration and GitHub login.
+See [project skills](../development/README.md#project-skills) for the small
+per-project config and update commands.
 
 Setup always installs PHP through mise's `vfox:jdx/vfox-php` backend. The exact PHP
 release lives in `development.mise.tools`; there is no PHP enable switch or APT
@@ -262,33 +271,17 @@ Project runtime overrides belong in each project's `mise.toml`. Global mise tool
 use exact releases and must not take ownership of system Node, GitHub CLI, or Docker.
 Renovate maintains the selected tool versions, including optional pins.
 
-Setup always installs and configures the release pinned by `development.orca.version`.
-It checks the architecture-specific package digest and seeds only missing settings.
-Existing workspaces and preferences remain intact. Renovate maintains the release pin.
-
-The agents workload installs pinned [Codex](https://learn.chatgpt.com/docs/codex/cli)
-and [Copilot](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli)
-commands through system npm and verifies them without shell activation. Their
-preferences and shared skills remain in Chezmoi. Product sign-in and access to a
-subscription remain separate first-use steps.
-
 `development.node.version` pins the complete system Node.js LTS distribution,
 including npm and npx, exposed through `/usr/local/bin`. Project-local mise
 versions may override it inside a project. Update native vendor packages through
 APT; cleanup only previews pending upgrades. Rerun setup after merging release
 pin updates.
 
-GitHub CLI comes from its official APT repository. Setup requires a persistent
-login for `development.github.host` matching `development.github.account`, after
-applying dotfiles. It reuses a valid OS-keyring login, can save a supplied bootstrap
-token in an unlocked credential store, or opens one browser login from the managed
-user's terminal. An unavailable keyring, failed authentication, or unexpected
-account stops setup. Unattended runs need usable stored credentials or a token
-plus an unlocked credential store.
-
-Provide a bootstrap token through `WORKSTATION_MANAGER_GITHUB_TOKEN`, never through
-the private override. A token is unnecessary when the configured account already
-has a working keyring login or you complete the interactive browser login.
+Setup requires a persistent GitHub CLI login matching `development.github.account`.
+It verifies the login again after applying dotfiles and ensures Git uses the saved
+credentials. An unavailable keyring, failed authentication, or unexpected account
+stops setup. See the [initial sign-in sequence](#edit-your-private-override)
+above. This verification does not log in or change credentials during a dry run.
 
 Git credential settings are stored alongside restored signing settings in
 `~/.config/git/config`; existing working helpers are reused. Token
@@ -366,26 +359,3 @@ encryption, schedule, and retention before relying on routine personal-file
 backups. Keep the backup password in Bitwarden and complete a restore to a
 separate directory, comparing the restored files with their originals.
 Manager archives and application installation do not prove this coverage.
-
-## Automated runs
-
-Provide credentials through your automation's secret store:
-
-| Environment variable               | Purpose                                                                                                    |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `WORKSTATION_MANAGER_GITHUB_TOKEN` | Access private repositories, authenticate downloads, and establish the configured account's keyring login. |
-| `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.                                                                                   |
-| `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.                                                                               |
-| `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.                                                                                |
-
-Setup passes the GitHub token to mise and GitHub CLI extension commands through
-their environment and uses it for the Orca release lookup, including previews.
-The Orca request keeps the token out of logs and redirected requests. Setup does
-not write it to application configuration or shell activation files.
-
-All three Bitwarden values must be present to skip interactive credential prompts.
-Automation must also supply `WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR` for backup.
-Recovery checks that require a human decision stop noninteractive backup; browser
-Sync completion requires interactive confirmation.
-
-Do not put credential values in command examples, configuration files, or Git.

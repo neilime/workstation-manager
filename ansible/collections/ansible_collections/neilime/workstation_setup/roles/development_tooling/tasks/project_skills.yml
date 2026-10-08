@@ -1,0 +1,72 @@
+---
+- name: Inspect the managed projects directory
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.projects_directory }}"
+  register: workstation_manager_development_projects
+
+- name: Discover project Skillshare configurations
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.find:
+    paths: "{{ workstation_manager_resolved.user.projects_directory }}"
+    patterns: config.yaml
+    hidden: true
+    recurse: true
+    follow: false
+    file_type: file
+  register: workstation_manager_development_skill_configs
+  failed_when: workstation_manager_development_skill_configs.skipped_paths | length > 0
+  when: workstation_manager_development_projects.stat.isdir | default(false)
+
+- name: Select project skill manifests outside generated and dependency directories
+  ansible.builtin.set_fact:
+    workstation_manager_development_skill_projects: >-
+      {{ workstation_manager_development_skill_configs.files | default([])
+         | map(attribute='path')
+         | map('relpath', workstation_manager_resolved.user.projects_directory)
+         | select('search', '(^|/)\.skillshare/config\.yaml$')
+         | reject('search', '(^|/)(\.git|\.cache|node_modules|vendor|venvs?|\.venv|\.agents|\.skillshare/skills)/')
+         | map('dirname') | map('dirname')
+         | map('regex_replace', '^', workstation_manager_resolved.user.projects_directory ~ '/') | sort | list }}
+
+- name: Report project skill provisioning deferred in check mode
+  ansible.builtin.debug:
+    msg: "Project skills will be installed and synced during setup: {{ workstation_manager_development_skill_projects }}"
+  when: ansible_check_mode
+
+- name: Apply declared project skills
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  environment: >-
+    {{ {'HOME': workstation_manager_resolved.user.home,
+        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config',
+        'GIT_TERMINAL_PROMPT': '0', 'NO_COLOR': '1'}
+       | combine({'GH_TOKEN': workstation_manager_development_skill_token}
+                 if workstation_manager_development_skill_token | length > 0 else {}) }}
+  no_log: "{{ workstation_manager_development_skill_token | length > 0 }}"
+  vars:
+    workstation_manager_development_skill_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+  when:
+    - not ansible_check_mode
+    - workstation_manager_development_skill_projects | length > 0
+  block:
+    - name: Resolve the configured Skillshare executable through mise
+      ansible.builtin.command:
+        argv:
+          - "{{ workstation_manager_resolved.user.home }}/.local/bin/mise"
+          - which
+          - skillshare
+          - --tool
+          - "github:runkids/skillshare@{{ workstation_manager_resolved.development.mise.tools['github:runkids/skillshare'] }}"
+        chdir: "{{ workstation_manager_resolved.user.home }}"
+      register: workstation_manager_development_skillshare_binary
+      changed_when: false
+
+    - name: Provision each project's declared skills
+      ansible.builtin.include_tasks: project_skills/sync.yml
+      loop: "{{ workstation_manager_development_skill_projects }}"
+      loop_control:
+        loop_var: workstation_manager_development_skill_project
+        label: "{{ workstation_manager_development_skill_project }}"

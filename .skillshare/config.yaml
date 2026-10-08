@@ -1,0 +1,6 @@
+targets: [universal]
+skills:
+  - name: write-content
+    source: ansible-community/ai-forge/ansible-content-development/module/skills/write-content
+  - name: write-module
+    source: ansible-community/ai-forge/ansible-content-development/module/skills/write-module

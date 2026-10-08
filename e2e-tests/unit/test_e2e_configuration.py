@@ -7,7 +7,7 @@ import pytest
 
 
 @pytest.fixture(name="host", scope="module")
-def vm_host():
+def vm_host(private_overrides):
     """Provide a VM account whose home differs from the controller's default layout."""
     host = mock.Mock()
     host.user.return_value.name = "fixture"
@@ -16,15 +16,16 @@ def vm_host():
     host.file.return_value.content_string = json.dumps(
         {
             "user": {"name": "controller", "home": "/home/controller"},
-            "development": {"github": {"account": "fixture"}},
+            **private_overrides,
         }
     )
     return host
 
 
-def test_vm_configuration_uses_the_managed_account_home(workstation_config) -> None:
+def test_vm_configuration_uses_the_managed_account_home(workstation_config, host) -> None:
     """A nonstandard guest home takes precedence over configured controller identity."""
     assert workstation_config["user"]["name"] == "fixture"
     assert workstation_config["user"]["home"] == "/srv/fixture.guest"
     assert workstation_config["user"]["projects_directory"] == "/srv/fixture.guest/Documents/dev-projects"
     assert workstation_config["user"]["state_dir"].startswith("/srv/fixture.guest/.local/state/")
+    host.file.assert_called_once_with("/srv/fixture.guest/.local/state/workstation-manager/e2e/private.override.yml")

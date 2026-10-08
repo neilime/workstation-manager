@@ -281,7 +281,7 @@ class AnsibleTargetContextTests(unittest.TestCase):
                                 '. "$1"\n'
                                 "has_interactive_terminal() { return 1; }\n"
                                 "prepare_action_dependencies() { :; }\n"
-                                "prompt_for_bitwarden_credentials_if_needed() { :; }\n"
+                                "prepare_bitwarden_credentials() { :; }\n"
                                 "prompt_for_backup_output_dir_if_needed() { :; }\n"
                                 'run_action "$2" "$3"',
                                 "entrypoint-test",
@@ -749,67 +749,6 @@ class BitwardenRetryTests(unittest.TestCase):
             self.assertIn("WORKSTATION_MANAGER_SKIP_SUDO=1", runner_content_file.read_text())
             self.assertIn("run_ansible_pull 'ansible/backup.yml' '0' \"$@\"", runner_content_file.read_text())
             self.assertEqual(script_output_file.read_text(), "synthetic success\n")
-
-
-class GitHubCliAuthenticationTests(unittest.TestCase):
-    """Prompt for GitHub CLI authentication with supported flags."""
-
-    def test_prompt_configures_https_login_and_git_credentials(self) -> None:
-        """Private repository access authenticates over HTTPS and configures Git credentials."""
-
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            fixture = pathlib.Path(temporary_dir)
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
-            gh_log = fixture / "gh.log"
-            gh = fixture / "gh"
-            gh.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$*" >>"$TEST_GH_LOG_FILE"\n'
-                'case "$1 $2" in\n'
-                '  "auth login") exit 0 ;;\n'
-                '  "auth setup-git") exit 0 ;;\n'
-                "  *) exit 99 ;;\n"
-                "esac\n"
-            )
-            gh.chmod(0o700)
-
-            result = subprocess.run(
-                [
-                    "/bin/sh",
-                    "-c",
-                    '. "$1"\n'
-                    "install_github_cli() { :; }\n"
-                    'println_to_tty() { printf "%s\\n" "$1"; }\n'
-                    "prompt_for_github_cli_authentication\n",
-                    "entrypoint-test",
-                    str(wrapper),
-                ],
-                env={
-                    "PATH": f"{fixture}:/usr/bin:/bin",
-                    "HOME": temporary_dir,
-                    "TEST_GH_LOG_FILE": str(gh_log),
-                },
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            self.assertIn(
-                "Private override access requires GitHub authentication; prompting through GitHub CLI",
-                result.stdout,
-            )
-            self.assertIn(
-                "Complete the GitHub CLI login flow. If this machine has no "
-                "browser, use the device code on another device.",
-                result.stdout,
-            )
-            self.assertEqual(
-                gh_log.read_text().splitlines(),
-                ["auth login --git-protocol https", "auth setup-git"],
-            )
 
 
 if __name__ == "__main__":

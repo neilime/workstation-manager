@@ -21,8 +21,21 @@ def load_public_defaults():
 
 
 @pytest.fixture(scope="module")
+def private_overrides():
+    """Supply synthetic personal settings required alongside the public defaults."""
+    return {
+        "development": {"github": {"account": "fixture"}},
+        "secrets": {
+            "bitwarden": {
+                "context7-api-key": "22222222-2222-2222-2222-222222222222",
+            }
+        },
+    }
+
+
+@pytest.fixture(scope="module")
 def workstation_config(host, public_defaults):
-    """Compare VM state with public defaults and its tracked private overrides."""
+    """Compare VM state with public defaults and the private override used by the fixture."""
     # Collection imports must follow pytest_configure's Ansible namespace registration.
     # pylint: disable=import-outside-toplevel
     from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state import (
@@ -30,10 +43,11 @@ def workstation_config(host, public_defaults):
     )
 
     user = host.user()
-    path = f"{user.home}/.local/share/chezmoi/ansible/private.override.yml"
+    path = f"{user.home}/.local/state/workstation-manager/e2e/private.override.yml"
     override_file = host.file(path)
     overrides = (DataLoader().load(override_file.content_string) or {}) if override_file.exists else {}
+    normalizer = DesiredStateConfigNormalizer()
     merged = merge_hash(public_defaults, overrides, list_merge="replace")
-    return DesiredStateConfigNormalizer().normalize(
+    return normalizer.normalize(
         merged, {"WORKSTATION_MANAGER_USER": user.name, "WORKSTATION_MANAGER_USER_HOME": user.home}
     )

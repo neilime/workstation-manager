@@ -1,0 +1,55 @@
+---
+- name: Resolve the GitHub CLI package architecture
+  ansible.builtin.set_fact:
+    development_tooling_github_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_facts['architecture'], '') }}"
+
+- name: Require a supported GitHub CLI architecture
+  ansible.builtin.assert:
+    that:
+      - development_tooling_github_arch | length > 0
+    fail_msg: GitHub CLI installation supports Ubuntu amd64 and arm64.
+
+- name: Install GitHub credential-store dependencies
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: libsecret-tools
+    state: present
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Ensure the GitHub vendor keyring directory exists
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install GitHub CLI repository keyring
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
+    dest: /etc/apt/keyrings/githubcli-archive-keyring.gpg
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure the official GitHub CLI repository
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.deb822_repository:
+    name: github-cli
+    uris: https://cli.github.com/packages
+    suites: stable
+    components: main
+    architectures: "{{ development_tooling_github_arch }}"
+    signed_by: /etc/apt/keyrings/githubcli-archive-keyring.gpg
+  register: development_tooling_github_repository
+
+- name: Install native GitHub CLI
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: gh
+    state: present
+    update_cache: "{{ development_tooling_github_repository is changed }}"
+    install_recommends: false

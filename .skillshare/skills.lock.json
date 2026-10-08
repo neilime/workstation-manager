@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "write-content": {
+      "source": "ansible-community/ai-forge/ansible-content-development/module/skills/write-content",
+      "commit": "5b9a74d717b87c7b7c54fa713171e8a0eb5f43b7",
+      "tree_hash": "0eb9c8ba0741b80cde2d3a957650e7688087425e"
+    },
+    "write-module": {
+      "source": "ansible-community/ai-forge/ansible-content-development/module/skills/write-module",
+      "commit": "5b9a74d717b87c7b7c54fa713171e8a0eb5f43b7",
+      "tree_hash": "cf6e87a5d517c1a23d3cab02d9c378fdcfbc180b"
+    }
+  }
+}

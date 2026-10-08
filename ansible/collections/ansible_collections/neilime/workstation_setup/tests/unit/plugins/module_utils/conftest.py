@@ -14,6 +14,12 @@ def with_tool_versions() -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Supply synthetic required configuration without tracking production pins."""
 
     versions = {
+        "secrets": {
+            "bitwarden": {
+                "server": "https://vault.example.test",
+                "context7-api-key": "22222222-2222-2222-2222-222222222222",
+            }
+        },
         "desktop": {"clipboard_indicator": {"version": "123", "sha256": "a" * 64}},
         "development": {
             "github": {"account": "fixture"},
@@ -22,10 +28,12 @@ def with_tool_versions() -> Callable[[dict[str, Any]], dict[str, Any]]:
                 "version": "1.2.3",
                 "tools": {"vfox:jdx/vfox-php": "1.2.3", "github:composer/composer": "1.2.3"},
             },
-            "orca": {"version": "1.2.3"},
-            "npm_packages": {
-                "@openai/codex": {"version": "1.2.3", "command": "codex"},
-                "@github/copilot": {"version": "1.2.3", "command": "copilot"},
+            "ai_tools": {
+                "orca": {"version": "1.2.3"},
+                "providers": {
+                    "codex": {"npm": "@openai/codex", "version": "1.2.3", "command": "codex"},
+                    "copilot": {"npm": "@github/copilot", "version": "1.2.3", "command": "copilot"},
+                },
             },
         },
         "home_environment": {"chezmoi": {"version": "1.2.3"}},

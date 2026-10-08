@@ -51,3 +51,15 @@
     - backup
     - reconcile
     - sync
+
+- name: Validate selected AI provider adapters
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.fileglob', workstation_ai_adapter_tasks_dir ~ '/main.yml', wantlist=True) | length == 1
+      - lookup('ansible.builtin.fileglob', workstation_ai_adapter_tasks_dir ~ '/preflight.yml', wantlist=True) | length == 1
+      - lookup('ansible.builtin.fileglob', workstation_ai_adapter_tasks_dir ~ '/authenticate.yml', wantlist=True) | length == 1
+    fail_msg: "AI provider adapter '{{ item }}' requires main.yml, preflight.yml and authenticate.yml entrypoints."
+  vars:
+    workstation_ai_adapter_tasks_dir: >-
+      {{ playbook_dir }}/collections/ansible_collections/neilime/workstation_setup/roles/ai_tool_{{ item }}/tasks
+  loop: "{{ workstation_manager_resolved.development.ai_tools.providers | list }}"

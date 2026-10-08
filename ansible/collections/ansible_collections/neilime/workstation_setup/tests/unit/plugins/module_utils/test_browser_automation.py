@@ -23,6 +23,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
     _request_close,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
+    _DIAGNOSTIC_CHECKS,
+)
 
 _ENCRYPTION_READY = {"available": True, "decryptionFailed": False}
 
@@ -203,12 +206,35 @@ def test_native_wait_rejects_errors_pending_uploads_and_stale_success(
     """A current download and repeated clean state are both required for verification."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty]
+    checks = dict.fromkeys(_DIAGNOSTIC_CHECKS, True)
+    incomplete = "Entity Metadata" if dirty["pending"] else "Fresh Download" if not dirty["fresh"] else "Auth Error"
+    checks[incomplete] = False
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks]
     ticks = iter([0, 0, 0, 0, 0, 2, 2])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
     instance = native.NativeSync(pipe, "/fixture/Default")
     assert instance.wait(timeout=1) is False
+    assert instance.pending_reason == incomplete
+
+
+@pytest.mark.parametrize("invalid", [{"private-recovery-word": False}, {"Auth Error": "private-browser-error"}])
+def test_timeout_diagnostics_reject_unrecognized_fields_and_private_values(
+    invalid: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only known check names with boolean results may appear in an uncensored recovery error."""
+
+    pipe = Mock()
+    dirty = {"healthy": False, "pending": True, "fresh": False}
+    checks = {**dict.fromkeys(_DIAGNOSTIC_CHECKS, True), **invalid}
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks]
+    ticks = iter([0, 0, 0, 0, 0, 2, 2])
+    monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    with pytest.raises(BrowserProtocolError, match="unsupported Sync diagnostics") as error:
+        instance.wait(timeout=1)
+    assert "private-" not in str(error.value)
 
 
 def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyPatch) -> None:

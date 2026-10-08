@@ -20,6 +20,18 @@ def test_selected_mise_tools_are_installed(host, workstation_config) -> None:
         assert result.succeeded, result.stderr
 
 
+def test_restored_project_skills_are_provisioned_during_setup(host, workstation_config) -> None:
+    """Restored skill declarations are installed and linked as the managed user."""
+    project = workstation_config["user"]["projects_directory"] + "/client-restore"
+    source = host.file(project + "/.skillshare/skills/e2e-project-skill/SKILL.md")
+    target = host.file(project + "/.agents/skills/e2e-project-skill")
+    assert source.is_file
+    assert source.user == workstation_config["user"]["name"]
+    assert target.is_symlink
+    assert target.linked_to == project + "/.skillshare/skills/e2e-project-skill"
+    assert host.file(target.path + "/SKILL.md").content_string == source.content_string
+
+
 def test_starship_launcher_runs_the_configured_release(host, workstation_config) -> None:
     """The prompt executable must be usable through its managed link without mise activation."""
     version = workstation_config["development"]["mise"]["tools"].get("aqua:starship/starship")
@@ -153,19 +165,6 @@ def test_persistent_github_login_is_independent_of_token_overrides(host, worksta
     assert active["state"] == "success"
     assert active["tokenSource"] == "keyring"
     assert active["login"] == workstation_config["development"]["github"]["account"]
-
-
-def test_standard_agent_clis_match_configured_pins_without_shell_activation(host, workstation_config) -> None:
-    """Both baseline CLIs use the system runtime and their reviewed npm releases."""
-    home = host.user().home
-    for name, package in workstation_config["development"]["npm_packages"].items():
-        installed = json.loads(
-            host.check_output("/usr/local/bin/npm ls --global --prefix /usr/local --depth=0 --json %s", name)
-        )
-        assert installed["dependencies"][name]["version"] == package["version"]
-        assert host.run(
-            "env -i HOME=%s PATH=/usr/local/bin:/usr/bin:/bin %s --version", home, package["command"]
-        ).succeeded
 
 
 def test_development_sysctl_configuration(host, workstation_config) -> None:

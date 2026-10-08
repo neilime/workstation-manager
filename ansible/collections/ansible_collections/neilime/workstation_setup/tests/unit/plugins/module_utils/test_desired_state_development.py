@@ -16,7 +16,7 @@ def test_baseline_requirements_are_validated_without_changing_input(with_tool_ve
                 "packages": ["git", "make", "git"],
                 "mise": {"tools": {"aqua:example/tool": "1.2.3"}},
                 "github": {"account": " fixture ", "extensions": {"example/gh-tool": "1.2.3"}},
-                "npm_packages": {"@example/agent": {"version": "1.2.3", "command": "agent"}},
+                "ai_tools": {"providers": {"agent": {"npm": "@example/agent", "version": "1.2.3", "command": "agent"}}},
             }
         }
     )
@@ -26,7 +26,7 @@ def test_baseline_requirements_are_validated_without_changing_input(with_tool_ve
     assert result["mise"]["tools"] == config["development"]["mise"]["tools"]
     assert result["github"]["extensions"] == {"example/gh-tool": "v1.2.3"}
     assert result["github"]["account"] == "fixture"
-    assert result["npm_packages"] == config["development"]["npm_packages"]
+    assert result["ai_tools"]["providers"] == config["development"]["ai_tools"]["providers"]
     assert config == original
 
 
@@ -42,20 +42,6 @@ def test_github_account_is_required_before_setup(with_tool_versions):
             DesiredStateConfigNormalizer().normalize(config)
 
 
-@pytest.mark.parametrize("package", ["@openai/codex", "@github/copilot"])
-def test_standard_agent_pins_are_required_and_consumed_from_configuration(with_tool_versions, package):
-    """The baseline CLIs cannot be omitted or resolve versions outside configuration."""
-    config = with_tool_versions({"development": {"npm_packages": {package: {"version": "9.8.7"}}}})
-    result = DesiredStateConfigNormalizer().normalize(config)["development"]
-    assert result["npm_packages"] == config["development"]["npm_packages"]
-    del config["development"]["npm_packages"][package]["version"]
-    with pytest.raises(ValueError, match="stable release"):
-        DesiredStateConfigNormalizer().normalize(config)
-    del config["development"]["npm_packages"][package]
-    with pytest.raises(ValueError, match="requires standard workstation tools: " + package):
-        DesiredStateConfigNormalizer().normalize(config)
-
-
 @pytest.mark.parametrize("package", ["", " ", 42, {}])
 def test_invalid_apt_package_names_fail_before_installation(with_tool_versions, package):
     """Package declarations require valid nonempty names."""
@@ -67,7 +53,7 @@ def test_invalid_apt_package_names_fail_before_installation(with_tool_versions, 
 @pytest.mark.parametrize(
     "selection",
     [
-        {"npm_packages": {"@example/agent": {"command": "agent"}}},
+        {"ai_tools": {"providers": {"agent": {"npm": "@example/agent", "command": "agent"}}}},
         {"mise": {"tools": {"aqua:example/tool": "latest"}}},
     ],
 )

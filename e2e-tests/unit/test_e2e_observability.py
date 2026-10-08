@@ -251,16 +251,15 @@ def test_assertions_keep_ssh_sockets_outside_read_only_lima_state(tmp_path: path
     ssh.chmod(0o700)
     test = tmp_path / "test_connection.py"
     test.write_text('def test_connection(host):\n    assert host.check_output("true") == "fixture"\n')
-    result = subprocess.run(
+    subprocess.run(
         ["bash", str(E2E_PATH / "run-assertions.sh"), str(config), "-q", "--hosts=ssh://fixture", str(test)],
         cwd=tmp_path,
         env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}", "TEST_SSH_CONFIG": str(effective_config)},
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
         timeout=10,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
     settings = dict(line.split(" ", 1) for line in effective_config.read_text().splitlines())
     assert pathlib.Path(settings["controlpath"]).parent == pathlib.Path("/tmp")
     assert settings["controlmaster"] == "auto"

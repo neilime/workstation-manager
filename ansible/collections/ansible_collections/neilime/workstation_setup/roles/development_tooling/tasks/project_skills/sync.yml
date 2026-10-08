@@ -1,0 +1,47 @@
+---
+- name: Install missing declared project skills
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_development_skillshare_binary.stdout | trim }}"
+      - install
+      - -p
+    chdir: "{{ workstation_manager_development_skill_project }}"
+  register: workstation_manager_development_skill_install
+  changed_when: workstation_manager_development_skill_install.stdout is search('Installed [1-9][0-9]* ')
+
+- name: Inspect current project skill targets
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_development_skillshare_binary.stdout | trim }}"
+      - status
+      - -p
+      - --json
+    chdir: "{{ workstation_manager_development_skill_project }}"
+  register: workstation_manager_development_skill_status
+  changed_when: false
+
+- name: Synchronize project skills to their configured targets
+  ansible.builtin.command:
+    argv:
+      - "{{ workstation_manager_development_skillshare_binary.stdout | trim }}"
+      - sync
+      - -p
+      - --json
+    chdir: "{{ workstation_manager_development_skill_project }}"
+  register: workstation_manager_development_skill_sync
+  vars:
+    workstation_manager_development_skill_before: "{{ (workstation_manager_development_skill_status.stdout | from_json).targets }}"
+    workstation_manager_development_skill_result: "{{ workstation_manager_development_skill_sync.stdout | from_json }}"
+  # Merge reports all linked skills, including unchanged links; copy reports new copies only.
+  changed_when: >-
+    workstation_manager_development_skill_sync.rc == 0 and (
+    workstation_manager_development_skill_result.updated > 0
+    or workstation_manager_development_skill_result.pruned > 0
+    or (workstation_manager_development_skill_result.details | selectattr('mode', 'equalto', 'copy')
+        | map(attribute='linked') | sum) > 0
+    or (workstation_manager_development_skill_result.details | selectattr('mode', 'equalto', 'merge')
+        | map(attribute='linked') | sum)
+       > (workstation_manager_development_skill_before | selectattr('mode', 'equalto', 'merge')
+          | map(attribute='synced_count') | sum)
+    or (workstation_manager_development_skill_before | selectattr('skills_enabled')
+        | rejectattr('mode', 'in', ['merge', 'copy']) | rejectattr('status', 'equalto', 'linked') | list | length) > 0)
