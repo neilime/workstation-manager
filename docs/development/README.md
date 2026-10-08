@@ -48,7 +48,8 @@ and verification in their owning roles. Each decision starts with an empty resul
 callers must execute only the currently approved action and recheck its outcome.
 
 See [browser adapters](browser-adapters.md) for that extension contract and
-[AGENTS.md](../../AGENTS.md) for repository-wide contribution rules.
+[AGENTS.md](../../AGENTS.md) for repository-wide contribution rules. Record
+significant architectural decisions as [decision records](adr/README.md).
 
 ## Documentation and test contract
 
