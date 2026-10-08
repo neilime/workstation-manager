@@ -56,7 +56,7 @@ adapters that mirror the [browser adapter contract](../browser-adapters.md).
 
 ### 1. One declarative source, many providers
 
-Add an `development.ai_tools` section to the
+Add a `development.ai_tools` section to the
 [public defaults](../../../ansible/group_vars/all.yml), resolved like every other
 setting into `workstation_manager_resolved` and normalized in the setup
 collection's `desired_state*` helpers. The declaration names the enabled
