@@ -1,6 +1,6 @@
 ---
 # Setup-owned framework pin; Renovate follows the upstream master branch.
-workstation_manager_oh_my_zsh_revision: "4d4cfc287e9d887b81242c0e431b5f49f9cec5c1"
+workstation_manager_oh_my_zsh_revision: "9f9b28a13df35af968f0117cb142f0eba9cc6c41"
 
 workstation_manager:
   user:
@@ -102,13 +102,13 @@ workstation_manager:
       - code
     orca:
       # renovate: datasource=github-releases depName=stablyai/orca
-      version: "1.4.222"
+      version: "1.4.223"
       # Seed only missing settings; preserve existing workspaces and preferences.
       settings:
         theme: system
         terminalFontFamily: Fira Code
     mise:
-      version: "2026.10.3"
+      version: "2026.10.5"
       # Project mise.toml files may select their own tools and versions.
       tools:
         # renovate: datasource=github-releases depName=starship/starship
@@ -125,11 +125,11 @@ workstation_manager:
     npm_packages:
       "@openai/codex":
         # renovate: datasource=npm depName=@openai/codex
-        version: "0.160.1"
+        version: "0.162.0"
         command: codex
       "@github/copilot":
         # renovate: datasource=npm depName=@github/copilot
-        version: "1.0.92"
+        version: "1.0.94"
         command: copilot
     settings:
       # Development tooling often needs a higher filesystem watch limit.
