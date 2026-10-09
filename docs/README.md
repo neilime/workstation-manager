@@ -18,3 +18,4 @@ Start with the [project readme](../README.md) for installation and everyday comm
 | [Development](development/README.md)                                           | Find the owning collection and run checks or VM tests.                       |
 | [Browser adapters](development/browser-adapters.md)                            | Implement another browser using the existing role contract.                  |
 | [Workstation toolchain ADR](development/adr/adr-0001-workstation-toolchain.md) | Understand current software choices, ownership, and validation requirements. |
+| [Decision records](development/adr/README.md)                                  | Understand why an architectural contract works the way it does.              |
