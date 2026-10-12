@@ -140,7 +140,7 @@ refresh, healthy Sync diagnostics, and two observations without unacknowledged
 entity sequences or pending tombstones. Required browser data types must be
 running. Stale success, errors, incomplete diagnostics, and timeouts cannot
 certify recovery. An active, idle engine retries refreshes until a fresh download
-succeeds, including after a failed download. `save` updates only an existing note's
+succeeds and pending uploads and deletions are acknowledged. `save` updates only an existing note's
 code and verifies the readback. `restore` uses Brave's native leave/join handlers
 and current pairing suffix, enables Sync everything, and verifies the resulting
 chain.

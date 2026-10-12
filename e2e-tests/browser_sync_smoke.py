@@ -107,6 +107,39 @@ def retry_failed_download(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, "window.fixtureRefreshes") == 1
 
 
+def retry_pending_changes(pipe: BrowserPipe, page: str) -> None:
+    """A completed download must not stop retries for uploads or deletion acknowledgements."""
+
+    pipe.evaluate(
+        page,
+        """(() => {
+      window.fixtureRefreshes = 0;
+      const send = chrome.send;
+      chrome.send = (method, args) => {
+        if (method === 'triggerRefresh') window.fixtureRefreshes++;
+        else send(method, args);
+      };
+      return true;
+    })()""",
+    )
+    pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.sequence_number = '2'; true")
+    assert snapshot(pipe, page) == {"healthy": True, "pending": True, "fresh": True}
+    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Metadata']") is False
+    assert pipe.evaluate(page, "window.fixtureRefreshes") == 1
+    pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.acked_sequence_number = '2'; true")
+    tombstone = (
+        "(async()=>{const {aboutInfo} = await import('./about.js'); "
+        "aboutInfo.type_status[0].num_entries = 2; return true;})()"
+    )
+    pipe.evaluate(page, tombstone)
+    assert snapshot(pipe, page)["pending"] is True
+    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
+    assert pipe.evaluate(page, "window.fixtureRefreshes") == 2
+    pipe.evaluate(page, tombstone.replace("= 2", "= 1"))
+    assert snapshot(pipe, page)["pending"] is False
+    assert pipe.evaluate(page, "window.fixtureRefreshes") == 2
+
+
 def diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Run production JavaScript against stale, pending, errored, and complete native-shaped responses."""
 
@@ -138,19 +171,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert snapshot(pipe, page)["fresh"] is False
     pipe.evaluate(page, event.replace("OFFSET", ""))
     assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
-    pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.sequence_number = '2'; true")
-    assert snapshot(pipe, page)["pending"] is True
-    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Metadata']") is False
-    pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.acked_sequence_number = '2'; true")
-    tombstone = (
-        "(async()=>{const {aboutInfo} = await import('./about.js'); "
-        "aboutInfo.type_status[0].num_entries = 2; return true;})()"
-    )
-    pipe.evaluate(page, tombstone)
-    assert snapshot(pipe, page)["pending"] is True
-    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
-    pipe.evaluate(page, tombstone.replace("= 2", "= 1"))
-    assert snapshot(pipe, page)["pending"] is False
+    retry_pending_changes(pipe, page)
     pipe.evaluate(
         page,
         "(async()=>{const {aboutInfo} = await import('./about.js'); "

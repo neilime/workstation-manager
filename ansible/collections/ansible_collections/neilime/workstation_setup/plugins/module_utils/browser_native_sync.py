@@ -31,6 +31,7 @@ _DIAGNOSTIC_CHECKS = (
     "Required Data Types",
     "Data Type Status",
     "Entity Counts",
+    "Entity Coverage",
     "Entity Metadata",
     "Fresh Download",
 )
@@ -80,6 +81,7 @@ _SNAPSHOT = r"""(async () => {
     row => row.status === 'ok' || (row.status === 'severity_info' && row.state === 'Not Running'));
   const healthy = Object.values(checks).every(value => value);
   checks['Entity Counts'] = false;
+  checks['Entity Coverage'] = false;
   checks['Entity Metadata'] = false;
   let pending = true;
   if (healthy) {
@@ -88,10 +90,10 @@ _SNAPSHOT = r"""(async () => {
     // been acknowledged and removed from the native tracker before we succeed.
     const countsReady = active.every(row => Number.isInteger(row.num_entries)
       && Number.isInteger(row.num_live) && row.num_entries === row.num_live);
-    const nodesReady = Array.isArray(groups) && active.every(row => groups.some(group =>
+    const coverageReady = Array.isArray(groups) && active.every(row => groups.some(group =>
       group.type === row.name && Array.isArray(group.nodes)
-        && group.nodes.filter(node => node.metadata).length === row.num_live))
-      && groups.every(group =>
+        && group.nodes.filter(node => node.metadata).length === row.num_live));
+    const nodesReady = Array.isArray(groups) && groups.every(group =>
       Array.isArray(group.nodes) && group.nodes.every(node => {
         if (!node.metadata && node.PARENT_ID === 'r' && node.IS_DIR === true && group.type !== 'Nigori') return true;
         const metadata = node.metadata;
@@ -102,14 +104,15 @@ _SNAPSHOT = r"""(async () => {
           && BigInt(sequence) === BigInt(acknowledged);
       }));
     checks['Entity Counts'] = countsReady;
+    checks['Entity Coverage'] = coverageReady;
     checks['Entity Metadata'] = nodesReady;
-    pending = !countsReady || !nodesReady;
+    pending = !countsReady || !coverageReady || !nodesReady;
   }
-  // Initialization can discard a refresh, and a failed download leaves unhealthy
-  // diagnostics. Retry an idle active engine without requiring that download to
-  // have already succeeded; verification still requires fresh, healthy results.
+  // Initialization can discard a refresh. An idle active engine also needs retries
+  // after failed downloads or while uploads and deletions await acknowledgement.
+  // Native refresh schedules both download and commit work; verification stays strict.
   if (stats['Transport State'] === 'Active' && stats['Sync Cycle Ongoing'] === false
-      && !window.workstationSync.downloaded) chrome.send('triggerRefresh');
+      && (pending || !window.workstationSync.downloaded)) chrome.send('triggerRefresh');
   chrome.send('requestDataAndRegisterForUpdates');
   checks['Fresh Download'] = window.workstationSync.downloaded === true;
   window.workstationSync.checks = checks;
