@@ -139,9 +139,14 @@ Verification requires a new successful GetUpdates response after requesting a
 refresh, healthy Sync diagnostics, and two observations without unacknowledged
 entity sequences or pending tombstones. Required browser data types must be
 running. Stale success, errors, incomplete diagnostics, and timeouts cannot
-certify recovery. `save` updates only an existing note's code and verifies the
-readback. `restore` uses Brave's native leave/join handlers and current pairing
-suffix, enables Sync everything, and verifies the resulting chain.
+certify recovery. An active, idle engine retries refreshes until a fresh download
+succeeds, including after a failed download. `save` updates only an existing note's
+code and verifies the readback. `restore` uses Brave's native leave/join handlers
+and current pairing suffix, enables Sync everything, and verifies the resulting
+chain.
+Timeout errors list incomplete verification checks. Only fixed check names and
+boolean results leave the diagnostic page; native error text, entity data, and
+recovery words remain private.
 
 The native interfaces follow
 [Brave's Sync handler](https://github.com/brave/brave-core/blob/master/browser/ui/webui/settings/brave_sync_handler.cc)

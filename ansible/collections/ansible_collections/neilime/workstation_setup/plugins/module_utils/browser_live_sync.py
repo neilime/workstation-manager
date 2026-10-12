@@ -111,7 +111,10 @@ def _verify_profile(native: NativeSync, declaration: dict, action: str, vault: B
             return "code_mismatch"
     if not native.wait():
         if action != "sync":
-            raise ValueError("Brave did not finish Sync after the approved recovery change; backup stopped")
+            raise ValueError(
+                "Brave did not finish Sync after the approved recovery change; "
+                f"incomplete checks: {native.pending_reason}"
+            )
         return "pending"
     vault.run("sync")
     if native.code() != recovery_words(vault.selected_item(declaration)["notes"]):

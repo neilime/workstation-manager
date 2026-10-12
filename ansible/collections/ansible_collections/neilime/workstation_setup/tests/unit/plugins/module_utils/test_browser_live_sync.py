@@ -31,6 +31,7 @@ def live_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[Mock, MagicMock, Mock
     native = Mock()
     native.code.return_value = REMOTE
     native.wait.return_value = True
+    native.pending_reason = "Entity Metadata"
     pipe = MagicMock()
     monkeypatch.setattr(live, "BrowserPipe", pipe)
     monkeypatch.setattr(live, "NativeSync", Mock(return_value=native))
@@ -98,6 +99,17 @@ def test_restore_uses_stored_chain_and_verifies_the_result(fixture: tuple) -> No
     assert result["verified"] is True
     native.restore.assert_called_once_with(REMOTE, reset=True)
     assert all(call.args == ("sync",) for call in vault.run.call_args_list)
+
+
+def test_incomplete_restore_reports_failed_checks_without_recovery_words(fixture: tuple) -> None:
+    """Setup reports which verification gate timed out without disclosing vault or browser data."""
+
+    vault, _pipe, native, _lifecycle = fixture
+    native.wait.return_value = False
+    with pytest.raises(ValueError, match="incomplete checks: Entity Metadata") as error:
+        live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault)
+    assert LOCAL not in str(error.value) and REMOTE not in str(error.value)
+    assert "backup stopped" not in str(error.value)
 
 
 def test_save_replaces_only_notes_and_verifies_remote_readback(fixture: tuple) -> None:

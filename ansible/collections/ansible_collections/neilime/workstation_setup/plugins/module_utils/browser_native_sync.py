@@ -11,6 +11,30 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     BrowserProtocolError,
 )
 
+_DIAGNOSTIC_CHECKS = (
+    "Transport State",
+    "User Actionable Error",
+    "Sync Feature Enabled",
+    "Setup In Progress",
+    "Sync First-Time Setup Complete",
+    "Sync Cycle Ongoing",
+    "Throttled or Backoff",
+    "Cryptographer Ready To Encrypt",
+    "Cryptographer Has Pending Keys",
+    "GetKey Step Failed",
+    "Download Step Result",
+    "Commit Step Result",
+    "Server Connection",
+    "Auth Error",
+    "Actionable Error",
+    "Unrecoverable Error",
+    "Required Data Types",
+    "Data Type Status",
+    "Entity Counts",
+    "Entity Metadata",
+    "Fresh Download",
+)
+
 # Only booleans and counts leave diagnostics. In particular getAllNodes contains
 # browsing data: reduce it inside the browser, never return it over the pipe.
 _START = r"""(async () => {
@@ -44,14 +68,19 @@ _SNAPSHOT = r"""(async () => {
     'Cryptographer Has Pending Keys': false, 'GetKey Step Failed': false,
     'Download Step Result': 'Success', 'Commit Step Result': 'Success'
   };
-  const healthy = Object.entries(good).every(([key, value]) => stats[key] === value)
-    && typeof stats['Server Connection'] === 'string' && stats['Server Connection'].startsWith('OK')
-    && typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK')
-    && aboutInfo.actionable_error_detected === false
-    && aboutInfo.unrecoverable_error_detected === false
-    && ['Bookmarks', 'Passwords', 'Preferences', 'Extensions', 'Sessions'].every(
-      name => active.some(row => row.name === name))
-    && rows.every(row => row.status === 'ok' || (row.status === 'severity_info' && row.state === 'Not Running'));
+  const checks = Object.fromEntries(Object.entries(good).map(([key, value]) => [key, stats[key] === value]));
+  checks['Server Connection'] = typeof stats['Server Connection'] === 'string'
+    && stats['Server Connection'].startsWith('OK');
+  checks['Auth Error'] = typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK');
+  checks['Actionable Error'] = aboutInfo.actionable_error_detected === false;
+  checks['Unrecoverable Error'] = aboutInfo.unrecoverable_error_detected === false;
+  checks['Required Data Types'] = ['Bookmarks', 'Passwords', 'Preferences', 'Extensions', 'Sessions'].every(
+    name => active.some(row => row.name === name));
+  checks['Data Type Status'] = rows.every(
+    row => row.status === 'ok' || (row.status === 'severity_info' && row.state === 'Not Running'));
+  const healthy = Object.values(checks).every(value => value);
+  checks['Entity Counts'] = false;
+  checks['Entity Metadata'] = false;
   let pending = true;
   if (healthy) {
     const groups = await sendWithPromise('getAllNodes');
@@ -72,12 +101,18 @@ _SNAPSHOT = r"""(async () => {
         return /^\d+$/.test(String(sequence)) && /^\d+$/.test(String(acknowledged))
           && BigInt(sequence) === BigInt(acknowledged);
       }));
+    checks['Entity Counts'] = countsReady;
+    checks['Entity Metadata'] = nodesReady;
     pending = !countsReady || !nodesReady;
   }
-  // A refresh requested before the engine initialized may have been ignored.
-  // Retry once it becomes healthy, without accepting the previous session's status.
-  if (healthy && !window.workstationSync.downloaded) chrome.send('triggerRefresh');
+  // Initialization can discard a refresh, and a failed download leaves unhealthy
+  // diagnostics. Retry an idle active engine without requiring that download to
+  // have already succeeded; verification still requires fresh, healthy results.
+  if (stats['Transport State'] === 'Active' && stats['Sync Cycle Ongoing'] === false
+      && !window.workstationSync.downloaded) chrome.send('triggerRefresh');
   chrome.send('requestDataAndRegisterForUpdates');
+  checks['Fresh Download'] = window.workstationSync.downloaded === true;
+  window.workstationSync.checks = checks;
   return {healthy, pending, fresh: window.workstationSync.downloaded === true};
 })()"""
 
@@ -199,6 +234,7 @@ class NativeSync:
 
     def __init__(self, pipe: BrowserPipe, profile_path: str) -> None:
         self.pipe = pipe
+        self.pending_reason = "Sync verification did not complete"
         version = pipe.page("brave://version")
         matches = self._evaluate(
             version,
@@ -274,6 +310,7 @@ class NativeSync:
     def wait(self, timeout: float = 120) -> bool:
         """Require a fresh successful download and two clean observations without pending changes."""
 
+        self.pending_reason = "Sync verification did not complete"
         session = self.pipe.page("brave://sync-internals")
         if self._evaluate(session, _START, "starting Sync diagnostics") is not True:
             raise BrowserProtocolError("Brave could not request a fresh Sync cycle")
@@ -294,4 +331,14 @@ class NativeSync:
             if clean >= 2:
                 return True
             time.sleep(min(2, max(0, deadline - time.monotonic())))
+        checks = self._evaluate(session, "window.workstationSync.checks", "reading incomplete Sync checks")
+        if (
+            not isinstance(checks, dict)
+            or set(checks) != set(_DIAGNOSTIC_CHECKS)
+            or any(not isinstance(value, bool) for value in checks.values())
+        ):
+            raise BrowserProtocolError("Brave returned unsupported Sync diagnostics")
+        self.pending_reason = ", ".join(name for name in _DIAGNOSTIC_CHECKS if not checks[name]) or (
+            "two consecutive clean observations"
+        )
         return False

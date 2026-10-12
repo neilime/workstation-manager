@@ -82,6 +82,31 @@ def snapshot(pipe: BrowserPipe, page: str) -> dict:
     return result
 
 
+def retry_failed_download(pipe: BrowserPipe, page: str) -> None:
+    """An active engine must retry a failed download before diagnostics can become healthy."""
+
+    pipe.evaluate(
+        page,
+        """(async () => {
+      const {aboutInfo} = await import('./about.js');
+      aboutInfo.type_status[0].status = 'ok';
+      const download = aboutInfo.details.flatMap(section => section.data)
+        .find(item => item.stat_name === 'Download Step Result');
+      download.stat_value = 'Network error';
+      window.workstationSync.downloaded = false;
+      window.fixtureRefreshes = 0;
+      const send = chrome.send;
+      chrome.send = (method, args) => {
+        if (method === 'triggerRefresh') window.fixtureRefreshes++;
+        else send(method, args);
+      };
+      return true;
+    })()""",
+    )
+    assert snapshot(pipe, page) == {"healthy": False, "pending": True, "fresh": False}
+    assert pipe.evaluate(page, "window.fixtureRefreshes") == 1
+
+
 def diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Run production JavaScript against stale, pending, errored, and complete native-shaped responses."""
 
@@ -102,6 +127,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, prepare) is True
     stale = snapshot(pipe, page)
     assert stale == {"healthy": True, "pending": False, "fresh": False}, stale
+    assert pipe.evaluate(page, "window.workstationSync.checks['Fresh Download']") is False
     event = """(async () => {
       const {webUIListenerCallback} = await import('chrome://resources/js/cr.js');
       webUIListenerCallback('onProtocolEvent', {time: Date.now() OFFSET,
@@ -114,6 +140,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
     pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.sequence_number = '2'; true")
     assert snapshot(pipe, page)["pending"] is True
+    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Metadata']") is False
     pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.acked_sequence_number = '2'; true")
     tombstone = (
         "(async()=>{const {aboutInfo} = await import('./about.js'); "
@@ -121,6 +148,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     )
     pipe.evaluate(page, tombstone)
     assert snapshot(pipe, page)["pending"] is True
+    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
     pipe.evaluate(page, tombstone.replace("= 2", "= 1"))
     assert snapshot(pipe, page)["pending"] is False
     pipe.evaluate(
@@ -129,8 +157,10 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
         "aboutInfo.type_status[0].status = 'severity_error'; return true;})()",
     )
     assert snapshot(pipe, page)["healthy"] is False
+    assert pipe.evaluate(page, "window.workstationSync.checks['Data Type Status']") is False
+    retry_failed_download(pipe, page)
     print(
-        "Native diagnostic checks: stale success, pending upload, pending deletion, failure, and success passed.",
+        "Native diagnostics: stale success, pending upload, pending deletion, failure, retry, and success passed.",
         flush=True,
     )
 
