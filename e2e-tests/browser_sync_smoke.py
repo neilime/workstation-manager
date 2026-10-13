@@ -313,15 +313,16 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
     pipe.evaluate(
         page,
         """(() => {
-          window.fixtureNodes = [{type: 'Device Info', nodes: [{
-            SPECIFICS: {device_info: {cache_guid: 'captured-device'}},
-            metadata: {server_id: 'captured-server-id'}
-          }]}];
+          const send = chrome.send;
+          chrome.send = (method, args) => {
+            if (method === 'getAllNodes') throw new Error('Teardown must not query browser data');
+            send(method, args);
+          };
           window.fixtureRefreshes = 0;
           return true;
         })()""",
     )
-    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}('another-device')") is False
+    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}('')") is False
     assert pipe.evaluate(page, f"{_WATCH_REMOVAL}('captured-device')") is True
     # Exercise the actual interval which prompts uploads during native leave.
     assert (
@@ -331,18 +332,24 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
         )
         is True
     )
+    # Native ClientTagHash for the synthetic DeviceInfo_captured-device tag.
+    tag = "vDaa7bHEfGrVKfQexaIbA4HNnqE="
     cases = [
         # Stale responses, updates, other devices, and failed commits do not prove deletion.
-        ("captured-server-id", True, "captured-server-id", "SUCCESS", -10000, False),
-        ("captured-server-id", False, "captured-server-id", "SUCCESS", 0, False),
-        ("another-server-id", True, "another-server-id", "SUCCESS", 0, False),
-        ("captured-server-id", True, "captured-server-id", "TRANSIENT_ERROR", 0, False),
-        ("captured-server-id", True, "another-server-id", "SUCCESS", 0, False),
-        ("captured-server-id", True, "captured-server-id", "SUCCESS", 0, True),
+        (tag, "captured-server-id", True, "captured-server-id", "SUCCESS", -10000, False),
+        (tag, "captured-server-id", False, "captured-server-id", "SUCCESS", 0, False),
+        ("another-tag", "captured-server-id", True, "captured-server-id", "SUCCESS", 0, False),
+        (None, "captured-server-id", True, "captured-server-id", "SUCCESS", 0, False),
+        (tag, "", True, "", "SUCCESS", 0, False),
+        (tag, "captured-server-id", True, "captured-server-id", "TRANSIENT_ERROR", 0, False),
+        (tag, "captured-server-id", True, "another-server-id", "SUCCESS", 0, False),
+        (tag, "captured-server-id", True, "captured-server-id", "SUCCESS", 0, True),
     ]
-    for request_id, deleted, response_id, response_type, offset, expected in cases:
+    for request_tag, request_id, deleted, response_id, response_type, offset, expected in cases:
         event = {
-            "request": {"commit": {"entries": [{"id_string": request_id, "deleted": deleted}]}},
+            "request": {
+                "commit": {"entries": [{"id_string": request_id, "client_tag_hash": request_tag, "deleted": deleted}]}
+            },
             "response": {"commit": {"entryresponse": [{"id_string": response_id, "response_type": response_type}]}},
         }
         result = pipe.evaluate(

@@ -16,7 +16,6 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
-    _GET_NODES,
     _START,
     NativeSync,
 )
@@ -26,36 +25,39 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 # succeed after its short upload deadline even when deletion was not committed.
 _WATCH_REMOVAL = r"""(async identity => {
   const {addWebUiListener} = await import('chrome://resources/js/cr.js');
-  const groups = await BOUNDED_NODES(10000);
-  if (!Array.isArray(groups)) return false;
-  const nodes = groups.find(group => group.type === 'Device Info')?.nodes;
-  if (!Array.isArray(nodes)) return false;
-  const own = nodes.filter(node => node.SPECIFICS?.device_info?.cache_guid === identity);
-  if (own.length !== 1 || typeof own[0].metadata?.server_id !== 'string'
-      || !own[0].metadata.server_id) return false;
-  const entity = own[0].metadata.server_id;
+  if (typeof identity !== 'string' || !identity) return false;
+  // Chromium's ClientTagHash hashes the empty DeviceInfoSpecifics field
+  // (EntitySpecifics field 154522, length-delimited) followed by DeviceInfo_<GUID>.
+  // Tombstone commits retain this tag, so no all-data node query is needed.
+  const input = new Uint8Array([
+    0xd2, 0xb9, 0x4b, 0x00, ...new TextEncoder().encode('DeviceInfo_' + identity)
+  ]);
+  const digest = await crypto.subtle.digest('SHA-1', input);
+  const tag = btoa(String.fromCharCode(...new Uint8Array(digest)));
   const state = window.workstationDeviceRemoval = {
-    since: Date.now(), requested: false, acknowledged: false
+    since: Date.now(), requested: null, acknowledged: false
   };
   addWebUiListener('onProtocolEvent', event => {
     if (typeof event.time !== 'number' || event.time < state.since) return;
     if (event.type === 'Commit Request') {
       const entries = event.proto?.commit?.entries;
-      state.requested = Array.isArray(entries) && entries.some(
-        entry => entry.id_string === entity && entry.deleted === true);
+      const own = Array.isArray(entries) ? entries.filter(
+        entry => entry.client_tag_hash === tag && entry.deleted === true
+          && typeof entry.id_string === 'string' && entry.id_string) : [];
+      state.requested = own.length === 1 ? own[0].id_string : null;
     }
     if (event.type === 'Commit Response' && state.requested) {
       const entries = event.proto?.commit?.entryresponse;
       state.acknowledged ||= Array.isArray(entries) && entries.some(
-        entry => entry.id_string === entity && entry.response_type === 'SUCCESS');
-      state.requested = false;
+        entry => entry.id_string === state.requested && entry.response_type === 'SUCCESS');
+      state.requested = null;
     }
   });
   // Native refresh schedules commit work as well as downloads. Keep prompting
   // it while the leave handler waits, before that handler stops the Sync engine.
   state.timer = setInterval(() => chrome.send('triggerRefresh'), 100);
   return true;
-})""".replace("BOUNDED_NODES", _GET_NODES)
+})"""
 
 
 def device_identity(profile: Path, *, require_initialized: bool = False) -> str | None:

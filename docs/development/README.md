@@ -456,6 +456,11 @@ test devices. Each device must complete a fresh Sync download and have a healthy
 Device Info tracker before its leave request. Teardown prompts pending commits
 and requires a successful server response for that exact device's deletion;
 Brave's local leave acknowledgement alone does not prove removal.
+Deletion requests are matched using Chromium's native
+[client tag hash](https://github.com/chromium/chromium/blob/main/components/sync/base/client_tag_hash.cc),
+derived from the captured device GUID, and their server IDs are matched to
+successful commit responses. This keeps teardown independent of node queries
+across unrelated browser data types.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup
 failure, it prints Lima logs and attempts a bounded guest diagnostic command
 before teardown. Inspect the `Prepare e2e VM and tooling` job output for provisioning,
