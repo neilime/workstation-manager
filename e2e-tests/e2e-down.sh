@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=e2e-tests/e2e-common.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/e2e-common.sh"
+
+E2E_VM_NAME="${1:?Lima instance name is required}"
+instances="$(limactl list --format '{{.Name}}')"
+if ! printf '%s\n' "$instances" | grep -Fxq "$E2E_VM_NAME"; then
+	exit 0
+fi
+
+status="$(limactl list "$E2E_VM_NAME" --format '{{.Status}}')"
+if [[ "$status" != "Running" ]]; then
+	# A stopped guest still owns its remote devices. Resume it before discarding
+	# the identities needed by Brave's native current-device leave operation.
+	limactl start --timeout=2m "$E2E_VM_NAME"
+fi
+
+if ! run_e2e_timed_command browser-teardown run_e2e_lima_control_command 300 \
+	env PYTHONPATH=/workspace/ansible/collections \
+	python3 /workspace/e2e-tests/browser_sync_fixture.py leave; then
+	printf '%s\n' 'Browser fixture teardown failed; the VM was retained so its device identities can be retried.' >&2
+	exit 1
+fi
+
+limactl stop "$E2E_VM_NAME"
+limactl delete -f "$E2E_VM_NAME"

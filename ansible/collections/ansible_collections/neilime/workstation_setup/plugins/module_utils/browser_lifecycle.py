@@ -33,6 +33,20 @@ class BrowserLifecycleBlocked(ValueError):
     """The initial browser close could not complete before any approved writes."""
 
 
+def automation_arguments(executable: str, root: str, profile: str) -> list[str]:
+    """Open the selected profile over private pipes while preserving session tabs."""
+
+    return [
+        executable,
+        "--remote-debugging-pipe",
+        "--no-first-run",
+        "--no-default-browser-check",
+        f"--user-data-dir={root}",
+        f"--profile-directory={profile}",
+        "--restore-last-session",
+    ]
+
+
 def browser_processes(root: Path) -> list[int]:
     """Identify main processes owned by this account and using this exact data root."""
 

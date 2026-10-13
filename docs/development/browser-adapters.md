@@ -154,6 +154,9 @@ still stop recovery.
 Timeout errors list incomplete verification checks. Only fixed check names and
 boolean results leave the diagnostic page; native error text, entity data, and
 recovery words remain private.
+Enrollment diagnostics also inspect numeric protocol metrics, which remain
+available while the engine is initializing. A throttled enrollment points to
+the [device-limit recovery procedure](../usage/browser.md#restore-on-another-computer).
 
 The native interfaces follow
 [Brave's Sync handler](https://github.com/brave/brave-core/blob/master/browser/ui/webui/settings/brave_sync_handler.cc)

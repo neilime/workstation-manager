@@ -65,6 +65,11 @@ unrelated browser data and does not update Bitwarden recovery words. Brave close
 safely for recovery and reopens if it was running. Dry runs preview recovery
 without launching Brave or joining chains.
 
+If enrollment reports server throttling, check **Settings → Sync → Manage your
+synced devices** from a profile already connected to that chain. Brave limits the
+number of connected devices. Remove only devices you no longer use, then rerun
+setup. Old disposable test VMs also occupy device slots until they leave the chain.
+
 Brave Sync uses a chain code independently of Google site accounts. Server
 data expires after 12 months without access; recovery words cannot recover data
 that has expired or been deleted. See the

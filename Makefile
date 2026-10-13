@@ -106,8 +106,7 @@ e2e-test: setup ## Run phased backup, setup, and cleanup assertions against the 
 	@./e2e-tests/e2e-test.sh $(VM_NAME)
 
 e2e-down: ## Stop and remove the Lima end-to-end test VM
-	@limactl stop $(VM_NAME) 2>/dev/null || true
-	@limactl delete -f $(VM_NAME) 2>/dev/null || true
+	@bash "$(CURDIR)/e2e-tests/e2e-down.sh" "$(VM_NAME)"
 
 e2e-reset: e2e-down e2e-up ## Recreate the Lima end-to-end test VM
 
