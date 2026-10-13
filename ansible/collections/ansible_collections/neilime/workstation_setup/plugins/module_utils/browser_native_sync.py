@@ -309,6 +309,29 @@ class NativeSync:
                 "Brave could not read its recovery code; check desktop keyring access"
             ) from error
 
+    def enrollment_throttled(self) -> bool:
+        """Detect the fixed Sync protocol throttle code even before engine initialization."""
+
+        name = "Sync.PostedClientToServerMessageError2"
+        histograms = self.pipe.call("Browser.getHistograms", {"query": name}).get("histograms", [])
+        if not isinstance(histograms, list):
+            return False
+        for histogram in histograms:
+            if not isinstance(histogram, dict) or histogram.get("name") != name:
+                continue
+            buckets = histogram.get("buckets", [])
+            if not isinstance(buckets, list):
+                continue
+            for bucket in buckets:
+                if not isinstance(bucket, dict):
+                    continue
+                count = bucket.get("count")
+                # SyncEnums.THROTTLED is 3. Sparse metric buckets preserve that
+                # protocol code without exposing the server's response payload.
+                if bucket.get("low") == 3 and isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                    return True
+        return False
+
     def restore(self, code: str, *, reset: bool = False) -> None:
         """Join an approved chain with Brave's current pairing suffix and verify it."""
 
@@ -329,9 +352,15 @@ class NativeSync:
             # even a healthy engine cannot replace the failed acknowledgement.
             try:
                 completed = self.wait(timeout=5)
+                throttled = self.enrollment_throttled()
             except BrowserProtocolError:
                 raise error from None
             detail = "enrollment acknowledgement" if completed else self.pending_reason
+            if throttled:
+                detail += (
+                    "; the Sync server throttled enrollment. Check the chain's device limit "
+                    "and remove obsolete devices from an already-connected Brave profile before retrying"
+                )
             raise BrowserProtocolError(f"{error}; incomplete checks: {detail}") from error
         if accepted is not True or self.code() != code:
             raise BrowserProtocolError("Brave did not join the selected recovery chain")

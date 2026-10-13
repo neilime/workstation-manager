@@ -12,6 +12,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
     BrowserLifecycleBlocked,
+    automation_arguments,
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
@@ -170,15 +171,7 @@ def sync_browser_recovery(
             # Restore session tabs before creating our diagnostic pages. Closing
             # only those pages preserves the user's session for a normal restart.
             with BrowserPipe(
-                [
-                    executable,
-                    "--remote-debugging-pipe",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    f"--user-data-dir={user_data_dir}",
-                    f"--profile-directory={declaration['directory']}",
-                    "--restore-last-session",
-                ],
+                automation_arguments(executable, user_data_dir, declaration["directory"]),
                 environment,
             ) as pipe:
                 status = _verify_profile(

@@ -298,6 +298,32 @@ def test_failed_enrollment_reports_checks_without_accepting_a_healthy_engine(
     wait.assert_called_once_with(timeout=5)
 
 
+@pytest.mark.parametrize("response_code,throttled", [(3, True), (8, False)])
+def test_enrollment_throttling_reports_an_action_without_server_payloads(
+    response_code: int, throttled: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Protocol throttling explains a stalled join without exposing recovery words or server data."""
+
+    pipe = Mock()
+    code = " ".join(["private"] * 24)
+    pipe.evaluate.side_effect = [
+        True, True, _ENCRYPTION_READY, code + " suffix", BrowserProtocolError("Native enrollment timed out")
+    ]
+    pipe.call.return_value = {
+        "histograms": [{
+            "name": "Sync.PostedClientToServerMessageError2",
+            "buckets": [{"low": response_code, "high": response_code + 1, "count": 1}],
+            "extra": "private-server-payload",
+        }]
+    }
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    monkeypatch.setattr(instance, "wait", Mock(return_value=False))
+    with pytest.raises(BrowserProtocolError) as error:
+        instance.restore(code)
+    assert ("device limit" in str(error.value)) is throttled
+    assert "private" not in str(error.value)
+
+
 def test_process_selection_is_scoped_to_the_managed_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Unrelated browsers, roots, and renderer processes are never selected for shutdown."""
 

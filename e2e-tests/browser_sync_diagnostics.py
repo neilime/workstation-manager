@@ -11,6 +11,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     BrowserPipe,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
+    automation_arguments,
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
@@ -57,14 +58,7 @@ def control_chain(executable: str, environment: dict[str, str]) -> None:
 
     with tempfile.TemporaryDirectory(prefix="workstation-sync-control-") as root:
         with BrowserPipe(
-            [
-                executable,
-                "--remote-debugging-pipe",
-                "--no-first-run",
-                "--no-default-browser-check",
-                f"--user-data-dir={root}",
-                "--profile-directory=Default",
-            ],
+            automation_arguments(executable, root, "Default"),
             environment,
         ) as pipe:
             native = NativeSync(pipe, str(Path(root) / "Default"))
@@ -101,15 +95,7 @@ def main() -> None:
                 continue
             profile = preferences_path.parent
             with BrowserPipe(
-                [
-                    executable,
-                    "--remote-debugging-pipe",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    f"--user-data-dir={root}",
-                    f"--profile-directory={profile.name}",
-                    "--restore-last-session",
-                ],
+                automation_arguments(executable, str(root), profile.name),
                 environment,
             ) as pipe:
                 native = NativeSync(pipe, str(profile))
