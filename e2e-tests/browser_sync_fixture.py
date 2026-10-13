@@ -48,6 +48,11 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     """Leave only a captured test device after checking its live identity and tracker."""
 
     native = NativeSync(pipe, str(profile))
+    # Brave's leave callback can complete after its own short retry deadline.
+    # Require fresh successful synchronization before requesting device removal;
+    # an offline or throttled fixture must retain its identity for a later retry.
+    if native.wait() is not True:
+        raise ValueError("The test device cannot verify Sync before teardown; its identity was retained")
     session = pipe.page("brave://sync-internals")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

@@ -146,7 +146,7 @@ def test_teardown_refuses_a_replaced_device_identity(tmp_path: Path, monkeypatch
 def test_live_device_identity_is_required_before_leaving(matches: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     """Native teardown requires an active tracker and the exact captured device GUID."""
 
-    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock(return_value=mock.Mock(wait=lambda: True)))
     pipe = mock.Mock()
     pipe.evaluate.side_effect = [{"active": True, "matches": matches}, True]
     if matches:
@@ -156,6 +156,16 @@ def test_live_device_identity_is_required_before_leaving(matches: bool, monkeypa
         with pytest.raises(ValueError, match="live browser device no longer matches"):
             browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
         assert pipe.evaluate.call_count == 1
+
+
+def test_teardown_does_not_leave_when_sync_cannot_be_verified(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unavailable server cannot turn a local reset into successful remote teardown."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock(return_value=mock.Mock(wait=lambda: False)))
+    pipe = mock.Mock()
+    with pytest.raises(ValueError, match="cannot verify Sync before teardown"):
+        browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    pipe.evaluate.assert_not_called()
 
 
 @pytest.mark.parametrize("cleanup_status", [0, 17])

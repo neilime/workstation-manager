@@ -307,14 +307,20 @@ def test_enrollment_throttling_reports_an_action_without_server_payloads(
     pipe = Mock()
     code = " ".join(["private"] * 24)
     pipe.evaluate.side_effect = [
-        True, True, _ENCRYPTION_READY, code + " suffix", BrowserProtocolError("Native enrollment timed out")
+        True,
+        True,
+        _ENCRYPTION_READY,
+        code + " suffix",
+        BrowserProtocolError("Native enrollment timed out"),
     ]
     pipe.call.return_value = {
-        "histograms": [{
-            "name": "Sync.PostedClientToServerMessageError2",
-            "buckets": [{"low": response_code, "high": response_code + 1, "count": 1}],
-            "extra": "private-server-payload",
-        }]
+        "histograms": [
+            {
+                "name": "Sync.PostedClientToServerMessageError2",
+                "buckets": [{"low": response_code, "high": response_code + 1, "count": 1}],
+                "extra": "private-server-payload",
+            }
+        ]
     }
     instance = native.NativeSync(pipe, "/fixture/Default")
     monkeypatch.setattr(instance, "wait", Mock(return_value=False))
