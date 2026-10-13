@@ -255,6 +255,23 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert snapshot(pipe, page)["fresh"] is False
     pipe.evaluate(page, event.replace("OFFSET", ""))
     assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
+    # A discarded/reloaded page loses its diagnostic state. Previously observed
+    # success cannot certify the new context; it must request a fresh download.
+    pipe.evaluate(page, "delete window.workstationSync; true")
+    assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": False}
+    pipe.evaluate(page, event.replace("OFFSET", ""))
+    assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
+    assert pipe.evaluate(
+        page,
+        """(async () => {
+      const {webUIListenerCallback} = await import('chrome://resources/js/cr.js');
+      webUIListenerCallback('onProtocolEvent', {time: Date.now(), type: 'Commit Response', proto: {
+        commit: {entryresponse: [{response_type: 'TRANSIENT_ERROR', error_message: 'private-data'},
+          {response_type: 'private-error'}]}
+      }});
+      return window.workstationSync.commitErrors;
+    })()""",
+    ) == ["TRANSIENT_ERROR"]
     retry_pending_changes(pipe, page)
     retry_missing_nodes(pipe, page)
     pipe.evaluate(
@@ -267,7 +284,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     retry_failed_download(pipe, page)
     print(
         "Native diagnostics: stale success, pending upload/deletion, missing/late/rejected node replies, "
-        "failure, retry, and success passed.",
+        "lost page state, redacted commit errors, failure, retry, and success passed.",
         flush=True,
     )
     device_removal_acknowledgement(pipe, page)

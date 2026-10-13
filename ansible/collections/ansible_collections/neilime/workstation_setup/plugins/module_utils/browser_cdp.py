@@ -25,6 +25,24 @@ class BrowserProtocolError(ValueError):
     """Expose only a fixed diagnostic, never browser responses or JavaScript values."""
 
 
+def _protocol_rejection(error: object) -> str:
+    """Reduce protocol errors to numeric codes and exact known context-loss reasons."""
+
+    code = error.get("code") if isinstance(error, dict) else None
+    reason = error.get("message") if isinstance(error, dict) else None
+    detail = "Brave rejected the automation request"
+    if isinstance(code, int) and not isinstance(code, bool) and -32768 <= code < 0:
+        detail += f" (protocol code {code})"
+    if isinstance(reason, str) and reason in {
+        "Execution context was destroyed.",
+        "Cannot find context with specified id",
+        "Inspected target navigated or closed",
+        "Promise was collected",
+    }:
+        detail += ": " + reason
+    return detail
+
+
 class BrowserPipe:
     """Own one browser process and its private DevTools connection."""
 
@@ -96,7 +114,9 @@ class BrowserPipe:
                     raise BrowserProtocolError("Brave returned an invalid automation response")
                 if message.get("id") != self.sequence:
                     continue
-                if "error" in message or not isinstance(message.get("result"), dict):
+                if "error" in message:
+                    raise BrowserProtocolError(_protocol_rejection(message["error"]))
+                if not isinstance(message.get("result"), dict):
                     raise BrowserProtocolError("Brave rejected the automation request")
                 return message["result"]
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -120,6 +140,7 @@ class BrowserPipe:
                 exception = details.get("exception", {})
                 kind = exception.get("className") if isinstance(exception, dict) else None
                 line = details.get("lineNumber")
+                column = details.get("columnNumber")
                 # Exception text can contain recovery words or browser data.
                 # Only fixed runtime classes and bounded source coordinates are
                 # useful for identifying a failing trusted automation expression.
@@ -133,6 +154,8 @@ class BrowserPipe:
                     message += f" ({kind}"
                     if isinstance(line, int) and not isinstance(line, bool) and 0 <= line < 10000:
                         message += f" at script line {line + 1}"
+                        if isinstance(column, int) and not isinstance(column, bool) and 0 <= column < 10000:
+                            message += f", column {column + 1}"
                     message += ")"
             raise BrowserProtocolError(message)
         return result["value"]

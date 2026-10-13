@@ -47,7 +47,8 @@ while True:
     if method=='invalid':
         os.write(4,b'private-malformed-response\0'); continue
     response={'id':message['id'],'result':{'accepted':True}}
-    if method=='error': response={'id':message['id'],'error':{'message':'private-browser-secret'}}
+    if method=='error':
+        response={'id':message['id'],'error':message.get('params') or {'message':'private-browser-secret'}}
     os.write(4,b'{"method":"event","params":{"secret":"private-event"}}\0')
     data=json.dumps(response).encode()+b'\0'
     os.write(4,data[:5]); os.write(4,data[5:])
@@ -93,6 +94,18 @@ def test_protocol_failures_are_bounded_and_never_echo_browser_payloads(method: s
     assert pipe.process.returncode is not None
 
 
+@pytest.mark.parametrize("reason", ["Promise was collected", "private-browser-secret"])
+def test_protocol_rejections_report_only_codes_and_fixed_context_reasons(reason: str) -> None:
+    """Context loss is distinguishable without exposing arbitrary protocol error messages."""
+
+    with BrowserPipe([sys.executable, "-c", _CHILD], dict(os.environ)) as pipe:
+        with pytest.raises(BrowserProtocolError) as error:
+            pipe.call("error", {"code": -32000, "message": reason, "data": "private-browser-data"})
+    assert "protocol code -32000" in str(error.value)
+    assert ("Promise was collected" in str(error.value)) is (reason == "Promise was collected")
+    assert "private" not in str(error.value)
+
+
 @pytest.mark.parametrize(
     "result", [{"exceptionDetails": {"text": "private-code"}}, {"result": {"description": "private-code"}}]
 )
@@ -106,11 +119,16 @@ def test_javascript_failures_never_expose_secret_values(result: dict, monkeypatc
 
 
 @pytest.mark.parametrize(
-    ("kind", "line", "suffix"),
-    [("TypeError", 73, " (TypeError at script line 74)"), ("private-error", 0, ""), (["private-error"], "private", "")],
+    ("kind", "line", "column", "suffix"),
+    [
+        ("TypeError", 73, 42, " (TypeError at script line 74, column 43)"),
+        ("TypeError", 73, "private", " (TypeError at script line 74)"),
+        ("private-error", 0, 0, ""),
+        (["private-error"], "private", "private", ""),
+    ],
 )
 def test_javascript_failures_report_only_fixed_classes_and_source_coordinates(
-    kind: object, line: object, suffix: str, monkeypatch: pytest.MonkeyPatch
+    kind: object, line: object, column: object, suffix: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Runtime locations aid diagnosis without exposing exception messages or browser values."""
 
@@ -118,6 +136,7 @@ def test_javascript_failures_report_only_fixed_classes_and_source_coordinates(
     response = {
         "exceptionDetails": {
             "lineNumber": line,
+            "columnNumber": column,
             "text": "private-browser-data",
             "exception": {"className": kind, "description": "private-recovery-code"},
         }
@@ -233,7 +252,7 @@ def test_native_wait_rejects_errors_pending_uploads_and_stale_success(
     checks = dict.fromkeys(_DIAGNOSTIC_CHECKS, True)
     incomplete = "Entity Metadata" if dirty["pending"] else "Fresh Download" if not dirty["fresh"] else "Auth Error"
     checks[incomplete] = False
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks]
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks, []]
     ticks = iter([0, 0, 0, 0, 0, 2, 2])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
@@ -271,6 +290,39 @@ def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyP
     instance = native.NativeSync(pipe, "/fixture/Default")
     assert instance.wait() is True
     assert pipe.evaluate.call_count == 8
+
+
+@pytest.mark.parametrize("commit_errors", [["TRANSIENT_ERROR"], ["private-server-error"]])
+def test_failed_sync_reports_only_known_commit_error_categories(
+    commit_errors: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failed recovery retains safe server error evidence from the original browser process."""
+
+    pipe = Mock()
+    dirty = {"healthy": False, "pending": True, "fresh": True}
+    checks = {**dict.fromkeys(_DIAGNOSTIC_CHECKS, True), "Commit Step Result": False}
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks, commit_errors]
+    pipe.call.return_value = {
+        "histograms": [
+            {
+                "name": "Sync.PostedClientToServerMessageError2",
+                "buckets": [{"low": 8, "count": 1}, {"low": "private-code", "count": 1}, {"low": True, "count": 1}],
+            }
+        ]
+    }
+    ticks = iter([0, 0, 0, 0, 0, 2, 2])
+    monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    if commit_errors == ["TRANSIENT_ERROR"]:
+        assert instance.wait(timeout=1) is False
+        assert instance.pending_reason == (
+            "Commit Step Result; commit responses: TRANSIENT_ERROR; Sync protocol error codes: 8"
+        )
+    else:
+        with pytest.raises(BrowserProtocolError, match="unsupported commit diagnostics") as error:
+            instance.wait(timeout=1)
+        assert "private" not in str(error.value)
 
 
 def test_restore_uses_native_pairing_and_checks_the_result() -> None:

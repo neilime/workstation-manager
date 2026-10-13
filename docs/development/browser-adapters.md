@@ -153,10 +153,12 @@ Each native node query is bounded within the overall verification deadline.
 Missing replies remain unverified and are retried; late replies do not count as
 fresh observations. Explicit native rejections and broken automation connections
 still stop recovery.
-Timeout errors list incomplete verification checks. Only fixed check names and
-boolean results leave the diagnostic page; native error text, entity data, and
-recovery words remain private. Automation errors can include a fixed JavaScript
-error class and source line number without exposing exception messages.
+Loss of diagnostic page state starts a new fresh-download check.
+Timeout errors list incomplete checks and allowlisted commit error categories
+from the same browser process. Only fixed categories, boolean results, and numeric
+protocol codes leave diagnostics; native error text, entity data, and recovery
+words remain private. Automation errors can include a fixed JavaScript error class,
+source coordinates, and allowlisted context-loss reasons without exposing arbitrary messages.
 Enrollment diagnostics also inspect numeric protocol metrics, which remain
 available while the engine is initializing. A throttled enrollment points to
 the [device-limit recovery procedure](../usage/browser.md#restore-on-another-computer).

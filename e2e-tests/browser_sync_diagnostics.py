@@ -101,7 +101,12 @@ def main() -> None:
                 native = NativeSync(pipe, str(profile))
                 page = pipe.page("brave://sync-internals")
                 pipe.evaluate(page, "chrome.send('requestDataAndRegisterForUpdates'); true")
-                verified = native.wait(timeout=120)
+                try:
+                    verified = native.wait(timeout=120)
+                finally:
+                    # Preserve numeric failure evidence even if a diagnostic
+                    # page loses its execution context during browser startup.
+                    network_metrics(pipe)
                 state = pipe.evaluate(
                     page,
                     "(async () => {const {aboutInfo} = await import('./about.js'); "
@@ -120,7 +125,6 @@ def main() -> None:
                 )
                 if not verified:
                     print(f"Incomplete checks: {native.pending_reason}", flush=True)
-                network_metrics(pipe)
         control_chain(executable, environment)
 
 

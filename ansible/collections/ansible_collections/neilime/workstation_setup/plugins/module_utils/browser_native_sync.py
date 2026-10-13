@@ -41,12 +41,16 @@ _DIAGNOSTIC_CHECKS = (
 # browsing data: reduce it inside the browser, never return it over the pipe.
 _START = r"""(async () => {
   const {addWebUiListener} = await import('chrome://resources/js/cr.js');
-  window.workstationSync = {since: Date.now(), downloaded: false};
+  const state = window.workstationSync = {since: Date.now(), downloaded: false, commitErrors: []};
   addWebUiListener('onProtocolEvent', event => {
-    const state = window.workstationSync;
     if (typeof event.time !== 'number' || event.time < state.since) return;
     if (event.type === 'GetUpdates Response') {
       state.downloaded = /^Received \d+ update\(s\)\.$/.test(event.details);
+    }
+    const entries = event.proto?.commit?.entryresponse;
+    if (event.type === 'Commit Response' && Array.isArray(entries)) {
+      const known = ['CONFLICT', 'RETRY', 'INVALID_MESSAGE', 'OVER_QUOTA', 'TRANSIENT_ERROR'];
+      state.commitErrors = [...new Set(entries.map(entry => entry.response_type).filter(type => known.includes(type)))];
     }
   });
   chrome.send('setIncludeSpecifics', [false]);
@@ -67,10 +71,11 @@ _GET_NODES = r"""(async timeoutMs => {
 })"""
 
 _SNAPSHOT = r"""(async (timeoutMs) => {
+  if (!window.workstationSync) await START_SYNC;
   const {aboutInfo} = await import('./about.js');
-  const stats = Object.fromEntries((aboutInfo.details || []).flatMap(
+  const stats = Object.fromEntries((aboutInfo?.details || []).flatMap(
     section => section.data.map(item => [item.stat_name, item.stat_value])));
-  const rows = (aboutInfo.type_status || []).filter(row => row.status !== 'header');
+  const rows = (aboutInfo?.type_status || []).filter(row => row.status !== 'header');
   const active = rows.filter(row => row.state === 'Running');
   const good = {
     'Transport State': 'Active', 'User Actionable Error': 'None',
@@ -84,8 +89,8 @@ _SNAPSHOT = r"""(async (timeoutMs) => {
   checks['Server Connection'] = typeof stats['Server Connection'] === 'string'
     && stats['Server Connection'].startsWith('OK');
   checks['Auth Error'] = typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK');
-  checks['Actionable Error'] = aboutInfo.actionable_error_detected === false;
-  checks['Unrecoverable Error'] = aboutInfo.unrecoverable_error_detected === false;
+  checks['Actionable Error'] = aboutInfo?.actionable_error_detected === false;
+  checks['Unrecoverable Error'] = aboutInfo?.unrecoverable_error_detected === false;
   checks['Required Data Types'] = ['Bookmarks', 'Passwords', 'Preferences', 'Extensions', 'Sessions'].every(
     name => active.some(row => row.name === name));
   checks['Data Type Status'] = rows.every(
@@ -133,7 +138,7 @@ _SNAPSHOT = r"""(async (timeoutMs) => {
   checks['Fresh Download'] = window.workstationSync.downloaded === true;
   window.workstationSync.checks = checks;
   return {healthy, pending, fresh: window.workstationSync.downloaded === true};
-})""".replace("BOUNDED_NODES", _GET_NODES)
+})""".replace("BOUNDED_NODES", _GET_NODES).replace("START_SYNC", _START)
 
 
 # Settings bundles cr.js, whose standalone module rejects a second initialization.
@@ -310,13 +315,14 @@ class NativeSync:
                 "Brave could not read its recovery code; check desktop keyring access"
             ) from error
 
-    def enrollment_throttled(self) -> bool:
-        """Detect the fixed Sync protocol throttle code even before engine initialization."""
+    def protocol_error_codes(self) -> list[int]:
+        """Read only numeric Sync error codes, never the server's response payload."""
 
         name = "Sync.PostedClientToServerMessageError2"
         histograms = self.pipe.call("Browser.getHistograms", {"query": name}).get("histograms", [])
         if not isinstance(histograms, list):
-            return False
+            return []
+        codes: set[int] = set()
         for histogram in histograms:
             if not isinstance(histogram, dict) or histogram.get("name") != name:
                 continue
@@ -327,11 +333,12 @@ class NativeSync:
                 if not isinstance(bucket, dict):
                     continue
                 count = bucket.get("count")
-                # SyncEnums.THROTTLED is 3. Sparse metric buckets preserve that
-                # protocol code without exposing the server's response payload.
-                if bucket.get("low") == 3 and isinstance(count, int) and not isinstance(count, bool) and count > 0:
-                    return True
-        return False
+                code = bucket.get("low")
+                if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+                    continue
+                if isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= 255:
+                    codes.add(code)
+        return sorted(codes)
 
     def restore(self, code: str, *, reset: bool = False) -> None:
         """Join an approved chain with Brave's current pairing suffix and verify it."""
@@ -353,7 +360,8 @@ class NativeSync:
             # even a healthy engine cannot replace the failed acknowledgement.
             try:
                 completed = self.wait(timeout=5)
-                throttled = self.enrollment_throttled()
+                # SyncEnums.THROTTLED is 3, including device-limit rejection.
+                throttled = 3 in self.protocol_error_codes()
             except BrowserProtocolError:
                 raise error from None
             detail = "enrollment acknowledgement" if completed else self.pending_reason
@@ -407,4 +415,14 @@ class NativeSync:
         self.pending_reason = ", ".join(name for name in _DIAGNOSTIC_CHECKS if not checks[name]) or (
             "two consecutive clean observations"
         )
+        errors = self._evaluate(session, "window.workstationSync.commitErrors", "reading commit result categories")
+        known_errors = {"CONFLICT", "RETRY", "INVALID_MESSAGE", "OVER_QUOTA", "TRANSIENT_ERROR"}
+        if isinstance(errors, list) and all(isinstance(error, str) and error in known_errors for error in errors):
+            if errors:
+                self.pending_reason += "; commit responses: " + ", ".join(sorted(set(errors)))
+        else:
+            raise BrowserProtocolError("Brave returned unsupported commit diagnostics")
+        codes = self.protocol_error_codes()
+        if codes:
+            self.pending_reason += "; Sync protocol error codes: " + ", ".join(map(str, codes))
         return False
