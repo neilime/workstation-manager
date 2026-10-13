@@ -274,7 +274,9 @@ def test_restore_uses_native_pairing_and_checks_the_result() -> None:
 
 
 @pytest.mark.parametrize("healthy", [False, True])
-def test_failed_enrollment_reports_checks_without_accepting_a_healthy_engine(healthy: bool) -> None:
+def test_failed_enrollment_reports_checks_without_accepting_a_healthy_engine(
+    healthy: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Diagnostic observations cannot replace the native chain enrollment acknowledgement."""
 
     pipe = Mock()
@@ -287,12 +289,13 @@ def test_failed_enrollment_reports_checks_without_accepting_a_healthy_engine(hea
         BrowserProtocolError("Native Sync request rejected"),
     ]
     instance = native.NativeSync(pipe, "/fixture/Default")
-    instance.wait = Mock(return_value=healthy)
+    wait = Mock(return_value=healthy)
+    monkeypatch.setattr(instance, "wait", wait)
     instance.pending_reason = "Server Connection"
     detail = "enrollment acknowledgement" if healthy else "Server Connection"
     with pytest.raises(BrowserProtocolError, match=f"request rejected; incomplete checks: {detail}"):
         instance.restore(code)
-    instance.wait.assert_called_once_with(timeout=5)
+    wait.assert_called_once_with(timeout=5)
 
 
 def test_process_selection_is_scoped_to_the_managed_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
