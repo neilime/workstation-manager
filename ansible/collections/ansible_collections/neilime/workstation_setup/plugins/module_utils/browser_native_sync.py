@@ -321,7 +321,18 @@ class NativeSync:
         pairing = self._request("SyncSetupGetSyncCode")
         if not isinstance(pairing, str) or len(pairing.split()) != 25:
             raise BrowserProtocolError("Brave could not generate the current pairing word")
-        accepted = self._request("SyncSetupSetSyncCode", code + " " + pairing.split()[-1], timeout=120)
+        try:
+            accepted = self._request("SyncSetupSetSyncCode", code + " " + pairing.split()[-1], timeout=120)
+        except BrowserProtocolError as error:
+            # A missing enrollment callback does not explain whether the engine
+            # reached its server. Report only the existing fixed, boolean checks;
+            # even a healthy engine cannot replace the failed acknowledgement.
+            try:
+                completed = self.wait(timeout=5)
+            except BrowserProtocolError:
+                raise error from None
+            detail = "enrollment acknowledgement" if completed else self.pending_reason
+            raise BrowserProtocolError(f"{error}; incomplete checks: {detail}") from error
         if accepted is not True or self.code() != code:
             raise BrowserProtocolError("Brave did not join the selected recovery chain")
         # Joining resets Brave's selected types to its defaults. Restore explicitly
