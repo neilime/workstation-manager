@@ -72,7 +72,7 @@ _GET_NODES = r"""(async timeoutMs => {
 
 _SNAPSHOT = r"""(async (timeoutMs) => {
   if (!window.workstationSync) await START_SYNC;
-  const {aboutInfo} = await import('./about.js');
+  const {aboutInfo} = await import('chrome://sync-internals/about.js');
   const stats = Object.fromEntries((aboutInfo?.details || []).flatMap(
     section => section.data.map(item => [item.stat_name, item.stat_value])));
   const rows = (aboutInfo?.type_status || []).filter(row => row.status !== 'header');

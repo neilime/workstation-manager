@@ -98,7 +98,7 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
             session,
             "(async () => {"
             f"if (!window.workstationSync) await {_START}; "
-            "const {aboutInfo} = await import('./about.js'); "
+            "const {aboutInfo} = await import('chrome://sync-internals/about.js'); "
             "const stats = Object.fromEntries((aboutInfo?.details || []).flatMap("
             "section => section.data.map(item => [item.stat_name, item.stat_value]))); "
             "const device = (aboutInfo?.type_status || []).find(row => row.name === 'Device Info'); "

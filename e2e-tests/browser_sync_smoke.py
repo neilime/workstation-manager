@@ -118,7 +118,7 @@ def retry_failed_download(pipe: BrowserPipe, page: str) -> None:
     pipe.evaluate(
         page,
         """(async () => {
-      const {aboutInfo} = await import('./about.js');
+      const {aboutInfo} = await import('chrome://sync-internals/about.js');
       aboutInfo.type_status[0].status = 'ok';
       const download = aboutInfo.details.flatMap(section => section.data)
         .find(item => item.stat_name === 'Download Step Result');
@@ -158,7 +158,7 @@ def retry_pending_changes(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, "window.fixtureRefreshes") == 1
     pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.acked_sequence_number = '2'; true")
     tombstone = (
-        "(async()=>{const {aboutInfo} = await import('./about.js'); "
+        "(async()=>{const {aboutInfo} = await import('chrome://sync-internals/about.js'); "
         "aboutInfo.type_status[0].num_entries = 2; return true;})()"
     )
     pipe.evaluate(page, tombstone)
@@ -227,11 +227,27 @@ def retry_missing_nodes(pipe: BrowserPipe, page: str) -> None:
 def diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Run production JavaScript against stale, pending, errored, and complete native-shaped responses."""
 
+    # Brave's page base can use its branded scheme while location.href remains
+    # chrome:. Relative imports then fetch a brave: resource and reject with a
+    # TypeError. Native resources must use their canonical chrome: addresses.
+    assert (
+        pipe.evaluate(
+            page,
+            """(() => {
+          const base = document.createElement('base');
+          base.href = 'brave://sync-internals/';
+          document.head.prepend(base);
+          return document.baseURI === 'brave://sync-internals/'
+            && location.href === 'chrome://sync-internals/';
+        })()""",
+        )
+        is True
+    )
     pipe.evaluate(page, _START)
     assert snapshot(pipe, page) == {"healthy": False, "pending": True, "fresh": False}
     fixture = diagnostic_fixture()
     prepare = """(async () => {
-      const {aboutInfo} = await import('./about.js');
+      const {aboutInfo} = await import('chrome://sync-internals/about.js');
       const {webUIResponse} = await import('chrome://resources/js/cr.js');
       const fixture = FIXTURE;
       Object.assign(aboutInfo, fixture.about);
@@ -276,14 +292,15 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     retry_missing_nodes(pipe, page)
     pipe.evaluate(
         page,
-        "(async()=>{const {aboutInfo} = await import('./about.js'); "
+        "(async()=>{const {aboutInfo} = await import('chrome://sync-internals/about.js'); "
         "aboutInfo.type_status[0].status = 'severity_error'; return true;})()",
     )
     assert snapshot(pipe, page)["healthy"] is False
     assert pipe.evaluate(page, "window.workstationSync.checks['Data Type Status']") is False
     retry_failed_download(pipe, page)
     print(
-        "Native diagnostics: stale success, pending upload/deletion, missing/late/rejected node replies, "
+        "Native diagnostics: canonical imports, stale success, pending upload/deletion, "
+        "missing/late/rejected replies, "
         "lost page state, redacted commit errors, failure, retry, and success passed.",
         flush=True,
     )
