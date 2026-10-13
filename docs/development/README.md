@@ -437,14 +437,16 @@ make e2e-down
 
 Run `make e2e-down` after failures too. It asks the browser devices created by
 this test run to leave their Sync chains, then deletes the VM. A stopped VM is
-resumed for this cleanup. Failed browser teardown retains the local VM so its
-device identities can be retried; GitHub-hosted runners still expire after their
-job. Use `make e2e-reset` before reusing a VM. `VM_NAME` selects a different instance.
+resumed for this cleanup. Failed browser teardown retains the local VM and recorded
+identities for diagnosis; GitHub-hosted runners still expire after their job.
+Use `make e2e-reset` before reusing a VM. `VM_NAME` selects a different instance.
 Browser setup requires an absent Brave profile tree and records each initialized
 test device's identity. Teardown checks those exact identities and ignores profiles
 introduced after capture; preexisting workstation profiles cannot be claimed as
 test devices. Each device must complete a fresh Sync download and have a healthy
-Device Info tracker before its leave request.
+Device Info tracker before its leave request. Teardown prompts pending commits
+and requires a successful server response for that exact device's deletion;
+Brave's local leave acknowledgement alone does not prove removal.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup
 failure, it prints Lima logs and attempts a bounded guest diagnostic command
 before teardown. Inspect the `Start e2e VM` job output for provisioning,

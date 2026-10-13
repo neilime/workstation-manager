@@ -148,14 +148,24 @@ def test_live_device_identity_is_required_before_leaving(matches: bool, monkeypa
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.evaluate.side_effect = [True, {"active": True, "matches": matches, "ready": True}, True]
+    pipe.evaluate.side_effect = [True, {"active": True, "matches": matches, "ready": True}, True, True, True]
     if matches:
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
-        assert pipe.evaluate.call_count == 3
+        assert pipe.evaluate.call_count == 5
     else:
         with pytest.raises(ValueError, match="live browser device no longer matches"):
             browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
         assert pipe.evaluate.call_count == 2
+
+
+def test_native_leave_callback_requires_server_deletion_acknowledgement(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A successful local leave callback cannot certify an uncommitted server deletion."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    pipe = mock.Mock()
+    pipe.evaluate.side_effect = [True, {"active": True, "matches": True, "ready": True}, True, True, False]
+    with pytest.raises(ValueError, match="server did not confirm removal"):
+        browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
 
 
 def test_teardown_does_not_leave_when_sync_cannot_be_verified(monkeypatch: pytest.MonkeyPatch) -> None:

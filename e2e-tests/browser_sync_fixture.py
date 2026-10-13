@@ -16,9 +16,46 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
+    _GET_NODES,
     _START,
     NativeSync,
 )
+
+# Device payloads and server IDs stay inside the diagnostic page. Only the
+# acknowledgement boolean crosses the pipe. A native leave callback alone can
+# succeed after its short upload deadline even when deletion was not committed.
+_WATCH_REMOVAL = r"""(async identity => {
+  const {addWebUiListener} = await import('chrome://resources/js/cr.js');
+  const groups = await BOUNDED_NODES(10000);
+  if (!Array.isArray(groups)) return false;
+  const nodes = groups.find(group => group.type === 'Device Info')?.nodes;
+  if (!Array.isArray(nodes)) return false;
+  const own = nodes.filter(node => node.SPECIFICS?.device_info?.cache_guid === identity);
+  if (own.length !== 1 || typeof own[0].metadata?.server_id !== 'string'
+      || !own[0].metadata.server_id) return false;
+  const entity = own[0].metadata.server_id;
+  const state = window.workstationDeviceRemoval = {
+    since: Date.now(), requested: false, acknowledged: false
+  };
+  addWebUiListener('onProtocolEvent', event => {
+    if (typeof event.time !== 'number' || event.time < state.since) return;
+    if (event.type === 'Commit Request') {
+      const entries = event.proto?.commit?.entries;
+      state.requested = Array.isArray(entries) && entries.some(
+        entry => entry.id_string === entity && entry.deleted === true);
+    }
+    if (event.type === 'Commit Response' && state.requested) {
+      const entries = event.proto?.commit?.entryresponse;
+      state.acknowledged ||= Array.isArray(entries) && entries.some(
+        entry => entry.id_string === entity && entry.response_type === 'SUCCESS');
+      state.requested = false;
+    }
+  });
+  // Native refresh schedules commit work as well as downloads. Keep prompting
+  // it while the leave handler waits, before that handler stops the Sync engine.
+  state.timer = setInterval(() => chrome.send('triggerRefresh'), 100);
+  return true;
+})""".replace("BOUNDED_NODES", _GET_NODES)
 
 
 def device_identity(profile: Path, *, require_initialized: bool = False) -> str | None:
@@ -80,20 +117,30 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
         if isinstance(state, dict) and state.get("active") is True:
             if state.get("matches") is not True:
                 raise ValueError("The live browser device no longer matches the captured test identity")
-            if state.get("ready") is True:
+            if (
+                state.get("ready") is True
+                and pipe.evaluate(session, f"{_WATCH_REMOVAL}({json.dumps(identity)})", timeout=15) is True
+            ):
                 break
         time.sleep(min(2, max(0, deadline - time.monotonic())))
     else:
         raise ValueError("The test device could not verify Sync readiness for teardown; its identity was retained")
     # This native operation takes no device ID: it leaves only the selected
     # profile's current device, whose freshly-created identity was checked above.
-    removed = pipe.evaluate(
-        native.settings,
-        "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')",
-        timeout=120,
-    )
-    if removed is not True:
-        raise ValueError("Brave did not complete the test device's leave request")
+    try:
+        removed = pipe.evaluate(
+            native.settings,
+            "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')",
+            timeout=120,
+        )
+    finally:
+        acknowledged = pipe.evaluate(
+            session,
+            "clearInterval(window.workstationDeviceRemoval.timer); "
+            "window.workstationDeviceRemoval.acknowledged === true",
+        )
+    if removed is not True or acknowledged is not True:
+        raise ValueError("The Sync server did not confirm removal of the captured test device")
 
 
 class BrowserSyncFixture:
@@ -160,7 +207,7 @@ class BrowserSyncFixture:
                     leave_device(pipe, profile, identity)
                 del record["devices"][directory]
                 self.manifest.write_text(json.dumps(record))
-                print("A captured E2E browser device completed its leave request.", flush=True)
+                print("The Sync server confirmed removal of a captured E2E browser device.", flush=True)
 
 
 def main() -> None:
