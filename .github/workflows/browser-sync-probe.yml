@@ -1,0 +1,40 @@
+---
+name: Disposable Brave Sync probe
+"on":
+  push:
+    branches: [diagnose/brave-sync-ci]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: lima-vm/lima-actions/setup@55627e31b78637bf254a8b2a14da8ea7d12564e5
+        id: lima
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/lima
+          key: lima-${{ steps.lima.outputs.version }}
+      - run: make e2e-up
+      - name: Install Brave only inside Lima
+        run: |
+          limactl shell --workdir / workstation-manager-v1 sudo bash -s <<'SCRIPT'
+          set -euo pipefail
+          curl -fsSL https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
+            -o /usr/share/keyrings/brave-browser-archive-keyring.gpg
+          printf '%s\n' 'deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main' \
+            >/etc/apt/sources.list.d/brave-browser.list
+          apt-get update >/dev/null
+          apt-get install -y --no-install-recommends brave-browser >/dev/null
+          SCRIPT
+      - name: Create, verify, join, and leave a disposable chain
+        run: |
+          limactl shell --workdir / workstation-manager-v1 \
+            env PYTHONPATH=/workspace/ansible/collections \
+            python3 /workspace/e2e-tests/browser_sync_ci_probe.py
+      - if: ${{ always() }}
+        run: make e2e-down
