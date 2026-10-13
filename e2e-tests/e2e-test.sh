@@ -106,6 +106,10 @@ fi
 capture_status=0
 run_e2e_timed_command setup-screenshot capture_phase_screenshot setup || capture_status=$?
 if [[ $setup_status -ne 0 ]]; then
+	run_e2e_timed_command browser-diagnostics run_e2e_lima_shell \
+		env PYTHONPATH=/workspace/ansible/collections \
+		python3 /workspace/e2e-tests/browser_sync_diagnostics.py ||
+		printf '%s\n' 'Browser initialization diagnostics could not complete.' >&2
 	exit "$setup_status"
 fi
 run_e2e_timed_command setup-assertions run_phase_tests setup "${setup_test_paths[@]}"

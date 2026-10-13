@@ -145,7 +145,7 @@ code and verifies the readback. `restore` uses Brave's native leave/join handler
 and current pairing suffix, enables Sync everything, and verifies the resulting
 chain.
 Native leave/join acknowledgements have a two-minute deadline because they wait
-for server-side device registration. Local recovery-code reads keep their shorter
+for initial synchronization. Local recovery-code reads keep their shorter
 automation deadline; successful enrollment still requires full Sync verification.
 Each native node query is bounded within the overall verification deadline.
 Missing replies remain unverified and are retried; late replies do not count as
