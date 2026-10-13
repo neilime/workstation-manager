@@ -289,12 +289,13 @@ class NativeSync:
             time.sleep(0.2)
         raise BrowserProtocolError("Brave desktop encryption is unavailable; unlock the desktop keyring and retry")
 
-    def _request(self, method: str, *arguments: object) -> object:
+    def _request(self, method: str, *arguments: object, timeout: float = 30) -> object:
         encoded = ", ".join(json.dumps(value) for value in (method, *arguments))
         return self._evaluate(
             self.settings,
             f"window.workstationSyncSettings.sendWithPromise({encoded})",
             f"calling {method}",
+            timeout=timeout,
         )
 
     def code(self) -> str:
@@ -312,12 +313,15 @@ class NativeSync:
         """Join an approved chain with Brave's current pairing suffix and verify it."""
 
         code = recovery_words(code)
-        if reset and self._request("SyncSetupReset") is not True:
+        # Leave/join callbacks acknowledge remote device registration, not just
+        # the local seed write. Give those operations the same budget as Sync
+        # verification while retaining short deadlines for local code reads.
+        if reset and self._request("SyncSetupReset", timeout=120) is not True:
             raise BrowserProtocolError("Brave could not leave its previous Sync chain")
         pairing = self._request("SyncSetupGetSyncCode")
         if not isinstance(pairing, str) or len(pairing.split()) != 25:
             raise BrowserProtocolError("Brave could not generate the current pairing word")
-        accepted = self._request("SyncSetupSetSyncCode", code + " " + pairing.split()[-1])
+        accepted = self._request("SyncSetupSetSyncCode", code + " " + pairing.split()[-1], timeout=120)
         if accepted is not True or self.code() != code:
             raise BrowserProtocolError("Brave did not join the selected recovery chain")
         # Joining resets Brave's selected types to its defaults. Restore explicitly

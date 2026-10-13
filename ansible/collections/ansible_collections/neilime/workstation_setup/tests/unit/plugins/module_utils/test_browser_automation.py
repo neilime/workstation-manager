@@ -250,11 +250,20 @@ def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyP
 
 
 def test_restore_uses_native_pairing_and_checks_the_result() -> None:
-    """An explicit restore resets an old enrollment, uses the current suffix, and checks the resulting code."""
+    """Restore waits for remote leave/join acknowledgements and verifies the current pairing and resulting code."""
 
     code = " ".join(["synthetic"] * 24)
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, code + " suffix", True, code, True]
+    responses = iter([True, True, _ENCRYPTION_READY, True, code + " suffix", True, code, True])
+
+    def evaluate(_session: str, expression: str, timeout: float = 30) -> object:
+        # Native leave/join completes only after contacting the server. Model
+        # an acknowledgement slower than a local automation round trip.
+        if any(method in expression for method in ("SyncSetupReset", "SyncSetupSetSyncCode")) and timeout < 45:
+            raise BrowserProtocolError("Brave's automation request timed out")
+        return next(responses)
+
+    pipe.evaluate.side_effect = evaluate
     instance = native.NativeSync(pipe, "/fixture/Default")
     instance.restore(code, reset=True)
     expressions = "\n".join(call.args[1] for call in pipe.evaluate.call_args_list)
