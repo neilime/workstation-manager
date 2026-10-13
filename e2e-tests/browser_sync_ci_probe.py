@@ -15,6 +15,17 @@ if not platform.node().startswith("lima-"):
     raise SystemExit("Run only in the disposable Lima VM.")
 
 class ProbePipe(BrowserPipe):
+    def page(self, url):
+        session = super().page(url)
+        if url == 'brave://sync-internals':
+            assert self.evaluate(session, """(() => {
+                const base = document.createElement('base');
+                base.href = 'brave://sync-internals/';
+                document.head.prepend(base);
+                return document.baseURI === 'brave://sync-internals/';
+            })()""") is True
+        return session
+
     def evaluate(self, session, expression, timeout=30):
         try:
             return super().evaluate(session, expression, timeout)
@@ -24,7 +35,7 @@ class ProbePipe(BrowserPipe):
                     const state = {syncStatePresent: !!window.workstationSync,
                       expectedPage: location.href === 'chrome://sync-internals/'};
                     try {
-                      const {aboutInfo} = await import('./about.js');
+                      const {aboutInfo} = await import('chrome://sync-internals/about.js');
                       state.aboutPresent = !!aboutInfo;
                       state.sectionsValid = Array.isArray(aboutInfo?.details) && aboutInfo.details.every(s => Array.isArray(s.data));
                     } catch { state.importFailed = true; }
