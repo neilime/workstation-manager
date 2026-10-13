@@ -16,6 +16,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
+    _START,
     NativeSync,
 )
 
@@ -48,12 +49,12 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     """Leave only a captured test device after checking its live identity and tracker."""
 
     native = NativeSync(pipe, str(profile))
-    # Brave's leave callback can complete after its own short retry deadline.
-    # Require fresh successful synchronization before requesting device removal;
-    # an offline or throttled fixture must retain its identity for a later retry.
-    if native.wait() is not True:
-        raise ValueError("The test device cannot verify Sync before teardown; its identity was retained")
     session = pipe.page("brave://sync-internals")
+    # Leaving changes Device Info, so verify its tracker and fresh server contact.
+    # Browser-data recovery has already been tested by setup; aggregating every
+    # data model here adds unrelated asynchronous callbacks to device teardown.
+    if pipe.evaluate(session, _START) is not True:
+        raise ValueError("The test device could not request fresh Sync for teardown")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         state = pipe.evaluate(
@@ -61,17 +62,29 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
             "(async () => {const {aboutInfo} = await import('./about.js'); "
             "const stats = Object.fromEntries((aboutInfo.details || []).flatMap("
             "section => section.data.map(item => [item.stat_name, item.stat_value]))); "
+            "const device = (aboutInfo.type_status || []).find(row => row.name === 'Device Info'); "
+            "const active = stats['Transport State'] === 'Active'; "
+            "const fresh = window.workstationSync.downloaded === true; "
+            "const ready = fresh && stats['Sync Cycle Ongoing'] === false "
+            "&& stats['Throttled or Backoff'] === false && stats['Download Step Result'] === 'Success' "
+            "&& stats['Commit Step Result'] === 'Success' "
+            "&& typeof stats['Server Connection'] === 'string' && stats['Server Connection'].startsWith('OK') "
+            "&& typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK') "
+            "&& device?.state === 'Running' && device.status === 'ok' "
+            "&& Number.isInteger(device.num_entries) && device.num_entries === device.num_live; "
+            "if (active && stats['Sync Cycle Ongoing'] === false && !ready) chrome.send('triggerRefresh'); "
             "chrome.send('requestDataAndRegisterForUpdates'); "
-            "return {active: stats['Transport State'] === 'Active', "
+            "return {active, ready, "
             f"matches: stats['Sync Client ID'] === {json.dumps(identity)}}};" + "})()",
         )
         if isinstance(state, dict) and state.get("active") is True:
             if state.get("matches") is not True:
                 raise ValueError("The live browser device no longer matches the captured test identity")
-            break
+            if state.get("ready") is True:
+                break
         time.sleep(min(2, max(0, deadline - time.monotonic())))
     else:
-        raise ValueError("The test device could not initialize Sync for teardown; its identity was retained")
+        raise ValueError("The test device could not verify Sync readiness for teardown; its identity was retained")
     # This native operation takes no device ID: it leaves only the selected
     # profile's current device, whose freshly-created identity was checked above.
     removed = pipe.evaluate(

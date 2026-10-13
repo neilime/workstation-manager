@@ -105,6 +105,29 @@ def test_javascript_failures_never_expose_secret_values(result: dict, monkeypatc
         pipe.evaluate("fixture", "trusted expression")
 
 
+@pytest.mark.parametrize(
+    ("kind", "line", "suffix"),
+    [("TypeError", 73, " (TypeError at script line 74)"), ("private-error", 0, ""), (["private-error"], "private", "")],
+)
+def test_javascript_failures_report_only_fixed_classes_and_source_coordinates(
+    kind: object, line: object, suffix: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runtime locations aid diagnosis without exposing exception messages or browser values."""
+
+    pipe = object.__new__(BrowserPipe)
+    response = {
+        "exceptionDetails": {
+            "lineNumber": line,
+            "text": "private-browser-data",
+            "exception": {"className": kind, "description": "private-recovery-code"},
+        }
+    }
+    monkeypatch.setattr(pipe, "call", Mock(return_value=response))
+    with pytest.raises(BrowserProtocolError) as error:
+        pipe.evaluate("fixture", "trusted expression")
+    assert str(error.value) == "Brave's native Sync interface is unavailable" + suffix
+
+
 def test_native_profile_identity_must_match_before_accessing_recovery_words() -> None:
     """Restored windows must not cause code reads from another profile."""
 

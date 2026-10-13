@@ -153,7 +153,8 @@ fresh observations. Explicit native rejections and broken automation connections
 still stop recovery.
 Timeout errors list incomplete verification checks. Only fixed check names and
 boolean results leave the diagnostic page; native error text, entity data, and
-recovery words remain private.
+recovery words remain private. Automation errors can include a fixed JavaScript
+error class and source line number without exposing exception messages.
 Enrollment diagnostics also inspect numeric protocol metrics, which remain
 available while the engine is initializing. A throttled enrollment points to
 the [device-limit recovery procedure](../usage/browser.md#restore-on-another-computer).
