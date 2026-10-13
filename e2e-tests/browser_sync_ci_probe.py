@@ -34,7 +34,6 @@ class ProbePipe(BrowserPipe):
             raise
 fixture_module.BrowserPipe = ProbePipe
 
-subprocess.run([sys.executable, '/workspace/e2e-tests/browser_sync_smoke.py'], check=True)
 root = Path.home() / ".config/BraveSoftware/Brave-Browser"
 fixture = BrowserSyncFixture(root, Path.home() / ".local/state/workstation-manager/e2e/browser-devices.json")
 fixture.prepare()
@@ -76,3 +75,5 @@ finally:
             assert pipe.evaluate(native.settings,
                 "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')") is True
     print("All disposable control devices removed", flush=True)
+
+subprocess.run([sys.executable, '/workspace/e2e-tests/browser_sync_smoke.py'], check=True)
