@@ -117,6 +117,8 @@ Live verification uses Brave's native WebUI APIs through inherited anonymous
 DevTools pipes. It opens no debugging port and does not copy profiles, bypass
 browser policies, disable the sandbox, or change password-storage backends.
 Only the selected profile's native code reaches the vault helper, in memory.
+Automation waits for the requested internal URL and a fully loaded document
+before calling that page's APIs.
 Settings requests use the page's existing native callbacks, preserving its own
 responses and listeners. Importing a separate `cr.js` into the bundled settings
 page would initialize Chromium's WebUI callbacks twice and fail.
