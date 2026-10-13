@@ -7,15 +7,37 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import NativeSync
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import DesktopSession
 from browser_sync_fixture import BrowserSyncFixture
+import browser_sync_fixture as fixture_module
 
 if not platform.node().startswith("lima-"):
     raise SystemExit("Run only in the disposable Lima VM.")
+
+class ProbePipe(BrowserPipe):
+    def evaluate(self, session, expression, timeout=30):
+        try:
+            return super().evaluate(session, expression, timeout)
+        except Exception:
+            if expression.startswith('(async (timeoutMs)'):
+                diagnostic = super().evaluate(session, """(async () => {
+                    const state = {syncStatePresent: !!window.workstationSync,
+                      expectedPage: location.href === 'chrome://sync-internals/'};
+                    try {
+                      const {aboutInfo} = await import('./about.js');
+                      state.aboutPresent = !!aboutInfo;
+                      state.sectionsValid = Array.isArray(aboutInfo?.details) && aboutInfo.details.every(s => Array.isArray(s.data));
+                    } catch { state.importFailed = true; }
+                    return state;
+                })()""")
+                print('Fixed startup checks:', diagnostic, flush=True)
+            raise
+fixture_module.BrowserPipe = ProbePipe
+
 root = Path.home() / ".config/BraveSoftware/Brave-Browser"
 fixture = BrowserSyncFixture(root, Path.home() / ".local/state/workstation-manager/e2e/browser-devices.json")
 fixture.prepare()
 environment = DesktopSession.environment()
 def open_profile(profile):
-    return BrowserPipe(["/usr/bin/brave-browser", "--remote-debugging-pipe", "--no-first-run",
+    return ProbePipe(["/usr/bin/brave-browser", "--remote-debugging-pipe", "--no-first-run",
                         "--no-default-browser-check", f"--user-data-dir={root}",
                         f"--profile-directory={profile}"], environment)
 try:
