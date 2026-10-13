@@ -1,6 +1,8 @@
 """Verify test-device teardown with an independent peer in the disposable CI VM."""
 import json
 import platform
+import subprocess
+import sys
 from pathlib import Path
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import BrowserPipe
@@ -32,6 +34,7 @@ class ProbePipe(BrowserPipe):
             raise
 fixture_module.BrowserPipe = ProbePipe
 
+subprocess.run([sys.executable, '/workspace/e2e-tests/browser_sync_smoke.py'], check=True)
 root = Path.home() / ".config/BraveSoftware/Brave-Browser"
 fixture = BrowserSyncFixture(root, Path.home() / ".local/state/workstation-manager/e2e/browser-devices.json")
 fixture.prepare()
