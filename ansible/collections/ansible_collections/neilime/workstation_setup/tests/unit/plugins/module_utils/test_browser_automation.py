@@ -139,6 +139,7 @@ def test_native_request_failure_identifies_the_operation_without_recovery_words(
     response.side_effect = [
         {"result": {"value": code + " suffix"}},
         {"exceptionDetails": {"text": "private-browser-error"}},
+        {"exceptionDetails": {"text": "private-diagnostic-error"}},
     ]
 
     with pytest.raises(BrowserProtocolError, match="calling SyncSetupSetSyncCode") as error:
@@ -270,6 +271,28 @@ def test_restore_uses_native_pairing_and_checks_the_result() -> None:
     assert "SyncSetupReset" in expressions
     assert "SyncSetupSetSyncCode" in expressions
     assert "PermanentlyDelete" not in expressions
+
+
+@pytest.mark.parametrize("healthy", [False, True])
+def test_failed_enrollment_reports_checks_without_accepting_a_healthy_engine(healthy: bool) -> None:
+    """Diagnostic observations cannot replace the native chain enrollment acknowledgement."""
+
+    pipe = Mock()
+    code = " ".join(["synthetic"] * 24)
+    pipe.evaluate.side_effect = [
+        True,
+        True,
+        _ENCRYPTION_READY,
+        code + " suffix",
+        BrowserProtocolError("Native Sync request rejected"),
+    ]
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    instance.wait = Mock(return_value=healthy)
+    instance.pending_reason = "Server Connection"
+    detail = "enrollment acknowledgement" if healthy else "Server Connection"
+    with pytest.raises(BrowserProtocolError, match=f"request rejected; incomplete checks: {detail}"):
+        instance.restore(code)
+    instance.wait.assert_called_once_with(timeout=5)
 
 
 def test_process_selection_is_scoped_to_the_managed_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
