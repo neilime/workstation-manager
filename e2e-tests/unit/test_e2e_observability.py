@@ -21,10 +21,10 @@ from ansible.parsing.dataloader import DataLoader
 E2E_PATH = pathlib.Path(__file__).parents[1]
 
 
-def load_profiling_module() -> types.ModuleType:
+def load_guest_module(name: str) -> types.ModuleType:
     """Load the guest helper without making e2e-tests a Python package."""
-    module_path = E2E_PATH / "task_profiling.py"
-    spec = importlib.util.spec_from_file_location("task_profiling", module_path)
+    module_path = E2E_PATH / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load {module_path}")
     module = importlib.util.module_from_spec(spec)
@@ -32,7 +32,38 @@ def load_profiling_module() -> types.ModuleType:
     return module
 
 
-task_profiling = load_profiling_module()
+task_profiling = load_guest_module("task_profiling")
+
+
+def test_browser_metrics_expose_only_selected_numeric_buckets(capsys: pytest.CaptureFixture[str]) -> None:
+    """Browser response fields outside the fixed numeric metrics never enter logs."""
+    diagnostics = load_guest_module("browser_sync_diagnostics")
+    pipe = mock.Mock()
+    pipe.call.return_value = {
+        "histograms": [
+            {"name": "private-value", "buckets": ["private-value"]},
+            {
+                "name": "Sync.URLFetchResponse",
+                "buckets": [{"low": 200, "high": 201, "count": 1}],
+                "extra": "private-value",
+            },
+        ]
+    }
+    diagnostics.network_metrics(pipe)
+    assert capsys.readouterr().out == 'Sync.URLFetchResponse: [{"low": 200, "high": 201, "count": 1}]\n'
+
+
+@pytest.mark.parametrize(
+    "bucket", [{"low": "private-value", "high": 201, "count": 1}, {"low": True, "high": 201, "count": 1}]
+)
+def test_browser_metrics_reject_non_numeric_buckets(bucket: dict, capsys: pytest.CaptureFixture[str]) -> None:
+    """Malformed metric values fail with a fixed error and no browser payload."""
+    diagnostics = load_guest_module("browser_sync_diagnostics")
+    pipe = mock.Mock()
+    pipe.call.return_value = {"histograms": [{"name": "Sync.URLFetchResponse", "buckets": [bucket]}]}
+    with pytest.raises(ValueError, match="^Unexpected numeric Sync metrics$"):
+        diagnostics.network_metrics(pipe)
+    assert not capsys.readouterr().out
 
 
 @pytest.mark.parametrize("existing_instance,start_status", [(False, 0), (True, 0), (False, 37)])

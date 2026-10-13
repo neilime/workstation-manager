@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import platform
+import tempfile
 from pathlib import Path
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
@@ -25,6 +26,64 @@ _STATES = (
     "Configuring data types",
     "Active",
 )
+
+
+def network_metrics(pipe: BrowserPipe) -> None:
+    """Print only fixed Sync metric names and numeric response-code buckets."""
+
+    for name in (
+        "Sync.URLFetchResponse",
+        "Sync.URLFetchTimedOut",
+        "Sync.PostedClientToServerMessage",
+        "Sync.PostedClientToServerMessageError2",
+    ):
+        result = pipe.call("Browser.getHistograms", {"query": name})
+        for histogram in result.get("histograms", []):
+            if histogram.get("name") != name:
+                continue
+            buckets = histogram.get("buckets", [])
+            if not isinstance(buckets, list) or any(
+                not isinstance(bucket, dict)
+                or set(bucket) != {"low", "high", "count"}
+                or any(not isinstance(value, int) or isinstance(value, bool) for value in bucket.values())
+                for bucket in buckets
+            ):
+                raise ValueError("Unexpected numeric Sync metrics")
+            print(f"{name}: {json.dumps(buckets)}", flush=True)
+
+
+def control_chain(executable: str, environment: dict[str, str]) -> None:
+    """Verify an independent empty chain without changing any saved recovery chain."""
+
+    with tempfile.TemporaryDirectory(prefix="workstation-sync-control-") as root:
+        with BrowserPipe(
+            [
+                executable,
+                "--remote-debugging-pipe",
+                "--no-first-run",
+                "--no-default-browser-check",
+                f"--user-data-dir={root}",
+                "--profile-directory=Default",
+            ],
+            environment,
+        ) as pipe:
+            native = NativeSync(pipe, str(Path(root) / "Default"))
+            try:
+                native.restore(native.code())
+                verified = native.wait()
+                print(f"Disposable control chain verified={verified}", flush=True)
+                if not verified:
+                    print(f"Incomplete checks: {native.pending_reason}", flush=True)
+            finally:
+                try:
+                    network_metrics(pipe)
+                finally:
+                    # Only this newly created control profile leaves its own chain.
+                    removed = pipe.evaluate(
+                        native.settings, "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')"
+                    )
+                    if removed is not True:
+                        raise ValueError("Could not remove the disposable control device")
 
 
 def main() -> None:
@@ -75,6 +134,8 @@ def main() -> None:
                 )
                 if not verified:
                     print(f"Incomplete checks: {native.pending_reason}", flush=True)
+                network_metrics(pipe)
+        control_chain(executable, environment)
 
 
 if __name__ == "__main__":
