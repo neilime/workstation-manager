@@ -146,26 +146,31 @@ def test_teardown_refuses_a_replaced_device_identity(tmp_path: Path, monkeypatch
 def test_live_device_identity_is_required_before_leaving(matches: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     """Native teardown requires an active tracker and the exact captured device GUID."""
 
-    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock(return_value=mock.Mock(wait=lambda: True)))
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.evaluate.side_effect = [{"active": True, "matches": matches}, True]
+    pipe.evaluate.side_effect = [True, {"active": True, "matches": matches, "ready": True}, True]
     if matches:
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
-        assert pipe.evaluate.call_count == 2
+        assert pipe.evaluate.call_count == 3
     else:
         with pytest.raises(ValueError, match="live browser device no longer matches"):
             browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
-        assert pipe.evaluate.call_count == 1
+        assert pipe.evaluate.call_count == 2
 
 
 def test_teardown_does_not_leave_when_sync_cannot_be_verified(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unavailable server cannot turn a local reset into successful remote teardown."""
 
-    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock(return_value=mock.Mock(wait=lambda: False)))
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    ticks = iter([0, 0, 1, 121])
+    monkeypatch.setattr(browser_fixture.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(browser_fixture.time, "sleep", lambda _seconds: None)
     pipe = mock.Mock()
-    with pytest.raises(ValueError, match="cannot verify Sync before teardown"):
+    pipe.evaluate.side_effect = [True, {"active": True, "matches": True, "ready": False}]
+    with pytest.raises(ValueError, match="could not verify Sync readiness for teardown"):
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
-    pipe.evaluate.assert_not_called()
+    assert pipe.evaluate.call_count == 2
+    assert all("SyncSetupReset" not in call.args[1] for call in pipe.evaluate.call_args_list)
 
 
 @pytest.mark.parametrize("cleanup_status", [0, 17])

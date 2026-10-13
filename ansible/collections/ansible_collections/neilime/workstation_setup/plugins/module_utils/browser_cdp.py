@@ -113,7 +113,27 @@ class BrowserPipe:
         )
         result = response.get("result", {})
         if "exceptionDetails" in response or not isinstance(result, dict) or "value" not in result:
-            raise BrowserProtocolError("Brave's native Sync interface is unavailable")
+            message = "Brave's native Sync interface is unavailable"
+            details = response.get("exceptionDetails", {})
+            if isinstance(details, dict):
+                exception = details.get("exception", {})
+                kind = exception.get("className") if isinstance(exception, dict) else None
+                line = details.get("lineNumber")
+                # Exception text can contain recovery words or browser data.
+                # Only fixed runtime classes and bounded source coordinates are
+                # useful for identifying a failing trusted automation expression.
+                if isinstance(kind, str) and kind in {
+                    "Error",
+                    "TypeError",
+                    "ReferenceError",
+                    "SyntaxError",
+                    "RangeError",
+                }:
+                    message += f" ({kind}"
+                    if isinstance(line, int) and not isinstance(line, bool) and 0 <= line < 10000:
+                        message += f" at script line {line + 1}"
+                    message += ")"
+            raise BrowserProtocolError(message)
         return result["value"]
 
     def page(self, url: str) -> str:

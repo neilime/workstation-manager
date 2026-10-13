@@ -443,7 +443,8 @@ job. Use `make e2e-reset` before reusing a VM. `VM_NAME` selects a different ins
 Browser setup requires an absent Brave profile tree and records each initialized
 test device's identity. Teardown checks those exact identities and ignores profiles
 introduced after capture; preexisting workstation profiles cannot be claimed as
-test devices.
+test devices. Each device must complete a fresh Sync download and have a healthy
+Device Info tracker before its leave request.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup
 failure, it prints Lima logs and attempts a bounded guest diagnostic command
 before teardown. Inspect the `Start e2e VM` job output for provisioning,
