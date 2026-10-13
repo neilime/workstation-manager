@@ -36,6 +36,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
     DesktopSession,
 )
+from browser_sync_fixture import _WATCH_REMOVAL  # noqa: E402
 
 # pylint: enable=wrong-import-position
 
@@ -269,6 +270,61 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
         "failure, retry, and success passed.",
         flush=True,
     )
+    device_removal_acknowledgement(pipe, page)
+
+
+def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
+    """Only a fresh successful commit for the captured device proves server removal."""
+
+    pipe.evaluate(
+        page,
+        """(() => {
+          window.fixtureNodes = [{type: 'Device Info', nodes: [{
+            SPECIFICS: {device_info: {cache_guid: 'captured-device'}},
+            metadata: {server_id: 'captured-server-id'}
+          }]}];
+          window.fixtureRefreshes = 0;
+          return true;
+        })()""",
+    )
+    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}('another-device')") is False
+    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}('captured-device')") is True
+    # Exercise the actual interval which prompts uploads during native leave.
+    assert (
+        pipe.evaluate(
+            page,
+            "new Promise(resolve => setTimeout(() => resolve(window.fixtureRefreshes > 0), 200))",
+        )
+        is True
+    )
+    cases = [
+        # Stale responses, updates, other devices, and failed commits do not prove deletion.
+        ("captured-server-id", True, "captured-server-id", "SUCCESS", -10000, False),
+        ("captured-server-id", False, "captured-server-id", "SUCCESS", 0, False),
+        ("another-server-id", True, "another-server-id", "SUCCESS", 0, False),
+        ("captured-server-id", True, "captured-server-id", "TRANSIENT_ERROR", 0, False),
+        ("captured-server-id", True, "another-server-id", "SUCCESS", 0, False),
+        ("captured-server-id", True, "captured-server-id", "SUCCESS", 0, True),
+    ]
+    for request_id, deleted, response_id, response_type, offset, expected in cases:
+        event = {
+            "request": {"commit": {"entries": [{"id_string": request_id, "deleted": deleted}]}},
+            "response": {"commit": {"entryresponse": [{"id_string": response_id, "response_type": response_type}]}},
+        }
+        result = pipe.evaluate(
+            page,
+            """(async () => {
+              const {webUIListenerCallback} = await import('chrome://resources/js/cr.js');
+              const fixture = FIXTURE;
+              const time = Date.now() + OFFSET;
+              webUIListenerCallback('onProtocolEvent', {time, type: 'Commit Request', proto: fixture.request});
+              webUIListenerCallback('onProtocolEvent', {time, type: 'Commit Response', proto: fixture.response});
+              return window.workstationDeviceRemoval.acknowledged;
+            })()""".replace("FIXTURE", json.dumps(event)).replace("OFFSET", str(offset)),
+        )
+        assert result is expected
+    pipe.evaluate(page, "clearInterval(window.workstationDeviceRemoval.timer); true")
+    print("Device removal requires a fresh successful server commit for its captured identity.", flush=True)
 
 
 def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:

@@ -55,9 +55,19 @@ _START = r"""(async () => {
   return true;
 })()"""
 
+_GET_NODES = r"""(async timeoutMs => {
+  const {sendWithPromise} = await import('chrome://resources/js/cr.js');
+  let timer;
+  try {
+    return await Promise.race([
+      sendWithPromise('getAllNodes'),
+      new Promise(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); })
+    ]);
+  } finally { clearTimeout(timer); }
+})"""
+
 _SNAPSHOT = r"""(async (timeoutMs) => {
   const {aboutInfo} = await import('./about.js');
-  const {sendWithPromise} = await import('chrome://resources/js/cr.js');
   const stats = Object.fromEntries((aboutInfo.details || []).flatMap(
     section => section.data.map(item => [item.stat_name, item.stat_value])));
   const rows = (aboutInfo.type_status || []).filter(row => row.status !== 'header');
@@ -90,16 +100,7 @@ _SNAPSHOT = r"""(async (timeoutMs) => {
     // Native node aggregation waits for every data type and may lose a callback
     // during reconfiguration. A missing reply is incomplete evidence, not a
     // failed DevTools connection. Bound this request so the next poll can retry.
-    let timer;
-    let groups;
-    try {
-      groups = await Promise.race([
-        sendWithPromise('getAllNodes'),
-        new Promise(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); })
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
+    const groups = await BOUNDED_NODES(timeoutMs);
     checks['Entity Response'] = Array.isArray(groups);
     // Counts also cover tombstones omitted by getAllNodes. A deletion must have
     // been acknowledged and removed from the native tracker before we succeed.
@@ -132,7 +133,7 @@ _SNAPSHOT = r"""(async (timeoutMs) => {
   checks['Fresh Download'] = window.workstationSync.downloaded === true;
   window.workstationSync.checks = checks;
   return {healthy, pending, fresh: window.workstationSync.downloaded === true};
-})"""
+})""".replace("BOUNDED_NODES", _GET_NODES)
 
 
 # Settings bundles cr.js, whose standalone module rejects a second initialization.

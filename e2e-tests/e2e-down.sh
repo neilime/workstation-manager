@@ -20,7 +20,7 @@ fi
 if ! run_e2e_timed_command browser-teardown run_e2e_lima_control_command 300 \
 	env PYTHONPATH=/workspace/ansible/collections \
 	python3 /workspace/e2e-tests/browser_sync_fixture.py leave; then
-	printf '%s\n' 'Browser fixture teardown failed; the VM was retained so its device identities can be retried.' >&2
+	printf '%s\n' 'Browser fixture teardown failed; the VM and recorded device identities were retained for diagnosis.' >&2
 	exit 1
 fi
 
