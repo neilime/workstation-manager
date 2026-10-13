@@ -30,6 +30,7 @@ _DIAGNOSTIC_CHECKS = (
     "Unrecoverable Error",
     "Required Data Types",
     "Data Type Status",
+    "Entity Response",
     "Entity Counts",
     "Entity Coverage",
     "Entity Metadata",
@@ -54,7 +55,7 @@ _START = r"""(async () => {
   return true;
 })()"""
 
-_SNAPSHOT = r"""(async () => {
+_SNAPSHOT = r"""(async (timeoutMs) => {
   const {aboutInfo} = await import('./about.js');
   const {sendWithPromise} = await import('chrome://resources/js/cr.js');
   const stats = Object.fromEntries((aboutInfo.details || []).flatMap(
@@ -80,12 +81,26 @@ _SNAPSHOT = r"""(async () => {
   checks['Data Type Status'] = rows.every(
     row => row.status === 'ok' || (row.status === 'severity_info' && row.state === 'Not Running'));
   const healthy = Object.values(checks).every(value => value);
+  checks['Entity Response'] = false;
   checks['Entity Counts'] = false;
   checks['Entity Coverage'] = false;
   checks['Entity Metadata'] = false;
   let pending = true;
   if (healthy) {
-    const groups = await sendWithPromise('getAllNodes');
+    // Native node aggregation waits for every data type and may lose a callback
+    // during reconfiguration. A missing reply is incomplete evidence, not a
+    // failed DevTools connection. Bound this request so the next poll can retry.
+    let timer;
+    let groups;
+    try {
+      groups = await Promise.race([
+        sendWithPromise('getAllNodes'),
+        new Promise(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); })
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+    checks['Entity Response'] = Array.isArray(groups);
     // Counts also cover tombstones omitted by getAllNodes. A deletion must have
     // been acknowledged and removed from the native tracker before we succeed.
     const countsReady = active.every(row => Number.isInteger(row.num_entries)
@@ -117,7 +132,7 @@ _SNAPSHOT = r"""(async () => {
   checks['Fresh Download'] = window.workstationSync.downloaded === true;
   window.workstationSync.checks = checks;
   return {healthy, pending, fresh: window.workstationSync.downloaded === true};
-})()"""
+})"""
 
 
 # Settings bundles cr.js, whose standalone module rejects a second initialization.
@@ -320,11 +335,14 @@ class NativeSync:
         deadline = time.monotonic() + timeout
         clean = 0
         while time.monotonic() < deadline:
+            snapshot_timeout = min(30, max(0.001, deadline - time.monotonic()))
             snapshot = self._evaluate(
                 session,
-                _SNAPSHOT,
+                f"{_SNAPSHOT}({int(snapshot_timeout * 1000)})",
                 "reading Sync diagnostics",
-                timeout=min(30, max(1, deadline - time.monotonic())),
+                # Let the page return incomplete evidence before the transport
+                # deadline, including a final query near the Sync deadline.
+                timeout=snapshot_timeout + 5,
             )
             if not isinstance(snapshot, dict) or any(
                 not isinstance(snapshot.get(key), bool) for key in ("healthy", "pending", "fresh")

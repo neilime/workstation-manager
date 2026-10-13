@@ -19,6 +19,7 @@ sys.path.insert(0, str(WORKSPACE / "ansible/collections"))
 # pylint: disable=wrong-import-position
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (  # noqa: E402
     BrowserPipe,
+    BrowserProtocolError,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (  # noqa: E402
     browser_processes,
@@ -74,10 +75,10 @@ def diagnostic_fixture() -> dict:
     }
 
 
-def snapshot(pipe: BrowserPipe, page: str) -> dict:
+def snapshot(pipe: BrowserPipe, page: str, timeout_ms: int = 30000) -> dict:
     """Assert that diagnostic reduction returns structured, non-secret status."""
 
-    result = pipe.evaluate(page, _SNAPSHOT)
+    result = pipe.evaluate(page, f"{_SNAPSHOT}({timeout_ms})", timeout=timeout_ms / 1000 + 5)
     assert isinstance(result, dict)
     return result
 
@@ -140,6 +141,60 @@ def retry_pending_changes(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, "window.fixtureRefreshes") == 2
 
 
+def retry_missing_nodes(pipe: BrowserPipe, page: str) -> None:
+    """Missing node callbacks remain unverified; late replies cannot certify a later observation."""
+
+    pipe.evaluate(
+        page,
+        """(() => {
+      window.fixtureNodeSend = chrome.send;
+      chrome.send = (method, args) => {
+        if (method === 'getAllNodes') window.fixtureNodeRequest = args[0];
+        else window.fixtureNodeSend(method, args);
+      };
+      return true;
+    })()""",
+    )
+    for _ in range(2):
+        assert snapshot(pipe, page, timeout_ms=50) == {"healthy": True, "pending": True, "fresh": True}
+        assert pipe.evaluate(page, "window.workstationSync.checks['Entity Response']") is False
+        # The timed-out request can still complete, but its result is no longer
+        # evidence for this or the next observation.
+        pipe.evaluate(
+            page,
+            """(async () => {
+          const {webUIResponse} = await import('chrome://resources/js/cr.js');
+          webUIResponse(window.fixtureNodeRequest, true, window.fixtureNodes);
+          return true;
+        })()""",
+        )
+        assert pipe.evaluate(page, "window.workstationSync.checks['Entity Response']") is False
+    pipe.evaluate(page, "chrome.send = window.fixtureNodeSend; true")
+    assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
+    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Response']") is True
+
+    pipe.evaluate(
+        page,
+        """(async () => {
+      const {webUIResponse} = await import('chrome://resources/js/cr.js');
+      chrome.send = (method, args) => {
+        if (method === 'getAllNodes') webUIResponse(args[0], false, 'synthetic-private-error');
+        else window.fixtureNodeSend(method, args);
+      };
+      return true;
+    })()""",
+    )
+    try:
+        snapshot(pipe, page)
+    except BrowserProtocolError as error:
+        assert "native Sync interface is unavailable" in str(error)
+        assert "synthetic-private-error" not in str(error)
+    else:
+        raise AssertionError("A rejected native node request was incorrectly retried")
+    finally:
+        pipe.evaluate(page, "chrome.send = window.fixtureNodeSend; true")
+
+
 def diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Run production JavaScript against stale, pending, errored, and complete native-shaped responses."""
 
@@ -172,6 +227,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     pipe.evaluate(page, event.replace("OFFSET", ""))
     assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
     retry_pending_changes(pipe, page)
+    retry_missing_nodes(pipe, page)
     pipe.evaluate(
         page,
         "(async()=>{const {aboutInfo} = await import('./about.js'); "
@@ -181,7 +237,8 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, "window.workstationSync.checks['Data Type Status']") is False
     retry_failed_download(pipe, page)
     print(
-        "Native diagnostics: stale success, pending upload, pending deletion, failure, retry, and success passed.",
+        "Native diagnostics: stale success, pending upload/deletion, missing/late/rejected node replies, "
+        "failure, retry, and success passed.",
         flush=True,
     )
 

@@ -144,6 +144,10 @@ succeeds and pending uploads and deletions are acknowledged. `save` updates only
 code and verifies the readback. `restore` uses Brave's native leave/join handlers
 and current pairing suffix, enables Sync everything, and verifies the resulting
 chain.
+Each native node query is bounded within the overall verification deadline.
+Missing replies remain unverified and are retried; late replies do not count as
+fresh observations. Explicit native rejections and broken automation connections
+still stop recovery.
 Timeout errors list incomplete verification checks. Only fixed check names and
 boolean results leave the diagnostic page; native error text, entity data, and
 recovery words remain private.
@@ -175,5 +179,5 @@ limactl shell --workdir /workspace workstation-manager-v1 -- \
 It uses a disposable profile and a disabled Sync endpoint. It exercises real
 native code access, private IPC, profile identity, tab preservation, callback
 routing, and production diagnostic JavaScript with synthetic success, error,
-stale, upload, and deletion states. It does not certify connectivity to the public
-Sync service.
+stale, upload, deletion, and missing or late node-response states. It does not
+certify connectivity to the public Sync service.
