@@ -96,10 +96,12 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     while time.monotonic() < deadline:
         state = pipe.evaluate(
             session,
-            "(async () => {const {aboutInfo} = await import('./about.js'); "
-            "const stats = Object.fromEntries((aboutInfo.details || []).flatMap("
+            "(async () => {"
+            f"if (!window.workstationSync) await {_START}; "
+            "const {aboutInfo} = await import('./about.js'); "
+            "const stats = Object.fromEntries((aboutInfo?.details || []).flatMap("
             "section => section.data.map(item => [item.stat_name, item.stat_value]))); "
-            "const device = (aboutInfo.type_status || []).find(row => row.name === 'Device Info'); "
+            "const device = (aboutInfo?.type_status || []).find(row => row.name === 'Device Info'); "
             "const active = stats['Transport State'] === 'Active'; "
             "const fresh = window.workstationSync.downloaded === true; "
             "const ready = fresh && stats['Sync Cycle Ongoing'] === false "
