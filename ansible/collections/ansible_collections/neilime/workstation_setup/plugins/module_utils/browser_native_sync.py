@@ -313,8 +313,8 @@ class NativeSync:
         """Join an approved chain with Brave's current pairing suffix and verify it."""
 
         code = recovery_words(code)
-        # Leave/join callbacks acknowledge remote device registration, not just
-        # the local seed write. Give those operations the same budget as Sync
+        # Leave/join callbacks can wait for initial Sync work, beyond the local
+        # seed write. Give those operations the same budget as Sync
         # verification while retaining short deadlines for local code reads.
         if reset and self._request("SyncSetupReset", timeout=120) is not True:
             raise BrowserProtocolError("Brave could not leave its previous Sync chain")

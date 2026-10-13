@@ -474,8 +474,9 @@ desktop capture step. Set `E2E_PROFILE_TASKS=1` to also collect Ansible task tim
 CI enables this automatically. Profiling temporarily updates the disposable
 VM's Ansible configuration and restores it when the suite exits.
 After failed setup, the suite reopens seeded browser profiles in the VM to collect
-redacted Sync initialization checks. These diagnostics preserve the original setup
-failure and do not change recovery codes or chain membership.
+redacted Sync initialization checks and numeric request metrics. It also verifies
+an independent disposable chain and removes that control device afterward. These
+diagnostics preserve the original setup failure and the saved recovery chains.
 Each assertion phase uses an SSH control socket inside its test container. Lima's
 configuration stays mounted read-only, and a fresh connection sees group changes
 made during setup.
