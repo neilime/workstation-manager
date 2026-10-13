@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 WORKSPACE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WORKSPACE / "ansible/collections"))
@@ -73,6 +74,33 @@ def diagnostic_fixture() -> dict:
             for name in types
         ],
     }
+
+
+def requested_page(pipe: BrowserPipe) -> None:
+    """A loaded internal page cannot satisfy readiness for a different navigation."""
+
+    existing = pipe.page("brave://version")
+    assert pipe.evaluate(existing, "location.href === 'chrome://version/'") is True
+    target = pipe.targets.pop()
+    original_call = pipe.call
+    navigated = False
+
+    def call(method: str, params: dict | None = None, session: str | None = None, timeout: float = 30) -> dict:
+        nonlocal navigated
+        if method == "Target.createTarget":
+            # Hold the requested navigation on an already-loaded internal page.
+            return {"targetId": target}
+        result = original_call(method, params, session, timeout)
+        if method == "Runtime.evaluate" and not navigated and result.get("result", {}).get("value") is False:
+            original_call("Page.navigate", {"url": "brave://sync-internals"}, session)
+            navigated = True
+        return result
+
+    with patch.object(pipe, "call", side_effect=call):
+        page = pipe.page("brave://sync-internals")
+    assert navigated, "Readiness accepted a different internal page before navigation completed"
+    assert pipe.evaluate(page, "location.href === 'chrome://sync-internals/'") is True
+    print("Native page readiness waited for the requested navigation.", flush=True)
 
 
 def snapshot(pipe: BrowserPipe, page: str, timeout_ms: int = 30000) -> dict:
@@ -419,6 +447,7 @@ def main() -> None:
         ]
         environment = DesktopSession.environment()
         with BrowserPipe(arguments, environment) as pipe:
+            requested_page(pipe)
             native = NativeSync(pipe, directory + "/Default")
             assert len(native.code().split()) == 24
             settings_callbacks(pipe)

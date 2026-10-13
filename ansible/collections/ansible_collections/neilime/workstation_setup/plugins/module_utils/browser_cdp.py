@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from types import TracebackType
+from urllib.parse import urlsplit, urlunsplit
 
 # dup2 must run after Python's descriptor cleanup, before exec. No data or secrets
 # are passed through this bootstrap, command arguments, or browser stderr.
@@ -139,12 +140,26 @@ class BrowserPipe:
     def page(self, url: str) -> str:
         """Open an internal page in this process's selected native profile."""
 
+        parsed = urlsplit(url)
+        expected = urlunsplit(
+            (
+                "chrome" if parsed.scheme == "brave" else parsed.scheme,
+                parsed.netloc,
+                parsed.path or "/",
+                parsed.query,
+                parsed.fragment,
+            )
+        )
         target = self.call("Target.createTarget", {"url": url})["targetId"]
         self.targets.append(target)
         session = self.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            ready = self.evaluate(session, "document.readyState === 'complete' && location.protocol === 'chrome:'")
+            ready = self.evaluate(
+                session,
+                "document.readyState === 'complete' && location.protocol === 'chrome:' "
+                f"&& location.href === {json.dumps(expected)}",
+            )
             if ready:
                 return session
             time.sleep(0.1)
