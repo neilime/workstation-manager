@@ -406,8 +406,11 @@ errors fail the workflow; inspect the preceding messages for the dependency and 
 
 Install cURL, Python 3, Lima, `qemu-img`, and `qemu-system-x86_64` on the host.
 The VM uses the selected Ubuntu release, currently 26.04, on amd64 with 2 CPUs,
-6 GiB RAM, and a 40 GiB disk. Readiness checks require a GNOME Wayland session;
-Ptyxis is the managed terminal. The fixture installs GNOME Keyring before login
+6 GiB RAM, and a 40 GiB disk. CI assigns 4 CPUs and 8 GiB RAM so source builds
+can use the public runner's CPU capacity. Set `E2E_VM_CPUS` and
+`E2E_VM_MEMORY_GIB` to positive integers before creating a VM to override its
+resources; existing VMs retain their configuration. Readiness checks require a
+GNOME Wayland session; Ptyxis is the managed terminal. The fixture installs GNOME Keyring before login
 and initializes an encrypted keyring with a random password held in the guest's
 private runtime directory. It unlocks that keyring after desktop restarts so
 native recovery tests have the same credential-store access as an unlocked desktop.
@@ -435,6 +438,12 @@ make e2e-test
 make e2e-down
 ```
 
+Use `make e2e-prepare` to start the VM and prepare the Docker tooling image in
+parallel. CI uses this target and saves Lima's public image download cache before
+the authenticated test phases, so a later failure does not discard downloaded
+images. The cache key includes the Lima version, runner platform, and VM template.
+Guest disks and authenticated workstation state are never cached.
+
 Run `make e2e-down` after failures too. It asks the browser devices created by
 this test run to leave their Sync chains, then deletes the VM. A stopped VM is
 resumed for this cleanup. Failed browser teardown retains the local VM and recorded
@@ -449,7 +458,7 @@ and requires a successful server response for that exact device's deletion;
 Brave's local leave acknowledgement alone does not prove removal.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup
 failure, it prints Lima logs and attempts a bounded guest diagnostic command
-before teardown. Inspect the `Start e2e VM` job output for provisioning,
+before teardown. Inspect the `Prepare e2e VM and tooling` job output for provisioning,
 desktop, and networking errors.
 
 The suite runs three phases, with assertions after each:
@@ -481,8 +490,10 @@ screenshot defaults to `.reports/screenshots/e2e-setup-desktop.png`; use
 `SCREENSHOTS_DIR` to change its directory. CI publishes reports and the screenshot.
 The suite logs elapsed time and exit status for each action, assertion phase, and
 desktop capture step. Set `E2E_PROFILE_TASKS=1` to also collect Ansible task timings;
-CI enables this automatically. Profiling temporarily updates the disposable
-VM's Ansible configuration and restores it when the suite exits.
+CI enables this automatically and appends phase durations and exit codes to the
+job summary, including failed phases. Assertion output lists the ten slowest tests.
+Profiling temporarily updates the disposable VM's Ansible configuration and
+restores it when the suite exits.
 After failed setup, the suite reopens seeded browser profiles in the VM to collect
 redacted Sync initialization checks and numeric request metrics. It also verifies
 an independent disposable chain and removes that control device afterward. These

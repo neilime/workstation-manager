@@ -73,6 +73,7 @@ run_phase_tests() {
 		"$tooling_image" \
 		bash /workspace/e2e-tests/run-assertions.sh "$ssh_config_path" \
 		-q \
+		--durations=10 \
 		-o cache_dir=/tmp/pytest-cache \
 		--hosts="ssh://$ssh_host" \
 		"${phase_report_option[@]}" \

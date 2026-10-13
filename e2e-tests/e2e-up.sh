@@ -16,7 +16,23 @@ start_args=(--timeout=20m)
 if limactl list --format '{{.Name}}' 2>/dev/null | grep -Fxq "$E2E_VM_NAME"; then
 	start_args+=("$E2E_VM_NAME")
 else
-	start_args+=(-y --containerd=none "--name=$E2E_VM_NAME" "$runtime_config_file")
+	start_args+=(-y --containerd=none "--name=$E2E_VM_NAME")
+	# Resource overrides apply only when creating a disposable fixture.
+	for resource in E2E_VM_CPUS E2E_VM_MEMORY_GIB; do
+		value="${!resource:-}"
+		if [[ -z "$value" ]]; then
+			continue
+		fi
+		if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+			printf '%s must be a positive integer\n' "$resource" >&2
+			exit 1
+		fi
+		case "$resource" in
+		E2E_VM_CPUS) start_args+=("--cpus=$value") ;;
+		E2E_VM_MEMORY_GIB) start_args+=("--memory=$value") ;;
+		esac
+	done
+	start_args+=("$runtime_config_file")
 fi
 
 if run_e2e_timed_command vm-start limactl start "${start_args[@]}"; then

@@ -17,6 +17,7 @@ FIRST_PARTY_COLLECTION_DIRS := \
 	ansible/collections/ansible_collections/neilime/workstation_state
 
 .PHONY: help setup tool-shell lint lint-fix check-ansible check-collections test test-unit test-integration test-host test-collections ci
+.PHONY: e2e-prepare
 
 help: ## Display help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -88,6 +89,9 @@ ci: setup ## Run the local CI equivalent
 e2e-up: ## Start the Lima end-to-end test VM
 	$(call check_lima)
 	@"$(CURDIR)/e2e-tests/e2e-up.sh" "$(VM_NAME)"
+
+e2e-prepare: ## Prepare the tooling image and start the VM concurrently
+	@$(MAKE) --jobs=2 setup e2e-up
 
 e2e-setup: ## Run workstation.sh setup inside the Lima end-to-end test VM
 	$(call check_lima)

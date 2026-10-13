@@ -66,9 +66,17 @@ def test_browser_metrics_reject_non_numeric_buckets(bucket: dict, capsys: pytest
     assert not capsys.readouterr().out
 
 
-@pytest.mark.parametrize("existing_instance,start_status", [(False, 0), (True, 0), (False, 37)])
+@pytest.mark.parametrize(
+    "existing_instance,start_status,resources",
+    [
+        (False, 0, {}),
+        (True, 0, {"E2E_VM_CPUS": "4"}),
+        (False, 37, {}),
+        (False, 0, {"E2E_VM_CPUS": "4", "E2E_VM_MEMORY_GIB": "8"}),
+    ],
+)
 def test_vm_start_preserves_failures_and_collects_diagnostics(
-    tmp_path: pathlib.Path, existing_instance: bool, start_status: int
+    tmp_path: pathlib.Path, existing_instance: bool, start_status: int, resources: dict[str, str]
 ) -> None:
     """Both startup paths retain status; failed diagnostics cannot hide a boot failure."""
     commands = tmp_path / "bin"
@@ -102,6 +110,9 @@ def test_vm_start_preserves_failures_and_collects_diagnostics(
             "TEST_START_STATUS": str(start_status),
             "TEST_START_ARGS": str(arguments),
             "TEST_RENDERED_CONFIG": str(rendered_config),
+            "E2E_VM_CPUS": "",
+            "E2E_VM_MEMORY_GIB": "",
+            **resources,
         },
         capture_output=True,
         text=True,
@@ -112,14 +123,98 @@ def test_vm_start_preserves_failures_and_collects_diagnostics(
     start_arguments = arguments.read_text().split("\0")[:-1]
     if existing_instance:
         assert start_arguments[-1] == "fixture"
+        assert not any(argument.startswith(("--cpus=", "--memory=")) for argument in start_arguments)
     else:
         assert "--containerd=none" in start_arguments
         assert "--name=fixture" in start_arguments
         assert DataLoader().load_from_file(str(rendered_config))["mounts"][0]["location"] == str(E2E_PATH.parent)
+        for variable, flag in (("E2E_VM_CPUS", "--cpus="), ("E2E_VM_MEMORY_GIB", "--memory=")):
+            assert [argument for argument in start_arguments if argument.startswith(flag)] == (
+                [flag + resources[variable]] if variable in resources else []
+            )
     for diagnostic in ("serial boot diagnostic", "hostagent boot diagnostic", "guest boot diagnostic"):
         assert (diagnostic in result.stderr) == bool(start_status)
     assert re.search(rf"phase=vm-start elapsed=\d+s status={start_status}", result.stderr)
     assert not list(tmp_path.glob("workstation-manager-lima-*"))
+
+
+@pytest.mark.parametrize("variable,value", [("E2E_VM_CPUS", "0"), ("E2E_VM_MEMORY_GIB", "1.5")])
+def test_vm_creation_rejects_invalid_resources(tmp_path: pathlib.Path, variable: str, value: str) -> None:
+    """Invalid resource overrides fail before starting a VM and remove temporary configuration."""
+    limactl = tmp_path / "limactl"
+    limactl.write_text('#!/bin/bash\n[[ "$1" == list ]] || touch "$TEST_STARTED"\n')
+    limactl.chmod(0o700)
+    started = tmp_path / "started"
+    result = subprocess.run(
+        ["bash", str(E2E_PATH / "e2e-up.sh"), "fixture"],
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "TMPDIR": str(tmp_path),
+            "TEST_STARTED": str(started),
+            "E2E_VM_CPUS": "",
+            "E2E_VM_MEMORY_GIB": "",
+            variable: value,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert f"{variable} must be a positive integer" in result.stderr
+    assert not started.exists()
+    assert not list(tmp_path.glob("workstation-manager-lima-*"))
+
+
+@pytest.mark.parametrize("tooling_status,vm_status", [(0, 0), (37, 0), (0, 42)])
+def test_e2e_preparation_overlaps_work_and_propagates_failures(
+    tmp_path: pathlib.Path, tooling_status: int, vm_status: int
+) -> None:
+    """Both prerequisites must start before either finishes, and either failure fails preparation."""
+    shutil.copyfile(E2E_PATH.parent / "Makefile", tmp_path / "Makefile")
+    scripts = tmp_path / "e2e-tests"
+    scripts.mkdir()
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    rendezvous = (
+        'touch "$TEST_PREPARE_TRACE/$own"\n'
+        "for attempt in {1..100}; do\n"
+        '  if [[ -e "$TEST_PREPARE_TRACE/$other" ]]; then exit "$status"; fi\n'
+        "  sleep 0.02\n"
+        "done\nexit 99\n"
+    )
+    for script, body in (
+        (commands / "limactl", "exit 0\n"),
+        (
+            commands / "docker",
+            '[[ "$1" == image ]] && exit 1\nown=tooling; other=vm; status="$TEST_TOOLING_STATUS"\n' + rendezvous,
+        ),
+        (scripts / "e2e-up.sh", 'own=vm; other=tooling; status="$TEST_VM_STATUS"\n' + rendezvous),
+    ):
+        script.write_text("#!/bin/bash\n" + body)
+        script.chmod(0o700)
+    for executable in ("qemu-img", "qemu-system-x86_64"):
+        (commands / executable).symlink_to(commands / "limactl")
+    result = subprocess.run(
+        ["make", "e2e-prepare", "TOOLING_IMAGE_PULL=1"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{commands}:/usr/bin:/bin",
+            "TEST_PREPARE_TRACE": str(tmp_path),
+            "TEST_TOOLING_STATUS": str(tooling_status),
+            "TEST_VM_STATUS": str(vm_status),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert (result.returncode == 0) == (tooling_status == vm_status == 0), result.stdout + result.stderr
+    assert "Error 99" not in result.stderr, "Preparation serialized work instead of overlapping it"
+    assert (tmp_path / "tooling").exists()
+    assert (tmp_path / "vm").exists()
 
 
 class ProfilingConfigurationTests(unittest.TestCase):
@@ -183,7 +278,8 @@ class PhaseTimingTests(unittest.TestCase):
     def test_preserves_status_and_hides_command_arguments(self) -> None:
         """Timing records must retain failures while never printing credential arguments."""
         for exit_status in (0, 37):
-            with self.subTest(exit_status=exit_status):
+            with self.subTest(exit_status=exit_status), tempfile.TemporaryDirectory() as temporary_dir:
+                summary = pathlib.Path(temporary_dir) / "summary.md"
                 result = subprocess.run(
                     [
                         "bash",
@@ -195,6 +291,7 @@ class PhaseTimingTests(unittest.TestCase):
                         str(E2E_PATH / "e2e-common.sh"),
                         str(exit_status),
                     ],
+                    env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary)},
                     capture_output=True,
                     text=True,
                     check=False,
@@ -202,7 +299,28 @@ class PhaseTimingTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, exit_status, result.stderr)
                 self.assertRegex(result.stderr, rf"phase=fixture elapsed=\d+s status={exit_status}")
-                self.assertNotIn("synthetic-vault-password", result.stdout + result.stderr)
+                self.assertRegex(summary.read_text(), rf"- E2E fixture: \d+s \(exit {exit_status}\)")
+                self.assertNotIn("synthetic-vault-password", result.stdout + result.stderr + summary.read_text())
+
+    def test_summary_failure_preserves_the_action_status(self) -> None:
+        """An unavailable summary destination must not replace the original action failure."""
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'set -euo pipefail; source "$1"; run_e2e_timed_command fixture bash -c "exit 37"',
+                    "timing-test",
+                    str(E2E_PATH / "e2e-common.sh"),
+                ],
+                env={**os.environ, "GITHUB_STEP_SUMMARY": temporary_dir},
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertIn("Could not append E2E timing", result.stderr)
 
 
 @pytest.mark.parametrize("state,expected", [("ACTIVE", 0), ("ERROR", 1)])

@@ -18,10 +18,17 @@ run_e2e_timed_command() (
 	# shellcheck disable=SC2329
 	finish_e2e_timed_command() {
 		local phase_status=$?
+		local phase_elapsed=$((SECONDS - phase_started_at))
 
 		# Log only the phase label: command arguments can contain vault credentials.
 		printf 'E2E timing: phase=%s elapsed=%ss status=%s\n' \
-			"$phase_name" "$((SECONDS - phase_started_at))" "$phase_status" >&2
+			"$phase_name" "$phase_elapsed" "$phase_status" >&2
+		if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+			# Only public phase labels and numbers belong in the summary.
+			printf -- '- E2E %s: %ss (exit %s)\n' \
+				"$phase_name" "$phase_elapsed" "$phase_status" >>"$GITHUB_STEP_SUMMARY" ||
+				printf '%s\n' 'Could not append E2E timing to the job summary.' >&2
+		fi
 		exit "$phase_status"
 	}
 

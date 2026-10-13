@@ -19,6 +19,7 @@ RUN apt-get update && \
     bash \
     git \
     locales \
+    make \
     openssh-client \
     procps \
     python3 \
