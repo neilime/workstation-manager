@@ -229,7 +229,10 @@ labeled separately. Keep CI input preparation distinct from workstation behavior
 `main` always calls `run_action`, and the VM runners use the same public commands.
 Bootstrap establishes a GitHub CLI keyring login before fetching private
 configuration. `run_action` then collects Bitwarden credentials;
-`run_ansible_pull` selects the local or remote controller command. Terminal
+`run_ansible_pull` selects the local or remote controller command. Remote runs
+explicitly limit playbook execution to `localhost` and ignore unmatched hostname
+aliases added by `ansible-pull` during checkout. This setting applies only to the
+remote invocation; task warnings and failures remain visible. Terminal
 availability determines prompting and output capture. See
 [automated runs](#automated-runs) for CI inputs. Both direct
 execution and terminal capture use the same session environment helper. Temporary

@@ -764,8 +764,9 @@ run_ansible_pull() {
 				-a "repo=$repository_clone_url dest=$ANSIBLE_CHECKOUT_DIR version=$REPOSITORY_BRANCH refspec=$REPOSITORY_BRANCH" \
 				>/dev/null || fail "Failed to fetch the pinned repository commit. Check repository access and the commit SHA."
 		fi
-		set -- "$@" "$ANSIBLE_VENV_DIR/bin/ansible-pull" \
-			--purge -U "$repository_clone_url" -C "$REPOSITORY_BRANCH" -d "$ANSIBLE_CHECKOUT_DIR"
+		# Pull's checkout always adds hostname aliases, even with --limit; our inventory is localhost only.
+		set -- "$@" env ANSIBLE_HOST_PATTERN_MISMATCH=ignore "$ANSIBLE_VENV_DIR/bin/ansible-pull" \
+			--limit localhost --purge -U "$repository_clone_url" -C "$REPOSITORY_BRANCH" -d "$ANSIBLE_CHECKOUT_DIR"
 		if is_full_git_commit_sha "$REPOSITORY_BRANCH"; then
 			set -- "$@" --full
 		fi
