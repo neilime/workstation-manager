@@ -187,6 +187,29 @@ print_e2e_vm_diagnostics() {
 	done
 }
 
+print_e2e_desktop_diagnostics() {
+	# Keep this bounded and restricted to desktop lifecycle/resource messages.
+	# The action journal and process environments can contain vault credentials.
+	run_e2e_lima_control_command 30 sudo -n bash -s <<'EOF'
+printf '\nGuest memory and swap:\n'
+free -m
+swapon --show=NAME,TYPE,SIZE,USED,PRIO
+printf '\nLogin sessions:\n'
+loginctl list-sessions --no-legend
+printf '\nDisplay manager state:\n'
+systemctl show gdm3 --property=ActiveState,SubState,Result,ExecMainStatus
+printf '\nDesktop and OOM service lifecycle:\n'
+journalctl --boot --no-pager --lines=100 \
+  --unit=gdm --unit=gdm3 --unit=systemd-logind --unit=systemd-oomd
+printf '\nGNOME compositor service lifecycle:\n'
+journalctl --boot --no-pager --lines=80 _COMM=systemd \
+  USER_UNIT=org.gnome.Shell@wayland.service
+printf '\nKernel memory and compositor faults:\n'
+journalctl --boot --dmesg --no-pager --lines=80 \
+  --grep='Out of memory|oom-kill|Killed process|segfault|virtio_gpu'
+EOF
+}
+
 resolve_e2e_workstation_context() {
 	local vm_name="$1"
 	local branch_name=""

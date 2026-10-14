@@ -406,7 +406,8 @@ errors fail the workflow; inspect the preceding messages for the dependency and 
 
 Install cURL, Python 3, Lima, `qemu-img`, and `qemu-system-x86_64` on the host.
 The VM uses the selected Ubuntu release, currently 26.04, on amd64 with 2 CPUs,
-6 GiB RAM, and a 40 GiB disk. CI assigns 4 CPUs and 8 GiB RAM so source builds
+6 GiB RAM, a 40 GiB disk, and a 4 GiB swap file for source-build memory peaks.
+CI assigns 4 CPUs and 8 GiB RAM so source builds
 can use the public runner's CPU capacity. Set `E2E_VM_CPUS` and
 `E2E_VM_MEMORY_GIB` to positive integers before creating a VM to override its
 resources; existing VMs retain their configuration. Readiness checks require a
@@ -465,6 +466,9 @@ The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup
 failure, it prints Lima logs and attempts a bounded guest diagnostic command
 before teardown. Inspect the `Prepare e2e VM and tooling` job output for provisioning,
 desktop, and networking errors.
+Setup failures also print bounded guest memory, swap, login-session, display-manager,
+and OOM diagnostics before teardown. These exclude action journals and process
+environments, which can contain credentials.
 
 The suite runs three phases, with assertions after each:
 

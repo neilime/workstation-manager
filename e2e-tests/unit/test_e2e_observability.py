@@ -217,6 +217,69 @@ def test_e2e_preparation_overlaps_work_and_propagates_failures(
     assert (tmp_path / "vm").exists()
 
 
+@pytest.mark.parametrize(
+    "initially_active,format_status,probe_status", [(False, 0, 0), (True, 0, 0), (False, 37, 0), (True, 0, 42)]
+)
+def test_vm_swap_preserves_active_pages_and_requires_successful_formatting(
+    tmp_path: pathlib.Path, initially_active: bool, format_status: int, probe_status: int
+) -> None:
+    """Provisioning skips active swap, fails closed on probe errors, and requires successful formatting."""
+    config = DataLoader().load_from_file(str(E2E_PATH / "lima-ubuntu.yml"))
+    provision = next(entry["script"] for entry in config["provision"] if "swapon --show" in entry["script"])
+    swapfile = tmp_path / "fixture.swap"
+    swapfile.write_text("existing pages")
+    active = tmp_path / "active"
+    if initially_active:
+        active.write_text(str(swapfile) + "\n")
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    trace = tmp_path / "trace"
+    for name, body in (
+        (
+            "swapon",
+            'if [[ "$1" == --show=NAME ]]; then\n'
+            '  if [[ "$TEST_PROBE_STATUS" != 0 ]]; then exit "$TEST_PROBE_STATUS"; fi\n'
+            '  if [[ -f "$TEST_ACTIVE" ]]; then cat "$TEST_ACTIVE"; fi\n'
+            "else\n"
+            '  printf "%s\\n" "$1" >"$TEST_ACTIVE"\n'
+            '  printf "activate\\n" >>"$TEST_TRACE"\n'
+            "fi\n",
+        ),
+        ("fallocate", '[[ "$1" == --length && "$2" == 4GiB ]] || exit 99\nprintf "pages" >"$3"\n'),
+        (
+            "mkswap",
+            'printf "format\\n" >>"$TEST_TRACE"\nexit "$TEST_FORMAT_STATUS"\n',
+        ),
+    ):
+        command = commands / name
+        command.write_text("#!/bin/bash\nset -eu\n" + body)
+        command.chmod(0o700)
+    for _ in range(2):
+        result = subprocess.run(
+            ["bash", "-c", provision.replace("/var/lib/workstation-manager-e2e.swap", shlex.quote(str(swapfile)))],
+            env={
+                **os.environ,
+                "PATH": f"{commands}:/usr/bin:/bin",
+                "TEST_ACTIVE": str(active),
+                "TEST_TRACE": str(trace),
+                "TEST_FORMAT_STATUS": str(format_status),
+                "TEST_PROBE_STATUS": str(probe_status),
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        assert result.returncode == (probe_status or format_status), result.stderr
+    if initially_active:
+        assert swapfile.read_text() == "existing pages"
+        assert not trace.exists()
+    else:
+        assert swapfile.stat().st_mode & 0o777 == 0o600
+        assert active.exists() == (format_status == 0)
+        assert trace.read_text().splitlines() == (["format", "format"] if format_status else ["format", "activate"])
+
+
 class ProfilingConfigurationTests(unittest.TestCase):
     """Preserve guest configuration and recover from failed profiling preparation."""
 
@@ -441,6 +504,9 @@ class SuiteFailureTests(unittest.TestCase):
                         + 'return "$TEST_RESTORE_STATUS"; }\n'
                         + "restart_e2e_desktop_session() { :; }\n"
                         + "wait_for_e2e_clipboard_extension() { :; }\n"
+                        + 'print_e2e_desktop_diagnostics() { printf "desktop-diagnostics\\n" >>"$TEST_TRACE"; '
+                        + "return 43; }\n"
+                        + 'run_e2e_lima_shell() { printf "browser-diagnostics\\n" >>"$TEST_TRACE"; return 44; }\n'
                         + 'capture_e2e_vm_desktop() { printf "screenshot\\n" >>"$TEST_TRACE"; '
                         + 'printf "image" >"$2/$1.png"; return "$TEST_SCREENSHOT_STATUS"; }\n'
                     )
@@ -479,6 +545,9 @@ class SuiteFailureTests(unittest.TestCase):
                     self.assertIn("screenshot", phases)
                     self.assertEqual(phases[-1], "restore")
                     self.assertEqual("cleanup" in phases, setup_status == 0)
+                    self.assertEqual("desktop-diagnostics" in phases, setup_status != 0)
+                    if setup_status:
+                        self.assertLess(phases.index("desktop-diagnostics"), phases.index("browser-diagnostics"))
                     started_phases = re.findall(r"^E2E phase: (\S+)$", result.stderr, re.MULTILINE)
                     completed_phases = re.findall(r"^E2E timing: phase=(\S+) ", result.stderr, re.MULTILINE)
                     self.assertEqual(completed_phases, started_phases)

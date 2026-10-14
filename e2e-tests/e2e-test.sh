@@ -107,6 +107,8 @@ fi
 capture_status=0
 run_e2e_timed_command setup-screenshot capture_phase_screenshot setup || capture_status=$?
 if [[ $setup_status -ne 0 ]]; then
+	run_e2e_timed_command desktop-diagnostics print_e2e_desktop_diagnostics ||
+		printf '%s\n' 'Desktop diagnostics could not complete.' >&2
 	run_e2e_timed_command browser-diagnostics run_e2e_lima_shell \
 		env PYTHONPATH=/workspace/ansible/collections \
 		python3 /workspace/e2e-tests/browser_sync_diagnostics.py ||

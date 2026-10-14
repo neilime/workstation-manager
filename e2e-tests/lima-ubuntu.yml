@@ -31,6 +31,21 @@ provision:
     script: |
       #!/bin/bash
       set -euo pipefail
+      # Cloud images have no desktop swap reserve. Keep source builds from
+      # exhausting guest RAM while GNOME and its keyring must remain alive.
+      swapfile=/var/lib/workstation-manager-e2e.swap
+      active_swap="$(swapon --show=NAME --noheadings)"
+      if ! grep -Fxq "$swapfile" <<<"$active_swap"; then
+        install -m 0600 /dev/null "$swapfile"
+        fallocate --length 4GiB "$swapfile"
+        mkswap "$swapfile"
+        swapon "$swapfile"
+      fi
+
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       desktop_user="{{.User}}"
 
