@@ -17,7 +17,7 @@ def _raise_walk_error(error: OSError) -> NoReturn:
 # Inventory construction is the builder's single public operation.
 # pylint: disable-next=too-few-public-methods
 class GitRepositoryInventoryBuilder:
-    """Exclude ignored nested checkouts before collecting repository metadata."""
+    """Prune ignored project trees before collecting repository metadata."""
 
     def __init__(self, run_command: Callable[..., tuple[int, str, str]]) -> None:
         self.run_command = run_command
@@ -49,32 +49,29 @@ class GitRepositoryInventoryBuilder:
         return return_code, stdout
 
     def _discover(self, projects_root: Path) -> list[Path]:
-        """Find physical .git directories while honoring the enclosing repository."""
+        """Find physical .git directories without entering ignored directory trees."""
 
-        repositories: set[Path] = set()
+        ignored_by_repository: dict[Path, set[Path]] = {}
         for directory, subdirectories, _files in os.walk(projects_root, onerror=_raise_walk_error, followlinks=False):
             subdirectories.sort()
-            if ".git" not in subdirectories:
-                continue
-            subdirectories.remove(".git")
-            repository = Path(directory)
-            if (repository / ".git").is_symlink():
-                continue
-            parent_repository = next((parent for parent in repository.parents if parent in repositories), None)
-            if parent_repository is not None:
-                return_code, _stdout = self._git(
-                    parent_repository,
-                    "check-ignore",
-                    "--quiet",
-                    "--",
-                    str(repository.relative_to(parent_repository)),
-                    allowed_codes=(0, 1),
-                )
-                if return_code == 0:
-                    subdirectories.clear()
-                    continue
-            repositories.add(repository)
-        return sorted(repositories)
+            path = Path(directory)
+            if ".git" in subdirectories:
+                subdirectories.remove(".git")
+                if not (path / ".git").is_symlink():
+                    ignored_by_repository[path] = self._ignored_directories(path)
+            repository = next((parent for parent in (path, *path.parents) if parent in ignored_by_repository), None)
+            if repository is not None:
+                ignored = ignored_by_repository[repository]
+                subdirectories[:] = [name for name in subdirectories if path / name not in ignored]
+        return sorted(ignored_by_repository)
+
+    def _ignored_directories(self, repository: Path) -> set[Path]:
+        """List collapsed ignored trees once per repository without excluding tracked files."""
+
+        _return_code, stdout = self._git(
+            repository, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"
+        )
+        return {repository / name.rstrip("/") for name in stdout.split("\0") if name.endswith("/")}
 
     def _metadata(self, repository: Path, projects_root: Path) -> dict[str, Any]:
         """Preserve branch, commit, remotes, and local-change fields for restoration."""

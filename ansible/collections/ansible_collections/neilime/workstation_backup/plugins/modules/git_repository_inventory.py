@@ -2,7 +2,7 @@
 # Copyright: (c) 2026, workstation-manager contributors
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
-"""Collect Git project recovery metadata while excluding ignored nested repos."""
+"""Collect Git project recovery metadata without entering ignored directory trees."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ short_description: Collect Git recovery metadata for project repositories
 version_added: '1.0.0'
 description:
   - Discovers repositories with physical .git directories beneath the project directory.
-  - Excludes nested repositories ignored by their enclosing repository's standard Git ignore rules.
+  - Prunes directories ignored by their enclosing repository's standard Git ignore rules before reading their contents.
   - Reads commits, branches, remotes, and local changes without fetching or modifying repositories.
 options:
   projects_directory:

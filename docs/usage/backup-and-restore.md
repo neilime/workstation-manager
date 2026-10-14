@@ -203,9 +203,11 @@ services even when preferences are sanitized. Store them in a private destinatio
 copying them off the computer is your responsibility.
 
 The Git inventory supports repositories with a physical `.git` directory.
-It omits nested checkouts ignored by the enclosing project's Git rules, such as
-repositories under `tools/vendor/` when that directory is ignored. Non-ignored
-nested projects remain in the inventory. It does not
+Discovery skips directories ignored by the enclosing project's Git rules before
+reading their contents, including ignored `node_modules/` and `tools/vendor/`
+trees and any checkouts inside them. Non-ignored nested projects remain in the
+inventory. An unreadable directory outside the ignored trees stops inventory
+collection. The inventory does not
 preserve Git history that exists only locally, stashes, reflogs, or the staging
 index. Push commits you need to recover before relying on this backup.
 

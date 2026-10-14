@@ -54,8 +54,8 @@ def projects_fixture(tmp_path, monkeypatch) -> Path:
 
 
 @pytest.mark.parametrize("ignore_source", [".gitignore", "tools/.gitignore", ".git/info/exclude", "global"])
-def test_ignored_dependency_repositories_are_skipped(projects, ignore_source):
-    """Ignore rules must omit even empty dependency checkouts before metadata reads."""
+def test_ignored_dependency_repositories_are_skipped(projects, monkeypatch, ignore_source):
+    """Standard ignore rules must prune dependency trees before reading their contents."""
 
     repository = projects / "open-source/twbs-helper-module"
     create_repository(repository)
@@ -66,6 +66,13 @@ def test_ignored_dependency_repositories_are_skipped(projects, ignore_source):
     ignore_file.parent.mkdir(parents=True, exist_ok=True)
     ignore_file.write_text("vendor/\n" if ignore_source == "tools/.gitignore" else "tools/vendor/\n")
     create_repository(repository / "tools/vendor/phpstan/extension-installer", empty=True)
+    original_scandir = git_inventory.os.scandir
+
+    def guarded_scandir(path):
+        assert not Path(path).is_relative_to(repository / "tools/vendor")
+        return original_scandir(path)
+
+    monkeypatch.setattr(git_inventory.os, "scandir", guarded_scandir)
     inventory = git_inventory.GitRepositoryInventoryBuilder(run_command).build(str(projects))
     assert [record["relative_path"] for record in inventory] == ["open-source/twbs-helper-module"]
 
@@ -86,6 +93,30 @@ def test_visible_nested_projects_and_ignore_negation_are_preserved(projects):
         "parent/tools/independent project",
         "parent/tools/vendor/keep",
         "vendor/standalone",
+    ]
+
+
+def test_nested_projects_use_their_own_ignore_rules(projects):
+    """Each visible nested checkout must control pruning within its own project tree."""
+
+    repository = projects / "parent"
+    create_repository(repository)
+    (repository / ".gitignore").write_text("parent-cache/\n")
+    child = repository / "child"
+    create_repository(child)
+    (child / ".gitignore").write_text("child-cache/\n")
+    create_repository(child / "child-cache/ignored", empty=True)
+    create_repository(child / "parent-cache/visible")
+    create_repository(repository / "parent-cache/ignored", empty=True)
+    create_repository(repository / "child-cache/visible")
+
+    inventory = git_inventory.GitRepositoryInventoryBuilder(run_command).build(str(projects))
+
+    assert [record["relative_path"] for record in inventory] == [
+        "parent",
+        "parent/child",
+        "parent/child/parent-cache/visible",
+        "parent/child-cache/visible",
     ]
 
 
@@ -177,30 +208,46 @@ def test_invalid_projects_paths_fail(projects):
 
 
 def test_ignore_check_failures_are_fatal_and_do_not_expose_diagnostics(projects):
-    """Only Git's ignored and non-ignored exit codes may decide inventory coverage."""
+    """Failed Git ignore inspection must stop inventory without exposing diagnostics."""
 
     repository = projects / "parent"
     create_repository(repository)
-    create_repository(repository / "child")
 
     def rejected_ignore_check(arguments, **options):
-        if "check-ignore" in arguments:
+        if "ls-files" in arguments:
             return 128, "synthetic-private-output", "synthetic-private-diagnostics"
         return run_command(arguments, **options)
 
-    with pytest.raises(ValueError, match="Git check-ignore failed") as failure:
+    with pytest.raises(ValueError, match="Git ls-files failed") as failure:
         git_inventory.GitRepositoryInventoryBuilder(rejected_ignore_check).build(str(projects))
     assert "synthetic-private" not in str(failure.value)
 
 
-def test_directory_read_failures_are_fatal(projects, monkeypatch):
-    """Discovery must not silently report an unreadable project tree as complete."""
+@pytest.mark.parametrize("ignored", [True, False])
+def test_unreadable_directories_are_pruned_only_when_ignored(projects, monkeypatch, ignored):
+    """Ignored caches must not be scanned, while unreadable included data remains fatal."""
 
-    def unreadable_walk(_root, *, onerror, followlinks):
-        assert not followlinks
-        onerror(PermissionError("Cannot read fixture directory"))
-        return iter(())
+    repository = projects / "project"
+    create_repository(repository)
+    restricted = repository / "node_modules/.cache/periodicite-prod-audit/pgdata"
+    restricted.mkdir(parents=True)
+    if ignored:
+        (repository / ".gitignore").write_text("node_modules/\n")
+    original_scandir = git_inventory.os.scandir
+    visited = []
 
-    monkeypatch.setattr(git_inventory.os, "walk", unreadable_walk)
-    with pytest.raises(PermissionError, match="Cannot read fixture directory"):
-        git_inventory.GitRepositoryInventoryBuilder(run_command).build(str(projects))
+    def guarded_scandir(path):
+        visited.append(Path(path))
+        if Path(path) == restricted:
+            raise PermissionError("Cannot read fixture directory")
+        return original_scandir(path)
+
+    monkeypatch.setattr(git_inventory.os, "scandir", guarded_scandir)
+    builder = git_inventory.GitRepositoryInventoryBuilder(run_command)
+    if ignored:
+        inventory = builder.build(str(projects))
+        assert [record["relative_path"] for record in inventory] == ["project"]
+        assert repository / "node_modules" not in visited
+    else:
+        with pytest.raises(PermissionError, match="Cannot read fixture directory"):
+            builder.build(str(projects))
