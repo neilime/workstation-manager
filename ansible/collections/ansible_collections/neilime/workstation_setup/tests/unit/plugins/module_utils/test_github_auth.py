@@ -171,3 +171,26 @@ def test_account_and_network_failures_have_distinct_diagnostics(authentication, 
     state["login"] = status
     with pytest.raises(ValueError, match=message):
         auth.ensure()
+
+
+@pytest.mark.parametrize(
+    "diagnostic,message",
+    [
+        ("unknown flag: --json", "update GitHub CLI"),
+        ("unknown flag: --active", "update GitHub CLI"),
+        ("error connecting to github.com", "check connectivity"),
+    ],
+)
+def test_status_failures_report_safe_actionable_diagnostics(authentication, monkeypatch, diagnostic, message):
+    """Unsupported CLI flags and connection failures stop without exposing stderr or starting login."""
+    auth, state = authentication
+
+    def run(command, **_options):
+        state["calls"].append(command)
+        return subprocess.CompletedProcess(command, 1, "", diagnostic + "\nprivate-failure-secret")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(ValueError, match=message) as error:
+        auth.ensure(token="supplied-secret")
+    assert "private-failure-secret" not in str(error.value)
+    assert len(state["calls"]) == 1

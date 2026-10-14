@@ -61,7 +61,8 @@ after restoring projects and establishing GitHub authentication. The default Git
 The Starship launcher uses mise's resolved executable path for the configured release.
 The Git project report provides a manual command and daily desktop notifications.
 GitHub authentication runs before private-repository access through
-`ansible/github_bootstrap.yml`. It reuses a saved login or performs native browser
+`ansible/github_bootstrap.yml`, which installs or updates GitHub CLI from its
+official APT repository. It reuses a saved login or performs native browser
 sign-in, with token input for automation. The login persists in the managed user's
 OS credential store and must match `development.github.account` once configuration
 is loaded. Context7 requires a Bitwarden API-key item selector. See the

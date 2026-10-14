@@ -60,6 +60,11 @@ class GitHubAuthentication:
     def _status(self) -> dict[str, Any]:
         result = self._run(["/usr/bin/gh", "auth", "status", "--hostname", self.host, "--active", "--json", "hosts"])
         if result.returncode and not result.stdout.strip():
+            if any(f"unknown flag: {flag}" in result.stderr for flag in ("--active", "--json")):
+                raise ValueError(
+                    "Installed /usr/bin/gh does not support the required authentication status flags; "
+                    "update GitHub CLI from its official APT repository and retry"
+                )
             if "not logged" in result.stderr.lower():
                 return {}
             raise ValueError("Cannot check GitHub authentication; check connectivity and run gh auth status privately")

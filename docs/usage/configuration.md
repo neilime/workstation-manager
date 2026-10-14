@@ -52,7 +52,7 @@ blank, or invalid UUIDs stop configuration validation. Store the Context7 API ke
 in its item's password field; see [MCP configuration](ai-tools.md#mcp-servers).
 
 GitHub authentication runs before downloading private configuration. Bootstrap
-installs GitHub CLI from its official APT repository and reuses a valid login
+installs or updates GitHub CLI from its official APT repository and reuses a valid login
 saved in your desktop keyring. If sign-in is needed, it starts
 [`gh auth login --web`](https://cli.github.com/manual/gh_auth_login); approve access
 in your browser. Keep your desktop keyring unlocked so the login can be saved.
