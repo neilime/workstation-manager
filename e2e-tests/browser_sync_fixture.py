@@ -16,15 +16,62 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
-    _START,
+    _SETTINGS_BRIDGE,
     NativeSync,
 )
+
+# Use the page's native callbacks without loading diagnostic modules. Native
+# WebUI events remain usable when the page's module loader rejects an import.
+_START_TEARDOWN = r"""(() => {
+  if (!SETTINGS_BRIDGE) return false;
+  const {addWebUiListener} = window.workstationSyncSettings;
+  const state = window.workstationSync = {since: Date.now(), downloaded: false, about: {}};
+  addWebUiListener('onProtocolEvent', event => {
+    if (typeof event.time !== 'number' || event.time < state.since) return;
+    if (event.type === 'GetUpdates Response') {
+      state.downloaded = /^Received \d+ update\(s\)\.$/.test(event.details);
+    }
+  });
+  addWebUiListener('onAboutInfoUpdated', about => { state.about = about; });
+  addWebUiListener('onEntityCountsUpdated', ({entityCounts}) => {
+    const row = (state.about.type_status || []).find(item => item.name === entityCounts.dataType);
+    if (row) {
+      row.num_entries = entityCounts.entities;
+      row.num_live = entityCounts.nonTombstoneEntities;
+    }
+  });
+  chrome.send('setIncludeSpecifics', [false]);
+  chrome.send('requestDataAndRegisterForUpdates');
+  chrome.send('triggerRefresh');
+  return true;
+})()""".replace("SETTINGS_BRIDGE", _SETTINGS_BRIDGE)
+
+_TEARDOWN_STATE = r"""(identity => {
+  if (!window.workstationSync?.about && !START_TEARDOWN) {
+    return {active: false, ready: false, matches: false};
+  }
+  const {about, downloaded} = window.workstationSync;
+  const stats = Object.fromEntries((about.details || []).flatMap(
+    section => section.data.map(item => [item.stat_name, item.stat_value])));
+  const device = (about.type_status || []).find(row => row.name === 'Device Info');
+  const active = stats['Transport State'] === 'Active';
+  const ready = downloaded === true && stats['Sync Cycle Ongoing'] === false
+    && stats['Throttled or Backoff'] === false && stats['Download Step Result'] === 'Success'
+    && stats['Commit Step Result'] === 'Success'
+    && typeof stats['Server Connection'] === 'string' && stats['Server Connection'].startsWith('OK')
+    && typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK')
+    && device?.state === 'Running' && device.status === 'ok'
+    && Number.isInteger(device.num_entries) && device.num_entries === device.num_live;
+  if (active && stats['Sync Cycle Ongoing'] === false && !ready) chrome.send('triggerRefresh');
+  chrome.send('requestDataAndRegisterForUpdates');
+  return {active, ready, matches: stats['Sync Client ID'] === identity};
+})""".replace("START_TEARDOWN", _START_TEARDOWN)
 
 # Device payloads and server IDs stay inside the diagnostic page. Only the
 # acknowledgement boolean crosses the pipe. A native leave callback alone can
 # succeed after its short upload deadline even when deletion was not committed.
 _WATCH_REMOVAL = r"""(async identity => {
-  const {addWebUiListener} = await import('chrome://resources/js/cr.js');
+  const {addWebUiListener} = window.workstationSyncSettings;
   if (typeof identity !== 'string' || !identity) return false;
   // Chromium's ClientTagHash hashes the empty DeviceInfoSpecifics field
   // (EntitySpecifics field 154522, length-delimited) followed by DeviceInfo_<GUID>.
@@ -92,31 +139,13 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     # Leaving changes Device Info, so verify its tracker and fresh server contact.
     # Browser-data recovery has already been tested by setup; aggregating every
     # data model here adds unrelated asynchronous callbacks to device teardown.
-    if pipe.evaluate(session, _START) is not True:
+    if pipe.evaluate(session, _START_TEARDOWN) is not True:
         raise ValueError("The test device could not request fresh Sync for teardown")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         state = pipe.evaluate(
             session,
-            "(async () => {"
-            f"if (!window.workstationSync) await {_START}; "
-            "const {aboutInfo} = await import('chrome://sync-internals/about.js'); "
-            "const stats = Object.fromEntries((aboutInfo?.details || []).flatMap("
-            "section => section.data.map(item => [item.stat_name, item.stat_value]))); "
-            "const device = (aboutInfo?.type_status || []).find(row => row.name === 'Device Info'); "
-            "const active = stats['Transport State'] === 'Active'; "
-            "const fresh = window.workstationSync.downloaded === true; "
-            "const ready = fresh && stats['Sync Cycle Ongoing'] === false "
-            "&& stats['Throttled or Backoff'] === false && stats['Download Step Result'] === 'Success' "
-            "&& stats['Commit Step Result'] === 'Success' "
-            "&& typeof stats['Server Connection'] === 'string' && stats['Server Connection'].startsWith('OK') "
-            "&& typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK') "
-            "&& device?.state === 'Running' && device.status === 'ok' "
-            "&& Number.isInteger(device.num_entries) && device.num_entries === device.num_live; "
-            "if (active && stats['Sync Cycle Ongoing'] === false && !ready) chrome.send('triggerRefresh'); "
-            "chrome.send('requestDataAndRegisterForUpdates'); "
-            "return {active, ready, "
-            f"matches: stats['Sync Client ID'] === {json.dumps(identity)}}};" + "})()",
+            f"{_TEARDOWN_STATE}({json.dumps(identity)})",
         )
         if isinstance(state, dict) and state.get("active") is True:
             if state.get("matches") is not True:

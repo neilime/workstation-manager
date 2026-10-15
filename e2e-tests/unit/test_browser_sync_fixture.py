@@ -168,6 +168,18 @@ def test_native_leave_callback_requires_server_deletion_acknowledgement(monkeypa
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
 
 
+def test_teardown_requires_native_callbacks_before_requesting_removal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unavailable native callbacks cannot authorize a captured device's removal."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    pipe = mock.Mock()
+    pipe.evaluate.return_value = False
+    with pytest.raises(ValueError, match="could not request fresh Sync for teardown"):
+        browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    assert pipe.evaluate.call_count == 1
+    assert "SyncSetupReset" not in pipe.evaluate.call_args.args[1]
+
+
 def test_teardown_does_not_leave_when_sync_cannot_be_verified(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unavailable server cannot turn a local reset into successful remote teardown."""
 

@@ -36,7 +36,11 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
     DesktopSession,
 )
-from browser_sync_fixture import _WATCH_REMOVAL  # noqa: E402
+from browser_sync_fixture import (  # noqa: E402
+    _START_TEARDOWN,
+    _TEARDOWN_STATE,
+    _WATCH_REMOVAL,
+)
 
 # pylint: enable=wrong-import-position
 
@@ -304,7 +308,6 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
         "lost page state, redacted commit errors, failure, retry, and success passed.",
         flush=True,
     )
-    device_removal_acknowledgement(pipe, page)
 
 
 def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
@@ -354,8 +357,8 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
         }
         result = pipe.evaluate(
             page,
-            """(async () => {
-              const {webUIListenerCallback} = await import('chrome://resources/js/cr.js');
+            """(() => {
+              const {webUIListenerCallback} = window.cr;
               const fixture = FIXTURE;
               const time = Date.now() + OFFSET;
               webUIListenerCallback('onProtocolEvent', {time, type: 'Commit Request', proto: fixture.request});
@@ -366,6 +369,83 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
         assert result is expected
     pipe.evaluate(page, "clearInterval(window.workstationDeviceRemoval.timer); true")
     print("Device removal requires a fresh successful server commit for its captured identity.", flush=True)
+
+
+def teardown_readiness(pipe: BrowserPipe) -> None:
+    """Existing WebUI callbacks verify teardown without loading browser modules."""
+
+    page = pipe.page("brave://version")
+    pipe.call("Network.enable", session=page)
+    pipe.call(
+        "Network.setBlockedURLs",
+        {
+            "urlPatterns": [
+                {"urlPattern": "chrome://sync-internals/about.js", "block": True},
+                {"urlPattern": "chrome://resources/js/cr.js", "block": True},
+            ]
+        },
+        page,
+    )
+    pipe.call("Page.navigate", {"url": "chrome://sync-internals/"}, page)
+    deadline = time.monotonic() + 10
+    while not pipe.evaluate(page, "location.href === 'chrome://sync-internals/' && document.readyState === 'complete'"):
+        assert time.monotonic() < deadline, "Teardown diagnostic page did not load"
+        time.sleep(0.1)
+    for resource in ("chrome://sync-internals/about.js", "chrome://resources/js/cr.js"):
+        assert pipe.evaluate(page, f"import({json.dumps(resource)}).then(() => false, () => true)") is True
+    # Exercise the callback contract independently of the page's module loader.
+    # Missing native callbacks must not certify readiness or request a refresh.
+    state = f"{_TEARDOWN_STATE}('captured-device')"
+    pipe.evaluate(page, "delete window.cr; true")
+    assert pipe.evaluate(page, _START_TEARDOWN) is False
+    assert pipe.evaluate(page, state) == {"active": False, "ready": False, "matches": False}
+    pipe.evaluate(
+        page,
+        """(() => {
+          window.cr = {webUIResponse: () => {}, webUIListenerCallback: () => {}};
+          window.fixtureRefreshes = 0;
+          chrome.send = method => {
+            if (method === 'getAllNodes') throw Error('Unexpected query');
+            if (method === 'triggerRefresh') window.fixtureRefreshes++;
+          };
+          return true;
+        })()""",
+    )
+    assert pipe.evaluate(page, _START_TEARDOWN) is True
+    assert pipe.evaluate(page, state) == {"active": False, "ready": False, "matches": False}
+    about = diagnostic_fixture()["about"]
+    about["details"][0]["data"].append({"stat_name": "Sync Client ID", "stat_value": "captured-device"})
+    about["type_status"] = [{"name": "Device Info", "state": "Running", "status": "ok"}]
+    pipe.evaluate(
+        page,
+        "(() => { const {webUIListenerCallback} = window.cr; "
+        f"webUIListenerCallback('onAboutInfoUpdated', {json.dumps(about)}); return true; }})()",
+    )
+    # Unrelated counts and stale downloads cannot certify the captured device.
+    for data_type, entries, live, offset, ready in (
+        ("Bookmarks", 1, 1, -10000, False),
+        ("Device Info", 1, 1, -10000, False),
+        ("Device Info", 2, 1, 0, False),
+        ("Device Info", 1, 1, 0, True),
+    ):
+        pipe.evaluate(
+            page,
+            "(() => { const {webUIListenerCallback} = window.cr; "
+            f"webUIListenerCallback('onEntityCountsUpdated', {{entityCounts: {{dataType: {json.dumps(data_type)}, "
+            f"entities: {entries}, nonTombstoneEntities: {live}}}}}); "
+            f"webUIListenerCallback('onProtocolEvent', {{time: Date.now() + {offset}, "
+            "type: 'GetUpdates Response', details: 'Received 0 update(s).'}); return true; })()",
+        )
+        assert pipe.evaluate(page, state) == {"active": True, "ready": ready, "matches": True}
+    assert pipe.evaluate(page, f"{_TEARDOWN_STATE}('another-device')") == {
+        "active": True,
+        "ready": True,
+        "matches": False,
+    }
+    device_removal_acknowledgement(pipe, page)
+    pipe.evaluate(page, "delete window.workstationSync; true")
+    assert pipe.evaluate(page, state) == {"active": False, "ready": False, "matches": False}
+    print("Teardown verifies native status, counts, and removal without loading browser modules.", flush=True)
 
 
 def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
@@ -550,6 +630,7 @@ def main() -> None:
             settings_callbacks(pipe)
             pipe.call("Target.createTarget", {"url": "data:text/plain,workstation-session-fixture"})
             diagnostics(pipe, pipe.page("brave://sync-internals"))
+            teardown_readiness(pipe)
             code = pending_chain(pipe, native)
             sync_selection(pipe, native.settings)
         with BrowserPipe(arguments, environment) as pipe:

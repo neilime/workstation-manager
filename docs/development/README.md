@@ -416,8 +416,10 @@ can use the public runner's CPU capacity. Set `E2E_VM_CPUS` and
 resources; existing VMs retain their configuration. Readiness checks require a
 GNOME Wayland session; Ptyxis is the managed terminal. The fixture installs GNOME Keyring before login
 and initializes an encrypted keyring with a random password held in the guest's
-private runtime directory. It unlocks that keyring after desktop restarts so
-native recovery tests have the same credential-store access as an unlocked desktop.
+private runtime directory. After setup, the fixture requests GNOME logout and waits
+for the old login session to close before restarting GDM for automatic login.
+It then unlocks the fixture keyring so native recovery tests have the same
+credential-store access as an unlocked desktop.
 
 Provide these credentials through the environment without committing them:
 
@@ -457,8 +459,11 @@ Browser setup requires an absent Brave profile tree and records each initialized
 test device's identity. Teardown checks those exact identities and ignores profiles
 introduced after capture; preexisting workstation profiles cannot be claimed as
 test devices. Each device must complete a fresh Sync download and have a healthy
-Device Info tracker before its leave request. Teardown prompts pending commits
-and requires a successful server response for that exact device's deletion;
+Device Info tracker before its leave request. Teardown reads native status and
+entity-count events through the page's existing WebUI callbacks, without importing
+browser modules. The native smoke test also checks readiness and removal with
+those imports blocked. Teardown prompts pending commits and requires a successful
+server response for that exact device's deletion;
 Brave's local leave acknowledgement alone does not prove removal.
 Deletion requests are matched using Chromium's native
 [client tag hash](https://github.com/chromium/chromium/blob/main/components/sync/base/client_tag_hash.cc),

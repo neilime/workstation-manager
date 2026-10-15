@@ -198,9 +198,11 @@ printf '\nLogin sessions:\n'
 loginctl list-sessions --no-legend
 printf '\nDisplay manager state:\n'
 systemctl show gdm3 --property=ActiveState,SubState,Result,ExecMainStatus
-printf '\nDesktop and OOM service lifecycle:\n'
+printf '\nDisplay manager lifecycle:\n'
+journalctl --boot --no-pager --lines=100 --unit=gdm --unit=gdm3
+printf '\nLogin and OOM service lifecycle:\n'
 journalctl --boot --no-pager --lines=100 \
-  --unit=gdm --unit=gdm3 --unit=systemd-logind --unit=systemd-oomd
+  --unit=systemd-logind --unit=systemd-oomd
 printf '\nGNOME compositor service lifecycle:\n'
 journalctl --boot --no-pager --lines=80 _COMM=systemd \
   USER_UNIT=org.gnome.Shell@wayland.service
@@ -263,7 +265,30 @@ restart_e2e_desktop_session() {
 			pgrep --euid "$desktop_user_id" --oldest --exact gnome-shell 2>/dev/null |
 			tr -d '\r' || true
 	)"
-	run_e2e_lima_control_command 30 sudo -n systemctl restart gdm3
+	# GDM stops waiting for its session worker after five seconds. Let GNOME
+	# finish logout before restarting GDM and triggering automatic login.
+	run_e2e_lima_control_command 100 env \
+		XDG_RUNTIME_DIR="/run/user/$desktop_user_id" \
+		DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$desktop_user_id/bus" \
+		bash -s <<'EOF' || return $?
+set -euo pipefail
+session_id="$(loginctl show-user "$(id -u)" --property=Display --value)"
+if [[ -z "$session_id" ]]; then
+  printf '%s\n' 'No graphical login session is available for desktop restart.' >&2
+  exit 1
+fi
+gnome-session-quit --logout --no-prompt
+for _attempt in $(seq 1 45); do
+  session_ids="$(loginctl list-sessions --no-legend | awk '{print $1}')"
+  if ! grep -Fxq "$session_id" <<<"$session_ids"; then
+    exit 0
+  fi
+  sleep 2
+done
+printf '%s\n' 'GNOME did not finish logging out before desktop restart.' >&2
+exit 1
+EOF
+	run_e2e_lima_control_command 30 sudo -n systemctl restart gdm3 || return $?
 
 	for _attempt in $(seq 1 45); do
 		new_shell_pid="$(

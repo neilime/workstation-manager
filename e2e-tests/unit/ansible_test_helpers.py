@@ -19,10 +19,25 @@ def managed_user(home: Path, **fields: str) -> dict[str, str]:
 
 
 def run_playbook(
-    command: list[str], environment: dict[str, str], *, cwd: Path | None = None
+    command: list[str],
+    environment: dict[str, str],
+    *,
+    cwd: Path | None = None,
+    input_text: str | None = None,
+    start_new_session: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Capture a bounded Ansible run, leaving expected failure assertions to callers."""
-    return subprocess.run(command, env=environment, cwd=cwd, capture_output=True, text=True, check=False, timeout=60)
+    return subprocess.run(
+        command,
+        env=environment,
+        cwd=cwd,
+        input=input_text,
+        start_new_session=start_new_session,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
 
 
 def write_local_playbook(

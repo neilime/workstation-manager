@@ -413,21 +413,63 @@ wait_for_e2e_clipboard_extension
     assert result.returncode == expected, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("unlock_status", [0, 37])
-def test_desktop_restart_requires_the_fixture_keyring_to_unlock(tmp_path: pathlib.Path, unlock_status: int) -> None:
-    """A new GNOME process alone must not let recovery assertions run with a locked keyring."""
+@pytest.mark.parametrize(
+    "scenario,expected_status,expected_trace",
+    [
+        ("ready", 0, ["logout", "wait", "logged-out", "restart", "unlock"]),
+        ("locked-keyring", 37, ["logout", "wait", "logged-out", "restart", "unlock"]),
+        ("logout-failed", 31, ["logout"]),
+        ("logout-stuck", 1, ["logout", "wait", "wait"]),
+        ("sessions-unavailable", 29, ["logout"]),
+        ("missing-session", 1, []),
+        ("restart-failed", 38, ["logout", "wait", "logged-out", "restart"]),
+    ],
+)
+def test_desktop_restart_waits_for_logout_and_keyring(
+    tmp_path: pathlib.Path, scenario: str, expected_status: int, expected_trace: list[str]
+) -> None:
+    """Relogin waits for the old session to close, and recovery requires an unlocked keyring."""
 
     trace = tmp_path / "trace"
+    trace.touch()
     script = r"""
 source "$1/e2e-common.sh"
+loginctl() {
+    case "$1" in
+        show-user)
+            if [[ "$TEST_SCENARIO" != missing-session ]]; then printf 'graphical-42\n'; fi
+            ;;
+        list-sessions)
+            [[ "$TEST_SCENARIO" != sessions-unavailable ]] || return 29
+            printf 'ssh-7 1234 fixture -\n'
+            if [[ "$TEST_SCENARIO" != logout-stuck ]] && grep -Fxq wait "$TEST_TRACE"; then
+                printf 'logged-out\n' >>"$TEST_TRACE"
+            else
+                printf 'graphical-42 1234 fixture seat0\n'
+            fi
+            ;;
+        *) return 99 ;;
+    esac
+}
+gnome-session-quit() {
+    printf 'logout\n' >>"$TEST_TRACE"
+    [[ "$TEST_SCENARIO" != logout-failed ]] || return 31
+}
+sleep() { printf 'wait\n' >>"$TEST_TRACE"; }
+seq() { printf '1\n2\n'; }
+export -f loginctl gnome-session-quit sleep seq
 run_e2e_lima_control_command() {
     case "$2" in
         id) printf '1234\n' ;;
-        pgrep) if [[ -f "$TEST_TRACE" ]]; then printf '200\n'; else printf '100\n'; fi ;;
-        sudo) printf 'restart\n' >"$TEST_TRACE" ;;
+        pgrep) if grep -Fxq restart "$TEST_TRACE"; then printf '200\n'; else printf '100\n'; fi ;;
+        env) shift; "$@" ;;
+        sudo)
+            printf 'restart\n' >>"$TEST_TRACE"
+            [[ "$TEST_SCENARIO" != restart-failed ]] || return 38
+            ;;
         bash)
             printf 'unlock\n' >>"$TEST_TRACE"
-            return "$TEST_UNLOCK_STATUS"
+            [[ "$TEST_SCENARIO" != locked-keyring ]] || return 37
             ;;
         *) return 99 ;;
     esac
@@ -436,14 +478,14 @@ restart_e2e_desktop_session
 """
     result = subprocess.run(
         ["bash", "-c", script, "--", str(E2E_PATH)],
-        env={**os.environ, "TEST_TRACE": str(trace), "TEST_UNLOCK_STATUS": str(unlock_status)},
+        env={**os.environ, "TEST_TRACE": str(trace), "TEST_SCENARIO": scenario},
         capture_output=True,
         text=True,
         check=False,
         timeout=10,
     )
-    assert result.returncode == unlock_status, result.stdout + result.stderr
-    assert trace.read_text().splitlines() == ["restart", "unlock"]
+    assert result.returncode == expected_status, result.stdout + result.stderr
+    assert trace.read_text().splitlines() == expected_trace
 
 
 def test_assertions_keep_ssh_sockets_outside_read_only_lima_state(tmp_path: pathlib.Path) -> None:

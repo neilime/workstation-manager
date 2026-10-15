@@ -1,7 +1,6 @@
 """Exercise GitHub bootstrap and account verification through isolated Ansible runs."""
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -130,16 +129,12 @@ def test_bootstrap_login_is_reused_and_checked_against_private_account(tmp_path,
                 *command,
             ]
         )
-        result = subprocess.run(
+        result = run_playbook(
             command,
-            env=environment,
+            environment,
             cwd=tmp_path,
-            input="approved\n",
-            capture_output=True,
-            text=True,
-            check=False,
+            input_text="approved\n",
             start_new_session=True,
-            timeout=60,
         )
     assert result.returncode == 0, result.stdout + result.stderr
     assert TOKEN not in result.stdout + result.stderr
