@@ -21,6 +21,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 
 _TEARDOWN_CHECKS = (
+    "Diagnostic Page",
+    "Native Callbacks",
+    "Readiness Observer",
     "Transport State",
     "Fresh Download",
     "Sync Cycle Ongoing",
@@ -37,6 +40,7 @@ _TEARDOWN_CHECKS = (
 # Use the page's native callbacks without loading diagnostic modules. Native
 # WebUI events remain usable when the page's module loader rejects an import.
 _START_TEARDOWN = r"""(() => {
+  if (location.href !== 'chrome://sync-internals/' || document.readyState !== 'complete') return false;
   if (!SETTINGS_BRIDGE) return false;
   const {addWebUiListener} = window.workstationSyncSettings;
   const state = window.workstationSync = {since: Date.now(), downloaded: false, about: {}};
@@ -61,15 +65,25 @@ _START_TEARDOWN = r"""(() => {
 })()""".replace("SETTINGS_BRIDGE", _SETTINGS_BRIDGE)
 
 _TEARDOWN_STATE = r"""(identity => {
-  if (!window.workstationSync?.about && !START_TEARDOWN) {
-    return {active: false, ready: false, matches: false};
+  const checks = Object.fromEntries(CHECK_NAMES.map(name => [name, false]));
+  const expectedPage = location.href === 'chrome://sync-internals/';
+  const loaded = document.readyState === 'complete';
+  checks['Diagnostic Page'] = expectedPage && loaded;
+  checks['Native Callbacks'] = typeof window.cr?.webUIResponse === 'function'
+    && typeof window.cr?.webUIListenerCallback === 'function' && typeof window.chrome?.send === 'function';
+  if (checks['Diagnostic Page'] && checks['Native Callbacks']) {
+    checks['Readiness Observer'] = !!window.workstationSync?.about || START_TEARDOWN;
+  }
+  if (!checks['Readiness Observer']) {
+    return {active: false, ready: false, matches: false,
+      needsNavigation: !expectedPage || loaded, checks};
   }
   const {about, downloaded} = window.workstationSync;
   const stats = Object.fromEntries((about.details || []).flatMap(
     section => section.data.map(item => [item.stat_name, item.stat_value])));
   const device = (about.type_status || []).find(row => row.name === 'Device Info');
   const active = stats['Transport State'] === 'Active';
-  const checks = {
+  Object.assign(checks, {
     'Transport State': active,
     'Fresh Download': downloaded === true,
     'Sync Cycle Ongoing': stats['Sync Cycle Ongoing'] === false,
@@ -82,13 +96,12 @@ _TEARDOWN_STATE = r"""(identity => {
     'Device Info State': device?.state === 'Running',
     'Device Info Status': device?.status === 'ok',
     'Device Info Counts': Number.isInteger(device?.num_entries) && device.num_entries === device.num_live
-  };
-  window.workstationSync.checks = checks;
+  });
   const ready = Object.entries(checks).every(([name, passed]) => name === 'Transport State' || passed);
   if (active && stats['Sync Cycle Ongoing'] === false && !ready) chrome.send('triggerRefresh');
   chrome.send('requestDataAndRegisterForUpdates');
-  return {active, ready, matches: stats['Sync Client ID'] === identity};
-})""".replace("START_TEARDOWN", _START_TEARDOWN)
+  return {active, ready, matches: stats['Sync Client ID'] === identity, needsNavigation: false, checks};
+})""".replace("START_TEARDOWN", _START_TEARDOWN).replace("CHECK_NAMES", json.dumps(_TEARDOWN_CHECKS))
 
 # Device payloads and server IDs stay inside the diagnostic page. Only the
 # acknowledgement boolean crosses the pipe. A native leave callback alone can
@@ -162,32 +175,45 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     # Leaving changes Device Info, so verify its tracker and fresh server contact.
     # Browser-data recovery has already been tested by setup; aggregating every
     # data model here adds unrelated asynchronous callbacks to device teardown.
-    if pipe.evaluate(session, _START_TEARDOWN) is not True:
-        raise ValueError("The test device could not request fresh Sync for teardown")
     deadline = time.monotonic() + timeout
+    checks = dict.fromkeys(_TEARDOWN_CHECKS, False)
     while time.monotonic() < deadline:
         state = pipe.evaluate(
             session,
             f"{_TEARDOWN_STATE}({json.dumps(identity)})",
+            timeout=min(30, max(0.001, deadline - time.monotonic())),
         )
-        if isinstance(state, dict) and state.get("active") is True:
-            if state.get("matches") is not True:
+        if not isinstance(state, dict) or set(state) != {"active", "ready", "matches", "needsNavigation", "checks"}:
+            raise ValueError("Brave returned unsupported teardown diagnostics; the test device identity was retained")
+        checks = state["checks"]
+        if (
+            any(not isinstance(state[name], bool) for name in ("active", "ready", "matches", "needsNavigation"))
+            or not isinstance(checks, dict)
+            or set(checks) != set(_TEARDOWN_CHECKS)
+            or any(not isinstance(value, bool) for value in checks.values())
+        ):
+            raise ValueError("Brave returned unsupported teardown diagnostics; the test device identity was retained")
+        if state["needsNavigation"]:
+            print("Reopening the captured test device's Sync diagnostic page.", flush=True)
+            navigation = pipe.call(
+                "Page.navigate",
+                {"url": "chrome://sync-internals/"},
+                session,
+                timeout=min(30, max(0.001, deadline - time.monotonic())),
+            )
+            if navigation.get("errorText"):
+                raise ValueError("Brave could not reopen Sync diagnostics; the test device identity was retained")
+        elif state["active"]:
+            if not state["matches"]:
                 raise ValueError("The live browser device no longer matches the captured test identity")
             if (
-                state.get("ready") is True
+                state["ready"]
                 and pipe.evaluate(session, f"{_WATCH_REMOVAL}({json.dumps(identity)})", timeout=15) is True
             ):
                 break
         time.sleep(min(2, max(0, deadline - time.monotonic())))
     else:
-        checks = pipe.evaluate(session, "window.workstationSync?.checks")
-        detail = "unsupported teardown diagnostics"
-        if (
-            isinstance(checks, dict)
-            and set(checks) == set(_TEARDOWN_CHECKS)
-            and all(isinstance(value, bool) for value in checks.values())
-        ):
-            detail = ", ".join(name for name in _TEARDOWN_CHECKS if not checks[name]) or "removal observer"
+        detail = ", ".join(name for name in _TEARDOWN_CHECKS if not checks[name]) or "removal observer"
         raise ValueError(
             "The test device could not verify Sync readiness for teardown; "
             f"its identity was retained; incomplete checks: {detail}"

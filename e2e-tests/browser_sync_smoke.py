@@ -38,6 +38,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_
 )
 from browser_sync_fixture import (  # noqa: E402
     _START_TEARDOWN,
+    _TEARDOWN_CHECKS,
     _TEARDOWN_STATE,
     _WATCH_REMOVAL,
 )
@@ -372,9 +373,22 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
 
 
 def teardown_readiness(pipe: BrowserPipe) -> None:
-    """Existing WebUI callbacks verify teardown without loading browser modules."""
+    """Native callbacks verify teardown, and lost pages request context recovery."""
 
     page = pipe.page("brave://version")
+
+    def teardown_snapshot(identity: str = "captured-device") -> dict:
+        result = pipe.evaluate(page, f"{_TEARDOWN_STATE}({json.dumps(identity)})")
+        assert isinstance(result, dict)
+        checks = result.pop("checks")
+        assert set(checks) == set(_TEARDOWN_CHECKS)
+        assert all(isinstance(value, bool) for value in checks.values())
+        return result
+
+    unavailable = {"active": False, "ready": False, "matches": False, "needsNavigation": True}
+    pending = {**unavailable, "needsNavigation": False}
+    assert pipe.evaluate(page, _START_TEARDOWN) is False
+    assert teardown_snapshot() == unavailable
     pipe.call("Network.enable", session=page)
     pipe.call(
         "Network.setBlockedURLs",
@@ -395,10 +409,9 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         assert pipe.evaluate(page, f"import({json.dumps(resource)}).then(() => false, () => true)") is True
     # Exercise the callback contract independently of the page's module loader.
     # Missing native callbacks must not certify readiness or request a refresh.
-    state = f"{_TEARDOWN_STATE}('captured-device')"
     pipe.evaluate(page, "delete window.cr; true")
     assert pipe.evaluate(page, _START_TEARDOWN) is False
-    assert pipe.evaluate(page, state) == {"active": False, "ready": False, "matches": False}
+    assert teardown_snapshot() == unavailable
     pipe.evaluate(
         page,
         """(() => {
@@ -411,8 +424,12 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
           return true;
         })()""",
     )
+    pipe.evaluate(page, "Object.defineProperty(document, 'readyState', {value: 'loading', configurable: true}); true")
+    assert teardown_snapshot() == pending
+    assert pipe.evaluate(page, "!window.workstationSync && window.fixtureRefreshes === 0") is True
+    pipe.evaluate(page, "delete document.readyState; true")
     assert pipe.evaluate(page, _START_TEARDOWN) is True
-    assert pipe.evaluate(page, state) == {"active": False, "ready": False, "matches": False}
+    assert teardown_snapshot() == pending
     about = diagnostic_fixture()["about"]
     about["details"][0]["data"].append({"stat_name": "Sync Client ID", "stat_value": "captured-device"})
     about["type_status"] = [{"name": "Device Info", "state": "Running", "status": "ok"}]
@@ -436,16 +453,34 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
             f"webUIListenerCallback('onProtocolEvent', {{time: Date.now() + {offset}, "
             "type: 'GetUpdates Response', details: 'Received 0 update(s).'}); return true; })()",
         )
-        assert pipe.evaluate(page, state) == {"active": True, "ready": ready, "matches": True}
-    assert pipe.evaluate(page, f"{_TEARDOWN_STATE}('another-device')") == {
+        assert teardown_snapshot() == {"active": True, "ready": ready, "matches": True, "needsNavigation": False}
+    assert teardown_snapshot("another-device") == {
         "active": True,
         "ready": True,
         "matches": False,
+        "needsNavigation": False,
     }
     device_removal_acknowledgement(pipe, page)
-    pipe.evaluate(page, "delete window.workstationSync; true")
-    assert pipe.evaluate(page, state) == {"active": False, "ready": False, "matches": False}
-    print("Teardown verifies native status, counts, and removal without loading browser modules.", flush=True)
+    # A navigation discards all observer state. Recover the owned page and require
+    # fresh evidence; a previously ready context must not authorize device removal.
+    pipe.call("Page.navigate", {"url": "about:blank"}, page)
+    deadline = time.monotonic() + 10
+    while not pipe.evaluate(page, "location.href === 'about:blank' && document.readyState === 'complete'"):
+        assert time.monotonic() < deadline, "Teardown fixture navigation did not finish"
+        time.sleep(0.1)
+    assert pipe.evaluate(page, _START_TEARDOWN) is False
+    assert teardown_snapshot() == unavailable
+    pipe.call("Network.setBlockedURLs", {"urlPatterns": []}, page)
+    pipe.call("Page.navigate", {"url": "chrome://sync-internals/"}, page)
+    deadline = time.monotonic() + 10
+    while not pipe.evaluate(page, "location.href === 'chrome://sync-internals/' && document.readyState === 'complete'"):
+        assert time.monotonic() < deadline, "Teardown diagnostic page did not recover"
+        time.sleep(0.1)
+    assert teardown_snapshot() == pending
+    print(
+        "Teardown verifies native status and removal, and recovers lost diagnostic pages with fresh evidence.",
+        flush=True,
+    )
 
 
 def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
