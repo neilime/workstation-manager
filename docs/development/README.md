@@ -462,7 +462,11 @@ test devices. Each device must complete a fresh Sync download and have a healthy
 Device Info tracker before its leave request. Teardown reads native status and
 entity-count events through the page's existing WebUI callbacks, without importing
 browser modules. The native smoke test also checks readiness and removal with
-those imports blocked. Teardown prompts pending commits and requires a successful
+those imports blocked. If its diagnostic page is replaced before removal,
+teardown restores that automation tab within the same timeout and requires fresh
+Sync evidence. Timeout reports retain the last observed check names even when
+the page loses its state; browser data and recovery words are never reported.
+Teardown prompts pending commits and requires a successful
 server response for that exact device's deletion;
 Brave's local leave acknowledgement alone does not prove removal.
 Deletion requests are matched using Chromium's native
