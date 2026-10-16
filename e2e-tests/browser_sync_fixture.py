@@ -20,6 +20,20 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     NativeSync,
 )
 
+_TEARDOWN_CHECKS = (
+    "Transport State",
+    "Fresh Download",
+    "Sync Cycle Ongoing",
+    "Throttled or Backoff",
+    "Download Step Result",
+    "Commit Step Result",
+    "Server Connection",
+    "Auth Error",
+    "Device Info State",
+    "Device Info Status",
+    "Device Info Counts",
+)
+
 # Use the page's native callbacks without loading diagnostic modules. Native
 # WebUI events remain usable when the page's module loader rejects an import.
 _START_TEARDOWN = r"""(() => {
@@ -55,13 +69,22 @@ _TEARDOWN_STATE = r"""(identity => {
     section => section.data.map(item => [item.stat_name, item.stat_value])));
   const device = (about.type_status || []).find(row => row.name === 'Device Info');
   const active = stats['Transport State'] === 'Active';
-  const ready = downloaded === true && stats['Sync Cycle Ongoing'] === false
-    && stats['Throttled or Backoff'] === false && stats['Download Step Result'] === 'Success'
-    && stats['Commit Step Result'] === 'Success'
-    && typeof stats['Server Connection'] === 'string' && stats['Server Connection'].startsWith('OK')
-    && typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK')
-    && device?.state === 'Running' && device.status === 'ok'
-    && Number.isInteger(device.num_entries) && device.num_entries === device.num_live;
+  const checks = {
+    'Transport State': active,
+    'Fresh Download': downloaded === true,
+    'Sync Cycle Ongoing': stats['Sync Cycle Ongoing'] === false,
+    'Throttled or Backoff': stats['Throttled or Backoff'] === false,
+    'Download Step Result': stats['Download Step Result'] === 'Success',
+    'Commit Step Result': stats['Commit Step Result'] === 'Success',
+    'Server Connection': typeof stats['Server Connection'] === 'string'
+      && stats['Server Connection'].startsWith('OK'),
+    'Auth Error': typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK'),
+    'Device Info State': device?.state === 'Running',
+    'Device Info Status': device?.status === 'ok',
+    'Device Info Counts': Number.isInteger(device?.num_entries) && device.num_entries === device.num_live
+  };
+  window.workstationSync.checks = checks;
+  const ready = Object.entries(checks).every(([name, passed]) => name === 'Transport State' || passed);
   if (active && stats['Sync Cycle Ongoing'] === false && !ready) chrome.send('triggerRefresh');
   chrome.send('requestDataAndRegisterForUpdates');
   return {active, ready, matches: stats['Sync Client ID'] === identity};
@@ -157,7 +180,18 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
                 break
         time.sleep(min(2, max(0, deadline - time.monotonic())))
     else:
-        raise ValueError("The test device could not verify Sync readiness for teardown; its identity was retained")
+        checks = pipe.evaluate(session, "window.workstationSync?.checks")
+        detail = "unsupported teardown diagnostics"
+        if (
+            isinstance(checks, dict)
+            and set(checks) == set(_TEARDOWN_CHECKS)
+            and all(isinstance(value, bool) for value in checks.values())
+        ):
+            detail = ", ".join(name for name in _TEARDOWN_CHECKS if not checks[name]) or "removal observer"
+        raise ValueError(
+            "The test device could not verify Sync readiness for teardown; "
+            f"its identity was retained; incomplete checks: {detail}"
+        )
     # This native operation takes no device ID: it leaves only the selected
     # profile's current device, whose freshly-created identity was checked above.
     try:
