@@ -17,6 +17,8 @@ SPEC = importlib.util.spec_from_file_location("browser_sync_fixture", MODULE_PAT
 assert SPEC is not None and SPEC.loader is not None
 browser_fixture = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(browser_fixture)
+# Build synthetic diagnostics with the implementation's fixed, private allowlist.
+TEARDOWN_CHECKS = browser_fixture._TEARDOWN_CHECKS  # pylint: disable=protected-access
 
 
 def write_device(root: Path, name: str, guid: str, *, initialized: bool = True) -> None:
@@ -188,10 +190,32 @@ def test_teardown_does_not_leave_when_sync_cannot_be_verified(monkeypatch: pytes
     monkeypatch.setattr(browser_fixture.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(browser_fixture.time, "sleep", lambda _seconds: None)
     pipe = mock.Mock()
-    pipe.evaluate.side_effect = [True, {"active": True, "matches": True, "ready": False}]
-    with pytest.raises(ValueError, match="could not verify Sync readiness for teardown"):
+    checks = dict.fromkeys(TEARDOWN_CHECKS, True)
+    checks["Fresh Download"] = False
+    checks["Server Connection"] = False
+    pipe.evaluate.side_effect = [True, {"active": True, "matches": True, "ready": False}, checks]
+    with pytest.raises(ValueError, match="incomplete checks: Fresh Download, Server Connection$"):
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
-    assert pipe.evaluate.call_count == 2
+    assert pipe.evaluate.call_count == 3
+    assert all("SyncSetupReset" not in call.args[1] for call in pipe.evaluate.call_args_list)
+
+
+@pytest.mark.parametrize("invalid", [None, {"private-device-data": False}, {"Fresh Download": "private-response"}])
+def test_teardown_diagnostics_never_report_untrusted_browser_fields(
+    invalid: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed readiness evidence stays private and cannot authorize server removal."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    ticks = iter([0, 0, 1, 121])
+    monkeypatch.setattr(browser_fixture.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(browser_fixture.time, "sleep", lambda _seconds: None)
+    pipe = mock.Mock()
+    checks = {**dict.fromkeys(TEARDOWN_CHECKS, True), **invalid} if isinstance(invalid, dict) else invalid
+    pipe.evaluate.side_effect = [True, {"active": True, "matches": True, "ready": False}, checks]
+    with pytest.raises(ValueError, match="incomplete checks: unsupported teardown diagnostics$") as error:
+        browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    assert "private" not in str(error.value)
     assert all("SyncSetupReset" not in call.args[1] for call in pipe.evaluate.call_args_list)
 
 
