@@ -51,7 +51,7 @@ def test_normalization_does_not_mutate_input_or_resolve_vault_records(declaratio
     result = AiToolsRuntime().servers(
         normalized["mcp_servers"], "/home/fixture", [{"id": UUID, "login": {"password": "synthetic-secret"}}]
     )["example"]
-    assert result["command"].endswith("/npm/example/1.2.3/node_modules/.bin/example-mcp")
+    assert result["command"].endswith("/npm/example/current/node_modules/.bin/example-mcp")
     assert result["env"]["TOKEN"] == "synthetic-secret"
     assert "npx" not in result["command"]
     assert "synthetic-secret" not in str(normalized)
@@ -244,7 +244,7 @@ def test_playwright_launch_uses_the_browser_cache_for_its_pinned_server(with_too
     )
     server = AiToolsRuntime().servers(normalized["mcp_servers"], "/home/fixture", [])["browser"]
     assert server["args"] == ["--browser", "chromium"]
-    assert server["env"]["PLAYWRIGHT_BROWSERS_PATH"].endswith("/browsers/browser/1.2.3")
+    assert server["env"]["PLAYWRIGHT_BROWSERS_PATH"].endswith("/browsers/browser/current")
 
 
 def test_provider_entries_preserve_installation_pins_and_adapter_names(with_tool_versions):

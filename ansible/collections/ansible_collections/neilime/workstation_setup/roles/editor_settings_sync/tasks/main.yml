@@ -17,25 +17,11 @@
   register: workstation_manager_vscode_settings_sync_state_stat
   changed_when: false
 
-- name: Discover the active GNOME session environment for VS Code sync
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.shell: |
-    set -euo pipefail
-
-    target_user_id="$(id -u "$TARGET_USER")"
-    gnome_shell_pid="$(pgrep --euid "$target_user_id" --oldest --exact gnome-shell || true)"
-
-    if [[ -z "$gnome_shell_pid" ]]; then
-      exit 3
-    fi
-
-    tr '\0' '\n' <"/proc/${gnome_shell_pid}/environ" |
-      awk -F= '/^(DISPLAY|WAYLAND_DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|XAUTHORITY)=/ { print }'
-  args:
-    executable: /bin/bash
-  environment:
-    TARGET_USER: "{{ workstation_manager_resolved.user.name }}"
-  register: workstation_manager_vscode_settings_sync_session_environment
+- name: Discover the managed user's live desktop session for VS Code sync
+  become: "{{ workstation_manager_vscode_settings_sync_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.desktop_session_info:
+  register: workstation_manager_vscode_settings_sync_session
   changed_when: false
   failed_when: false
   when:
@@ -52,7 +38,7 @@
         neilime.workstation_setup.should_request_vscode_settings_sync(
           {
             'sync_state_exists': workstation_manager_vscode_settings_sync_state_stat.stat.exists,
-            'has_desktop_session': (workstation_manager_vscode_settings_sync_session_environment.rc | default(1)) == 0,
+            'has_desktop_session': workstation_manager_vscode_settings_sync_session.available | default(false),
             'interactive': workstation_manager_vscode_settings_sync_interactive,
             'check_mode': ansible_check_mode,
           }
@@ -63,34 +49,63 @@
 - name: Request VS Code settings sync through the supported CLI flow
   become: "{{ workstation_manager_vscode_settings_sync_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.shell: |
-    set -euo pipefail
-
-    while IFS= read -r env_line; do
-      export "$env_line"
-    done <<'EOF'
-    {{ workstation_manager_vscode_settings_sync_session_environment.stdout }}
-    EOF
-
-    exec code --sync on
-  args:
-    executable: /bin/bash
-  environment:
-    HOME: "{{ workstation_manager_resolved.user.home }}"
-    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  ansible.builtin.command:
+    argv: [/usr/bin/code, --sync, "on"]
+  environment: >-
+    {{
+      workstation_manager_vscode_settings_sync_session.environment
+      | combine({'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config'})
+    }}
   register: workstation_manager_vscode_settings_sync_command
   changed_when: workstation_manager_vscode_settings_sync_command.rc == 0
   failed_when: false
   when: workstation_manager_vscode_should_request_settings_sync
 
-- name: Report VS Code settings sync launch result
+- name: Prompt for the one-time VS Code Settings Sync sign-in
   ansible.builtin.debug:
     msg:
-      - VS Code Settings Sync launch was requested through the supported CLI flow.
-      - Complete sign-in and choose which data to sync inside VS Code.
+      - "ACTION REQUIRED: complete VS Code Settings Sync sign-in on your desktop now."
+      - In VS Code, open the Accounts menu (bottom of the Activity Bar) or Manage > Backup and Sync Settings..., then choose your data and select Sign In.
+      - Pick your existing GitHub or Microsoft account; a GitHub account already used for Copilot is reused without re-entering credentials.
+      - Setup is paused and continues automatically once sign-in completes.
   when:
     - workstation_manager_vscode_should_request_settings_sync
     - workstation_manager_vscode_settings_sync_command.rc == 0
+
+- name: Wait for the one-time VS Code Settings Sync sign-in to complete
+  become: "{{ workstation_manager_vscode_settings_sync_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.wait_for:
+    path: "{{ workstation_manager_vscode_settings_sync_state_dir }}"
+    state: present
+    timeout: "{{ editor_settings_sync_signin_timeout }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - workstation_manager_vscode_should_request_settings_sync
+    - workstation_manager_vscode_settings_sync_command.rc == 0
+
+- name: Re-check VS Code Settings Sync state after the sign-in window
+  become: "{{ workstation_manager_vscode_settings_sync_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_vscode_settings_sync_state_dir }}"
+  register: workstation_manager_vscode_settings_sync_final_stat
+  changed_when: false
+  when:
+    - workstation_manager_vscode_should_request_settings_sync
+    - workstation_manager_vscode_settings_sync_command.rc == 0
+
+- name: Determine whether VS Code Settings Sync sign-in completed
+  ansible.builtin.set_fact:
+    workstation_manager_vscode_settings_sync_signed_in: >-
+      {{ workstation_manager_vscode_settings_sync_final_stat.stat.exists | default(false) }}
+  changed_when: false
+
+- name: Report completed VS Code Settings Sync sign-in
+  ansible.builtin.debug:
+    msg: VS Code Settings Sync is signed in and now synchronizes in the background.
+  when: workstation_manager_vscode_settings_sync_signed_in | default(false)
 
 - name: Decide whether to show VS Code settings sync guidance
   ansible.builtin.set_fact:
@@ -110,9 +125,10 @@
 - name: Show fallback VS Code settings sync guidance
   ansible.builtin.debug:
     msg:
-      - VS Code Settings Sync is not enabled yet for this user.
-      - Open VS Code and choose Manage > Backup and Sync Settings... or use the Accounts menu.
-      - Sign in with a Microsoft or GitHub account, then choose which data to sync.
+      - VS Code Settings Sync is not signed in yet for this user, so it cannot sync.
+      - This one-time sign-in is interactive and cannot be automated; complete it once on the desktop.
+      - Open VS Code and choose Manage > Backup and Sync Settings... or use the Accounts menu, then Sign In.
+      - Choose your existing GitHub or Microsoft account; a GitHub account already used for Copilot is reused without re-entering credentials.
   when:
     - workstation_manager_vscode_should_remind_settings_sync
-    - not (workstation_manager_vscode_should_request_settings_sync | default(false) and workstation_manager_vscode_settings_sync_command.rc == 0)
+    - not (workstation_manager_vscode_settings_sync_signed_in | default(false))

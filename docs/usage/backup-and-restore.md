@@ -250,11 +250,14 @@ their targets must exist on the restored workstation before you use them. This
 checks extraction safety, not whether the files are trustworthy.
 
 When the Git inventory is present, setup clones each project's primary remote,
-fetches all its branches, checks out the recorded branch, restores its additional
-remotes, then copies the archived files over the clone. Other remote branches
-remain available for commands such as `git switch main`. A recorded detached
-commit is restored only when available from the clone. This overlay does not
-replay file deletions; inspect `git status` after recovery.
+fetches all its branches and the saved commit, recreates the recorded local branch
+at that commit, restores its additional remotes, then copies the archived files
+over the clone. Deleted remote branches can be recovered when the server still
+provides the saved commit. Existing remote branches retain their upstream
+tracking, and other branches remain available for commands such as `git switch main`.
+A recorded detached HEAD stays detached at the saved commit. If the server cannot
+provide that commit, Git recovery fails and preserves the restored project files.
+This overlay does not replay file deletions; inspect `git status` after recovery.
 
 SSH remotes use the target user's restored keys and SSH configuration. Setup
 automatically records a host's key on first connection and rejects changes to
@@ -264,8 +267,11 @@ are checked; verify the server's fingerprint and review the target user's
 
 A project without a recorded remote remains a plain directory. If reattachment
 fails, its restored files are kept as a plain directory and the result is reported
-as `failed`; setup can continue. Read the reattachment results before treating
-project recovery as complete. Without the inventory, only files are restored.
+as `failed`; setup stops after reporting the repository results. Check the Git
+error, verify access as the target user, then retry setup with the same archive.
+An existing `.workstation-manager-restore-overlay` directory is preserved and
+stops reattachment; inspect its contents before moving it aside and retrying.
+Without the inventory, only files are restored.
 
 ## Preview
 

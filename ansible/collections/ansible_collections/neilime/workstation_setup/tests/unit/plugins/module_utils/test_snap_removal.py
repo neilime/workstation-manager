@@ -8,6 +8,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
+    snap_removal,
+)
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.snap_removal import (
     SnapInventory,
     SnapRecoveryArchive,
@@ -109,7 +112,7 @@ def make_removal_fixture(tmp_path: Path, monkeypatch):
         removal, "inspect", lambda: [["example"], ["core24"], ["snapd"]] if state["installed"] else [[], [], []]
     )
     monkeypatch.setattr(removal, "installed_packages", lambda: ["snapd"] if state["installed"] else [])
-    monkeypatch.setattr(removal, "require_closed_applications", lambda: None)
+    monkeypatch.setattr(removal, "require_closed_applications", lambda *_args: None)
     monkeypatch.setattr(SnapInventory, "read", lambda _endpoint: [])
     monkeypatch.setattr(SnapInventory, "mounts", lambda: [])
     monkeypatch.setattr(SnapInventory, "user_directories", lambda: [data] if data.exists() else [])
@@ -174,3 +177,45 @@ def test_recovery_directory_cannot_be_purged_with_snap_data(removal_fixture) -> 
     removal, data, _destination, _calls, _state = removal_fixture
     with pytest.raises(ValueError, match="outside"):
         removal.remove(str(data / "backup"), check_mode=False)
+
+
+def test_stop_services_stops_active_daemons_and_reports_their_snaps(monkeypatch) -> None:
+    """Background daemon snaps are reported so their stopped services never block removal."""
+    services = [
+        {"snap": "snapd-desktop-integration", "name": "snapd-desktop-integration", "active": True},
+        {"snap": "example", "name": "worker", "active": False},
+    ]
+    monkeypatch.setattr(SnapInventory, "read", lambda _endpoint: services)
+    calls: list[list[str]] = []
+
+    def run_command(arguments: list[str]) -> tuple[int, str, str]:
+        calls.append(arguments)
+        return 0, "", ""
+
+    removal = SnapRemoval(run_command)
+    assert removal._stop_services() == {"snapd-desktop-integration", "example"}  # pylint: disable=protected-access
+    assert calls == [["snap", "stop", "snapd-desktop-integration.snapd-desktop-integration"]]
+
+
+def test_require_closed_applications_blocks_only_user_applications(tmp_path: Path, monkeypatch) -> None:
+    """snapd and reported daemon snaps keep running; a user-launched app must be closed first."""
+    proc = tmp_path / "proc"
+    links = {
+        1: "/usr/lib/systemd/systemd",
+        2: "/snap/snapd/123/usr/lib/snapd/snapd",
+        3: "/snap/snapd-desktop-integration/45/usr/bin/snapd-desktop-integration",
+    }
+    for pid, target in links.items():
+        exe = proc / str(pid) / "exe"
+        exe.parent.mkdir(parents=True)
+        exe.symlink_to(target)
+    real_path = snap_removal.Path
+    monkeypatch.setattr(snap_removal, "Path", lambda value: proc if str(value) == "/proc" else real_path(value))
+
+    SnapRemoval.require_closed_applications({"snapd-desktop-integration"})
+
+    running_app = proc / "67" / "exe"
+    running_app.parent.mkdir()
+    running_app.symlink_to("/snap/firefox/890/usr/lib/firefox/firefox")
+    with pytest.raises(ValueError, match="Close Snap applications"):
+        SnapRemoval.require_closed_applications({"snapd-desktop-integration"})

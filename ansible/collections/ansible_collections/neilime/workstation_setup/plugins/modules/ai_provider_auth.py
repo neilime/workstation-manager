@@ -118,8 +118,13 @@ def main() -> None:
         result = authentication.ensure(terminal=values["terminal"], check_mode=module.check_mode)
     except subprocess.TimeoutExpired:
         module.fail_json(msg="AI authentication timed out; check connectivity and complete the provider's native login")
-    except OSError:
-        module.fail_json(msg="Cannot access the AI client or terminal; run setup from the managed user's desktop")
+    except OSError as error:
+        # The errno text and failing path are diagnostic, not secret, and identify the client or terminal.
+        detail = error.strerror or type(error).__name__
+        target = f" ({error.filename})" if getattr(error, "filename", None) else ""
+        module.fail_json(
+            msg=f"Cannot access the AI client or terminal: {detail}{target}; run setup from the managed user's desktop"
+        )
     # Each module reports validation errors and owns its executable entrypoint.
     # pylint: disable=duplicate-code
     except ValueError as error:

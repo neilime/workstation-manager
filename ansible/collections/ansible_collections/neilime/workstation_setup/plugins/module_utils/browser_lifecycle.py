@@ -21,6 +21,8 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_seed import (
     _browser_process_arguments,
+    _clear_stale_profile_lock,
+    _profile_locked,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (
     DesktopSession,
@@ -149,10 +151,12 @@ def closed_browser(user_data_dir: str) -> Iterator[tuple[str, dict[str, str]]]:
         raise BrowserLifecycleBlocked("Brave did not accept the close request; no profiles were forced closed")
     previous_profiles: list[str] = []
     try:
-        if os.path.lexists(root / "SingletonLock"):
+        if _profile_locked(root):
             raise BrowserLifecycleBlocked(
-                "Brave's profile is still locked; retry after it finishes closing. The lock was retained."
+                "Brave's profile is still locked by another computer or session; "
+                "close Brave everywhere, then rerun setup. The lock was retained."
             )
+        _clear_stale_profile_lock(root)
         if running:
             previous_profiles = _previous_profiles(root)
         yield executable, environment

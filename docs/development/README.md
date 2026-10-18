@@ -228,7 +228,8 @@ and development/CI source overrides. Internal runtime state and test handoffs ar
 labeled separately. Keep CI input preparation distinct from workstation behavior:
 `main` always calls `run_action`, and the VM runners use the same public commands.
 Bootstrap establishes a GitHub CLI keyring login before fetching private
-configuration. `run_action` then collects Bitwarden credentials;
+configuration. `run_action` then reuses an unlocked Bitwarden CLI session when one
+is available or collects Bitwarden credentials;
 `run_ansible_pull` selects the local or remote controller command. Remote runs
 explicitly limit playbook execution to `localhost` and ignore unmatched hostname
 aliases added by `ansible-pull` during checkout. This setting applies only to the
@@ -295,6 +296,7 @@ and `GITHUB_ACTIONS` environment flags do not change execution.
 | Environment variable               | Purpose                                                                |
 | ---------------------------------- | ---------------------------------------------------------------------- |
 | `WORKSTATION_MANAGER_GITHUB_TOKEN` | Token for GitHub CLI sign-in when no valid saved keyring login exists. |
+| `BW_SESSION`                       | Reuse an already-unlocked Bitwarden CLI session instead of prompting.  |
 | `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.                                               |
 | `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.                                           |
 | `BITWARDEN_PASSWORD`               | Unlock the Bitwarden vault.                                            |
@@ -473,7 +475,11 @@ Deletion requests are matched using Chromium's native
 [client tag hash](https://github.com/chromium/chromium/blob/main/components/sync/base/client_tag_hash.cc),
 derived from the captured device GUID, and their server IDs are matched to
 successful commit responses. This keeps teardown independent of node queries
-across unrelated browser data types.
+across unrelated browser data types. The matched response emits a boolean through
+a target-scoped DevTools binding. The automation connection retains that
+acknowledgement if native leave discards the diagnostic page's JavaScript state.
+Both the native leave callback and server acknowledgement must succeed; page loss
+cannot stand in for either confirmation or hide a failed leave request.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup
 failure, it prints Lima logs and attempts a bounded guest diagnostic command
 before teardown. Inspect the `Prepare e2e VM and tooling` job output for provisioning,

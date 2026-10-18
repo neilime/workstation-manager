@@ -26,6 +26,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_seed import (
     _brave_running,
     _object,
+    _profile_locked,
     _write_file,
     seed_browser_profiles,
 )
@@ -212,7 +213,7 @@ def _restore_profiles(user_data_dir: str, profiles: list[dict], inspection: dict
         _object(preferences, "sync")["keep_everything_synced"] = True
         pending.append((path, preferences))
     if pending and not check_mode:
-        if _brave_running() or os.path.lexists(Path(user_data_dir) / "SingletonLock"):
+        if _brave_running() or _profile_locked(Path(user_data_dir)):
             raise ValueError("Close Brave completely before enabling Sync everything")
         for path, preferences in pending:
             _write_file(path, preferences)
@@ -234,7 +235,7 @@ def sync_browser_profiles(
         raise BrowserSyncBlocked(
             "Close Brave completely: a Brave process is still running. Use Brave's menu to exit, then retry."
         )
-    if os.path.lexists(root / "SingletonLock"):
+    if _profile_locked(root):
         raise BrowserSyncBlocked(
             "Close Brave completely: its profile lock is still present. "
             "If Brave is already closed, reopen it and exit normally, then retry."

@@ -7,6 +7,11 @@ Browser recovery during backup can connect profiles to their stored chains and
 verify synchronization automatically. Setup sets HTTP, HTTPS, and HTML defaults
 for the managed user, including Ubuntu and GNOME desktop-specific associations.
 
+For each managed profile, setup also keeps Brave's built-in "Offer to save
+passwords" and "Auto Sign-in" prompts off so the Bitwarden extension stays the
+effective password manager. Brave's own default-password-manager toggle does not
+persist per profile, so setup enforces this on every run.
+
 ## Configure recovery
 
 Set the browser and collection in your private
@@ -99,9 +104,12 @@ locally on each computer. This uses internal Brave profile-picture fields: the
 logo appears in the toolbar, while the avatar selector still offers stock icons.
 Browser updates may affect it, and the image file is not carried by Brave Sync.
 
-Close Brave before running setup to apply colors or logos. To keep an intentional
-change, update `theme_colors` or replace `avatar.png` in Bitwarden. Removing either
-optional value stops managing it and leaves the existing local appearance intact.
+Close Brave before running setup to apply colors or logos. If Brave is still
+running, interactive setup pauses and asks you to close it, then retries
+automatically; a non-interactive run stops with the same instruction. To keep an
+intentional change, update `theme_colors` or replace `avatar.png` in Bitwarden.
+Removing either optional value stops managing it and leaves the existing local
+appearance intact.
 
 ## Before backup
 

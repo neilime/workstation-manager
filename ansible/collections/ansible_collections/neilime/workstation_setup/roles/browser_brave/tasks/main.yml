@@ -72,12 +72,8 @@
     content: |
       {"SyncDisabled": false}
 
-- name: Register native Brave profiles and apply declared theme colors
-  become: "{{ workstation_manager_use_become }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  neilime.workstation_setup.browser_profiles:
-    user_data_dir: "{{ browser_brave_user_data_dir }}"
-    profiles: "{{ workstation_manager_browser_profiles }}"
+- name: Register native Brave profiles, prompting to close Brave when it is running
+  ansible.builtin.include_tasks: register_profiles.yml
   when: (workstation_manager_browser_profiles | length) > 0
 
 - name: Recover configured Brave profiles through Sync

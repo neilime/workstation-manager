@@ -170,7 +170,11 @@ setup downloads remain separate from personal Skillshare configuration.
   packages without fetching them at chat startup: a version pin alone does not prevent
   [`npx` from installing a missing package into its cache](https://docs.npmjs.com/cli/v11/commands/npm-exec/).
 - **Launch**: configure stable commands with explicit runtime paths and environment,
-  independent of interactive shell initialization. Native Visual Studio Code and
+  independent of interactive shell initialization. Keep the pinned install under its
+  versioned directory and reference it through a stable `current` symlink that tracks
+  the installed version, so the rendered launch command and browser cache path stay
+  identical across version updates and across a user's machines, including when the
+  resulting `mcp.json` is carried by Settings Sync. Native Visual Studio Code and
   the agent CLIs share the system Node.js runtime. Their adapters must still
   verify that each MCP host can execute the selected launcher and access its
   packages and browser files. Host executable checks alone do not establish

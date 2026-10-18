@@ -326,6 +326,26 @@ class BitwardenCollectionRoleTests(unittest.TestCase):
         self.assertEqual(calls.count(["sync"]), 4)
         self.assertFalse(any(call[0] == "list" for call in calls))
 
+    def test_unlocked_inherited_session_is_reused_without_login_or_unlock(self) -> None:
+        """An already-unlocked CLI session is reused without credentials, login, or a fresh unlock."""
+
+        items = [{"id": "1", "name": "Key 1", "notes": "synthetic-read-secret"}]
+        result, calls = self.run_role(
+            collection_items=items,
+            include_api_key=False,
+            initial_state={"authenticated": True, "unlocked": True},
+            environment_overrides={
+                "BW_SESSION": "fixture-session",
+                "BITWARDEN_EMAIL": "",
+                "BITWARDEN_PASSWORD": "",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(call[:1] in (["login"], ["unlock"]) for call in calls))
+        self.assertIn(["sync"], calls)
+        self.assertEqual(calls[-2:], [["status"], ["list", "items", "--collectionid", "fixture-collection"]])
+        self.assertNotIn("synthetic-read-secret", result.stdout + result.stderr)
+
     def test_browser_collection_and_live_reads_share_managed_user_cache(self) -> None:
         """Root-style bootstrap must authenticate the same cache used by browser recovery."""
 

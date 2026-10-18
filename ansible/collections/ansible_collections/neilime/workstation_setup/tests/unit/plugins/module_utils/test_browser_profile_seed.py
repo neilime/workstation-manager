@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import socket
 import struct
 import zlib
 from pathlib import Path
@@ -47,6 +49,32 @@ def test_new_profiles_are_registered_and_seeded_privately(tmp_path: Path) -> Non
     assert not seed_browser_profiles(str(root), profiles)
 
 
+def test_managed_profiles_keep_brave_password_prompts_disabled(tmp_path: Path) -> None:
+    """New profiles disable Brave's built-in password save and auto sign-in prompts."""
+
+    root = tmp_path / "Brave-Browser"
+    assert seed_browser_profiles(str(root), [{"id": "personal"}])
+    preferences = json.loads((root / "managed-personal" / "Preferences").read_text())
+    assert preferences["credentials_enable_service"] is False
+    assert preferences["credentials_enable_autosignin"] is False
+
+
+def test_setup_reasserts_bitwarden_control_after_brave_re_enables_prompts(tmp_path: Path) -> None:
+    """Rerunning setup turns Brave's built-in password prompts back off for managed profiles."""
+
+    root = tmp_path / "Brave-Browser"
+    seed_browser_profiles(str(root), [{"id": "personal"}])
+    prefs_path = root / "managed-personal" / "Preferences"
+    preferences = json.loads(prefs_path.read_text())
+    preferences["credentials_enable_service"] = True
+    preferences["credentials_enable_autosignin"] = True
+    prefs_path.write_text(json.dumps(preferences))
+    assert seed_browser_profiles(str(root), [{"id": "personal"}])
+    restored = json.loads(prefs_path.read_text())
+    assert restored["credentials_enable_service"] is False
+    assert restored["credentials_enable_autosignin"] is False
+
+
 def test_padded_id_sets_normalized_default_name_without_mutating_declaration(tmp_path: Path) -> None:
     """An omitted label uses the trimmed identifier in both native profile records."""
 
@@ -72,6 +100,8 @@ def test_setup_preserves_renames_pins_extensions_and_sync(tmp_path: Path) -> Non
         "pinned_tabs": [{"url": "https://existing.example/"}],
         "extensions": {"settings": {"example": {"state": 1}}},
         "brave": {"sync_v2": {"seed": "do-not-overwrite"}},
+        "credentials_enable_service": False,
+        "credentials_enable_autosignin": False,
     }
     original_bytes = json.dumps(preferences, indent=2).encode()
     prefs_path.write_bytes(original_bytes)
@@ -86,18 +116,22 @@ def test_setup_preserves_renames_pins_extensions_and_sync(tmp_path: Path) -> Non
     assert state_path.read_bytes() == state_bytes
 
 
-def test_registers_existing_native_profile_without_changing_preferences(tmp_path: Path) -> None:
-    """Registration preserves native directory names and existing profile preferences."""
+def test_registers_existing_native_profile_without_clobbering_user_preferences(tmp_path: Path) -> None:
+    """Registration preserves native names and user settings while enforcing Bitwarden control."""
 
     profile = tmp_path / "Default"
     profile.mkdir()
     path = profile / "Preferences"
     path.write_text('{"profile":{"name":"Existing"},"pinned_tabs":[]}')
-    original = path.read_bytes()
     assert seed_browser_profiles(str(tmp_path), [{"id": "personal", "directory": "Default", "label": "New"}])
-    assert path.read_bytes() == original
+    preferences = json.loads(path.read_text())
+    assert preferences["profile"]["name"] == "Existing"
+    assert preferences["pinned_tabs"] == []
+    assert preferences["credentials_enable_service"] is False
+    assert preferences["credentials_enable_autosignin"] is False
     state = json.loads((tmp_path / "Local State").read_text())
     assert state["profile"]["info_cache"]["Default"]["name"] == "Existing"
+    assert not seed_browser_profiles(str(tmp_path), [{"id": "personal", "directory": "Default", "label": "New"}])
 
 
 def test_check_mode_does_not_create_files(tmp_path: Path) -> None:
@@ -116,9 +150,33 @@ def test_running_browser_blocks_changes_but_allows_noop(tmp_path: Path) -> None:
     seed_browser_profiles(str(tmp_path), [{"id": "personal"}])
     (tmp_path / "SingletonLock").symlink_to("host-12345")
     assert not seed_browser_profiles(str(tmp_path), [{"id": "personal"}])
-    with pytest.raises(ValueError, match="Close Brave completely"):
+    with pytest.raises(browser_profile_seed.BrowserProfilesBlocked, match="Close Brave completely"):
         seed_browser_profiles(str(tmp_path), [{"id": "work"}])
     assert not (tmp_path / "managed-work").exists()
+
+
+def test_profile_lock_staleness_is_detected_by_owner_and_liveness(tmp_path: Path) -> None:
+    """Clear only a lock this host left behind with a dead process; retain live or foreign locks."""
+
+    lock = tmp_path / "SingletonLock"
+    lock.symlink_to(f"{socket.gethostname()}-{os.getpid()}")
+    assert browser_profile_seed._profile_locked(tmp_path)  # pylint: disable=protected-access
+    browser_profile_seed._clear_stale_profile_lock(tmp_path)  # pylint: disable=protected-access
+    assert lock.is_symlink()
+
+    lock.unlink()
+    lock.symlink_to("another-host-4321")
+    assert browser_profile_seed._profile_locked(tmp_path)  # pylint: disable=protected-access
+    browser_profile_seed._clear_stale_profile_lock(tmp_path)  # pylint: disable=protected-access
+    assert lock.is_symlink()
+
+    lock.unlink()
+    lock.symlink_to(f"{socket.gethostname()}-2147483646")
+    (tmp_path / "SingletonCookie").symlink_to("12345")
+    assert not browser_profile_seed._profile_locked(tmp_path)  # pylint: disable=protected-access
+    browser_profile_seed._clear_stale_profile_lock(tmp_path)  # pylint: disable=protected-access
+    assert not os.path.lexists(lock)
+    assert not os.path.lexists(tmp_path / "SingletonCookie")
 
 
 @pytest.mark.parametrize(
@@ -167,7 +225,7 @@ def test_running_process_blocks_changes_without_a_lock(tmp_path: Path, monkeypat
     """Do not assume a missing SingletonLock means the browser is closed."""
 
     monkeypatch.setattr(browser_profile_seed, "_brave_running", lambda: True)
-    with pytest.raises(ValueError, match="Close Brave completely"):
+    with pytest.raises(browser_profile_seed.BrowserProfilesBlocked, match="Close Brave completely"):
         seed_browser_profiles(str(tmp_path), [{"id": "personal"}])
     assert not list(tmp_path.iterdir())
 
@@ -260,6 +318,8 @@ def test_declared_color_changes_only_native_theme_preferences(tmp_path: Path) ->
     expected = json.loads(json.dumps(preferences))
     expected["browser"]["theme"].update(user_color2=-16746061, color_variant2=1, is_grayscale2=False)
     expected["extensions"]["theme"].update(id="user_color_theme_id", system_theme=0)
+    expected["credentials_enable_service"] = False
+    expected["credentials_enable_autosignin"] = False
     assert json.loads(path.read_text()) == expected
     assert personal.read_bytes() == original_personal
     assert bookmarks.read_text() == '{"bookmark_bar": "untouched"}'
@@ -276,7 +336,7 @@ def test_theme_check_mode_and_running_browser_never_write(tmp_path: Path) -> Non
     assert seed_browser_profiles(str(tmp_path), [declaration], check_mode=True)
     assert path.read_bytes() == original
     (tmp_path / "SingletonLock").symlink_to("host-12345")
-    with pytest.raises(ValueError, match="Close Brave completely"):
+    with pytest.raises(browser_profile_seed.BrowserProfilesBlocked, match="Close Brave completely"):
         seed_browser_profiles(str(tmp_path), [declaration])
     assert path.read_bytes() == original
 
@@ -401,6 +461,8 @@ def test_avatar_restoration_preserves_profile_data_and_is_idempotent(tmp_path: P
     state_path.write_text(json.dumps(state))
     assert seed_browser_profiles(str(tmp_path), [declaration])
     preferences["profile"]["using_gaia_avatar"] = True
+    preferences["credentials_enable_service"] = False
+    preferences["credentials_enable_autosignin"] = False
     assert json.loads(preferences_path.read_text()) == preferences
     entry.update(gaia_picture_file_name="workstation-avatar.png", use_gaia_picture=True, is_using_default_avatar=False)
     assert json.loads(state_path.read_text()) == state
@@ -435,7 +497,7 @@ def test_avatar_check_mode_and_running_browser_never_write(tmp_path: Path, avata
     assert seed_browser_profiles(str(tmp_path), [declaration], check_mode=True)
     assert not list(tmp_path.iterdir())
     (tmp_path / "SingletonLock").symlink_to("host-12345")
-    with pytest.raises(ValueError, match="Close Brave completely"):
+    with pytest.raises(browser_profile_seed.BrowserProfilesBlocked, match="Close Brave completely"):
         seed_browser_profiles(str(tmp_path), [declaration])
     assert not (tmp_path / "managed-work").exists()
 

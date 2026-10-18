@@ -24,3 +24,12 @@
     PLAYWRIGHT_BROWSERS_PATH: "{{ workstation_ai_root }}/browsers/{{ workstation_ai_server.name }}/{{ workstation_ai_server.npm.version }}"
   register: workstation_ai_browser_install
   changed_when: workstation_ai_browser_install.stdout | length > 0
+
+- name: Expose the pinned browser cache through a stable version-independent path
+  ansible.builtin.file:
+    src: "{{ workstation_ai_server.npm.version }}"
+    path: "{{ workstation_ai_root }}/browsers/{{ workstation_ai_server.name }}/current"
+    state: link
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    force: true

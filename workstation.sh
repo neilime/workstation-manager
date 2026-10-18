@@ -12,6 +12,8 @@ GITHUB_TOKEN_VALUE="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}"
 BITWARDEN_CLIENT_ID_VALUE="${BITWARDEN_CLIENT_ID:-}"
 BITWARDEN_CLIENT_SECRET_VALUE="${BITWARDEN_CLIENT_SECRET:-}"
 BITWARDEN_PASSWORD_VALUE="${BITWARDEN_PASSWORD:-}"
+# Reuse an already-unlocked Bitwarden CLI session before prompting for credentials.
+BITWARDEN_SESSION_VALUE="${BW_SESSION:-}"
 
 # Development / CI source overrides. Normal bootstrap uses the published defaults.
 REPOSITORY_URL="${REPOSITORY_URL:-}"
@@ -27,6 +29,7 @@ ANSIBLE_VENV_DIR="/opt/workstation-manager/venv"
 DEFAULT_REPOSITORY_URL="https://github.com/neilime/workstation-manager.git"
 DEFAULT_REPOSITORY_BRANCH="main"
 PRIVATE_OVERRIDE_TEMP_DIR=""
+SUDO_KEEPALIVE_PID=""
 PROMPTED_BITWARDEN_EMAIL=""
 BITWARDEN_EMAIL_PASSWORD_REJECTED_MARKER="WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED"
 BITWARDEN_PASSWORD_REJECTED_MARKER="WORKSTATION_MANAGER_BITWARDEN_PASSWORD_REJECTED"
@@ -46,6 +49,7 @@ fail() {
 }
 
 cleanup() {
+	stop_sudo_keepalive
 	if [ -n "$PRIVATE_OVERRIDE_TEMP_DIR" ] && [ -d "$PRIVATE_OVERRIDE_TEMP_DIR" ]; then
 		rm -rf "$PRIVATE_OVERRIDE_TEMP_DIR"
 	fi
@@ -184,11 +188,30 @@ prepare_bitwarden_credentials() {
 		[ -n "$BITWARDEN_PASSWORD_VALUE" ]; then
 		return
 	fi
+	if reusable_bitwarden_session_available; then
+		info "$action_purpose will reuse the unlocked Bitwarden CLI session"
+		return
+	fi
+	# A stale inherited session must not reach Ansible once we fall back to prompting.
+	BITWARDEN_SESSION_VALUE=""
 	has_interactive_terminal ||
 		fail "$action_name requires a terminal for Bitwarden login or BITWARDEN_CLIENT_ID, BITWARDEN_CLIENT_SECRET, and BITWARDEN_PASSWORD for automation"
 
 	info "$action_purpose requires Bitwarden access; prompting for credentials"
 	prompt_for_bitwarden_login
+}
+
+reusable_bitwarden_session_available() {
+	[ -n "$BITWARDEN_SESSION_VALUE" ] || return 1
+	# `bw` is only installed once an existing session already exists; a missing CLI
+	# or a locked vault returns non-zero, so setup falls back to prompting.
+	bitwarden_cli_status="$(sudo -u "$TARGET_USER" env \
+		HOME="$TARGET_USER_HOME" \
+		XDG_CONFIG_HOME="$TARGET_USER_HOME/.config" \
+		BITWARDENCLI_APPDATA_DIR="$TARGET_USER_HOME/.config/Bitwarden CLI" \
+		BW_SESSION="$BITWARDEN_SESSION_VALUE" \
+		bw status 2>/dev/null)" || return 1
+	printf '%s' "$bitwarden_cli_status" | grep -Eq '"status" *: *"unlocked"'
 }
 
 prompt_for_bitwarden_login() {
@@ -382,9 +405,31 @@ require_command() {
 	command -v "$1" >/dev/null 2>&1 || fail "$1 is required"
 }
 
+start_sudo_keepalive() {
+	# Keep the cached sudo credential fresh for the whole run. Long setups (interactive
+	# prompts, Sync waits) can otherwise outlast the sudo timestamp, making the post-run
+	# privileged output read and cleanup re-prompt on /dev/tty and time out.
+	[ -n "$SUDO_KEEPALIVE_PID" ] && return 0
+	(
+		while true; do
+			# Non-interactive refresh only; never contend for the terminal.
+			sudo -n -v 2>/dev/null || exit 0
+			sleep 50
+		done
+	) >/dev/null 2>&1 &
+	SUDO_KEEPALIVE_PID="$!"
+}
+
+stop_sudo_keepalive() {
+	[ -n "$SUDO_KEEPALIVE_PID" ] || return 0
+	kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+	SUDO_KEEPALIVE_PID=""
+}
+
 require_sudo() {
 	require_command sudo
 	sudo -v || fail "sudo access is required"
+	start_sudo_keepalive
 }
 
 install_bootstrap_packages() {
@@ -713,7 +758,7 @@ run_with_session_environment() (
 	set -- env "$@"
 	# Internal relay state: script capture has already elevated its child process.
 	if [ "${WORKSTATION_MANAGER_SKIP_SUDO:-0}" != "1" ]; then
-		set -- sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD "$@"
+		set -- sudo --preserve-env=BITWARDEN_EMAIL,BITWARDEN_CLIENT_ID,BITWARDEN_CLIENT_SECRET,BITWARDEN_PASSWORD,BW_SESSION "$@"
 	fi
 	"$@"
 )
@@ -732,6 +777,7 @@ run_ansible_pull() {
 	export BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID_VALUE"
 	export BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET_VALUE"
 	export BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD_VALUE"
+	export BW_SESSION="$BITWARDEN_SESSION_VALUE"
 
 	if [ -n "$GITHUB_TOKEN_VALUE" ]; then
 		# ansible-pull prints its arguments, so Git credentials must stay out of URLs.

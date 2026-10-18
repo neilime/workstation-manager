@@ -45,10 +45,12 @@ def provider_authentication(tmp_path, monkeypatch):
         assert argv[1] == "login"
         assert options["stdin"] is options["stdout"] is options["stderr"]
         assert options["stdin"].isatty()
+        state["login_environment"] = dict(environment)
         state["authenticated"] = not state.get("reject_login", False)
         return subprocess.CompletedProcess(argv, 1 if state.get("login_failure") else 0, None, None)
 
     monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(ai_auth.DesktopSession, "environment", lambda: {})
     return tmp_path, state
 
 
@@ -96,7 +98,7 @@ def test_interactive_login_uses_the_terminal_then_rechecks_status(authentication
     """Login codes bypass captured output; success requires a fresh status check."""
     state = authentication[1]
     state["authenticated"] = False
-    monkeypatch.setattr(ai_auth, "open", lambda *_args, **_kwargs: LoginTerminal(), raising=False)
+    monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: LoginTerminal())
     assert client(authentication, provider).ensure(terminal="/dev/pts/fixture")["changed"]
     assert len(state["calls"]) == 3
     assert state["calls"][1] == [f"/installed/{provider}", "login"] + (
@@ -105,12 +107,29 @@ def test_interactive_login_uses_the_terminal_then_rechecks_status(authentication
     assert not client(authentication, provider).ensure()["changed"]
 
 
+@pytest.mark.parametrize("provider", ["codex", "copilot"])
+def test_interactive_login_passes_the_live_desktop_to_open_the_browser(authentication, provider, monkeypatch):
+    """Native sign-in receives the managed user's display so it opens the system browser, not an editor."""
+    state = authentication[1]
+    state["authenticated"] = False
+    monkeypatch.setattr(
+        ai_auth.DesktopSession,
+        "environment",
+        lambda: {"DISPLAY": ":5", "WAYLAND_DISPLAY": "wayland-5", "XDG_CURRENT_DESKTOP": "ubuntu:GNOME"},
+    )
+    monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: LoginTerminal())
+    assert client(authentication, provider).ensure(terminal="/dev/pts/fixture")["changed"]
+    assert state["login_environment"]["DISPLAY"] == ":5"
+    assert state["login_environment"]["WAYLAND_DISPLAY"] == "wayland-5"
+    assert state["login_environment"]["XDG_CURRENT_DESKTOP"] == "ubuntu:GNOME"
+
+
 @pytest.mark.parametrize("failure", ["reject_login", "login_failure"])
 def test_native_login_failure_never_reports_success(authentication, monkeypatch, failure):
     """Both rejected login and unpersisted credentials fail the transaction."""
     state = authentication[1]
     state.update(authenticated=False, **{failure: True})
-    monkeypatch.setattr(ai_auth, "open", lambda *_args, **_kwargs: LoginTerminal(), raising=False)
+    monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: LoginTerminal())
     with pytest.raises(ValueError, match="sign-in|login is still missing"):
         client(authentication, "codex").ensure(terminal="/dev/pts/fixture")
 
@@ -173,7 +192,7 @@ def test_codex_requires_chatgpt_login_without_exposing_or_replacing_other_creden
 def test_login_refuses_a_non_terminal(authentication, monkeypatch):
     """Login must never write authentication codes to an ordinary file."""
     authentication[1]["authenticated"] = False
-    monkeypatch.setattr(ai_auth, "open", lambda *_args, **_kwargs: io.StringIO(), raising=False)
+    monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: io.StringIO())
     with pytest.raises(ValueError, match="interactive terminal"):
         client(authentication, "codex").ensure(terminal="/fixture/file")
     assert len(authentication[1]["calls"]) == 1

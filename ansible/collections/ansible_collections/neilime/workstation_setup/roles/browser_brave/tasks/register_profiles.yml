@@ -1,0 +1,33 @@
+---
+- name: Register native Brave profiles and apply declared theme colors
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.browser_profiles:
+    user_data_dir: "{{ browser_brave_user_data_dir }}"
+    profiles: "{{ workstation_manager_browser_profiles }}"
+  register: browser_brave_profiles_result
+
+- name: Ask the user to close Brave, then retry profile registration
+  when:
+    - browser_brave_profiles_result.blocked | default(false)
+    - not ansible_check_mode
+  block:
+    - name: Require an interactive terminal to close Brave for profile setup
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) | bool
+        quiet: true
+        fail_msg: >-
+          {{ browser_brave_profiles_result.blocker }}
+          Close Brave completely, then rerun setup; or rerun setup in an interactive
+          terminal to be prompted to close Brave.
+
+    - name: Prompt to close Brave before changing its profiles
+      ansible.builtin.pause:
+        prompt: |-
+          {{ browser_brave_profiles_result.blocker }}
+          Close Brave completely (use Brave's menu to quit all windows), then press Enter to retry.
+          Press Ctrl-C to abort setup.
+
+    - name: Retry Brave profile registration after closing Brave
+      ansible.builtin.include_tasks: register_profiles.yml

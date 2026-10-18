@@ -13,6 +13,8 @@
       {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) == '1' }}
     bitwarden_collection_tty_path: >-
       {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY') | default('', true) }}
+    bitwarden_collection_candidate_session: >-
+      {{ lookup('ansible.builtin.env', 'BW_SESSION') | default('', true) }}
     bitwarden_collection_session: ""
   no_log: true
 
@@ -75,6 +77,38 @@
       {{ bitwarden_collection_purpose }} requires the Bitwarden CLI, but `bw`
       could not be installed automatically.
 
+- name: Probe the inherited Bitwarden session for reuse
+  check_mode: false
+  ansible.builtin.command: bw status
+  register: bitwarden_collection_reuse_probe
+  changed_when: false
+  failed_when: false
+  environment:
+    BW_SESSION: "{{ bitwarden_collection_candidate_session }}"
+  no_log: true
+  when: bitwarden_collection_candidate_session | length > 0
+
+- name: Decide whether to reuse the inherited Bitwarden session
+  ansible.builtin.set_fact:
+    bitwarden_collection_reuse_session: >-
+      {{
+        (
+          bitwarden_collection_candidate_session | length > 0
+          and (bitwarden_collection_reuse_probe.rc | default(1)) == 0
+          and (bitwarden_collection_reuse_probe.stdout | default('{}') | from_json).get('status') == 'unlocked'
+          and (bitwarden_collection_reuse_probe.stdout | default('{}') | from_json).get('serverUrl')
+              == workstation_manager_resolved.secrets.bitwarden.server
+        ) | bool
+      }}
+  no_log: true
+
+- name: Reuse the unlocked Bitwarden session for this run
+  ansible.builtin.set_fact:
+    bitwarden_collection_session: "{{ bitwarden_collection_candidate_session }}"
+    bitwarden_collection_status: "{{ bitwarden_collection_reuse_probe.stdout | from_json }}"
+  no_log: true
+  when: bitwarden_collection_reuse_session
+
 - name: Read Bitwarden session status
   check_mode: false
   ansible.builtin.command: bw status
@@ -82,11 +116,13 @@
   changed_when: false
   environment:
     BW_SESSION: ""
+  when: not bitwarden_collection_reuse_session
 
 - name: Parse Bitwarden session status
   ansible.builtin.set_fact:
     bitwarden_collection_status: >-
       {{ bitwarden_collection_status_command.stdout | from_json }}
+  when: not bitwarden_collection_reuse_session
 
 - name: Require the correct Bitwarden server before a dry run
   ansible.builtin.assert:
@@ -123,6 +159,7 @@
     fail_msg: >-
       {{ bitwarden_collection_purpose }} needs BITWARDEN_PASSWORD to unlock the
       vault.
+  when: not bitwarden_collection_reuse_session
 
 - name: Select the configured Bitwarden server
   ansible.builtin.import_tasks: server.yml
@@ -262,6 +299,7 @@
   changed_when: false
   failed_when: false
   no_log: true
+  when: not bitwarden_collection_reuse_session
 
 - name: Fail when the supplied Bitwarden vault password is rejected
   ansible.builtin.fail:
@@ -269,12 +307,15 @@
       WORKSTATION_MANAGER_BITWARDEN_PASSWORD_REJECTED:
       {{ bitwarden_collection_purpose }} could not unlock Bitwarden with the
       supplied vault password.
-  when: bitwarden_collection_unlock.rc != 0
+  when:
+    - not bitwarden_collection_reuse_session
+    - (bitwarden_collection_unlock.rc | default(0)) != 0
 
 - name: Record the unlocked Bitwarden session
   ansible.builtin.set_fact:
     bitwarden_collection_session: "{{ bitwarden_collection_unlock.stdout | trim }}"
   no_log: true
+  when: not bitwarden_collection_reuse_session
 
 - name: Ensure the Bitwarden session token was acquired
   ansible.builtin.assert:

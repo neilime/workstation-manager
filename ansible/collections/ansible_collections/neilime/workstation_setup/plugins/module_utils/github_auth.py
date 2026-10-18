@@ -9,6 +9,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (
+    DesktopSession,
+)
+
 
 # Authentication is a single transaction; its steps are deliberately private.
 # pylint: disable=too-few-public-methods
@@ -105,24 +109,12 @@ class GitHubAuthentication:
         if token:
             result = self._run([*command, "--with-token"], data=token)
         else:
-            environment = {key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"}
-            with open(terminal, "r+b", buffering=0) as tty:
-                if not tty.isatty():
-                    raise ValueError("GitHub sign-in requires an interactive terminal")
-                # Display device codes in the user's terminal, outside Ansible's result stream.
-                # pylint: disable-next=unknown-option-value
-                # pylint: disable-next=ansible-bad-function
-                result = subprocess.run(
-                    [*command, "--web"],
-                    stdin=tty,
-                    stdout=tty,
-                    stderr=tty,
-                    env=environment,
-                    cwd=self.home,
-                    text=True,
-                    check=False,
-                    timeout=300,
-                )
+            result = DesktopSession.run_in_terminal(
+                [*command, "--web"],
+                terminal=terminal,
+                home=self.home,
+                environment={key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"},
+            )
         if result.returncode:
             raise ValueError("GitHub login failed; verify account access with gh auth status, then rerun setup")
 

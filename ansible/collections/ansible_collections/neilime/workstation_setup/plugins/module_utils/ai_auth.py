@@ -8,6 +8,10 @@ import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (
+    DesktopSession,
+)
+
 
 # Authentication is one transaction with private provider-specific steps.
 # pylint: disable-next=too-few-public-methods
@@ -129,22 +133,9 @@ class AiProviderAuthentication:
         arguments = [self.executable, "login"]
         if self.provider == "copilot":
             arguments += ["--host", f"https://{self.host}"]
-        with open(terminal, "r+", encoding="utf-8") as tty:
-            if not tty.isatty():
-                raise ValueError("AI sign-in requires an interactive terminal")
-            # Browser/device codes belong to the real terminal, never Ansible's captured output.
-            # pylint: disable-next=unknown-option-value
-            # pylint: disable-next=ansible-bad-function
-            result = subprocess.run(
-                arguments,
-                stdin=tty,
-                stdout=tty,
-                stderr=tty,
-                env=self.environment,
-                cwd=self.home,
-                check=False,
-                timeout=300,
-            )
+        result = DesktopSession.run_in_terminal(
+            arguments, terminal=terminal, home=self.home, environment=self.environment
+        )
         if result.returncode:
             raise ValueError(f"{self.provider} sign-in did not complete; run {self.provider} login and rerun setup")
 

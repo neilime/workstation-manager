@@ -9,6 +9,8 @@ from pathlib import Path
 class AiToolsRuntime:
     """Convert validated declarations and private vault records into local launches."""
 
+    STABLE_VERSION_LINK = "current"
+
     @staticmethod
     def credential_ids(declarations: list[dict]) -> list[str]:
         """Collect record selectors without resolving them or retaining literal values."""
@@ -51,7 +53,7 @@ class AiToolsRuntime:
             npm = server["npm"]
             args = list(server["args"])
             if npm:
-                package_dir = root / "npm" / server["name"] / npm["version"]
+                package_dir = root / "npm" / server["name"] / self.STABLE_VERSION_LINK
                 command = str(package_dir / "node_modules/.bin" / npm["binary"])
             else:
                 command = server["command"]
@@ -68,7 +70,9 @@ class AiToolsRuntime:
             )
             if server["playwright"]:
                 args += ["--browser", server["playwright"]["browser"]]
-                environment["PLAYWRIGHT_BROWSERS_PATH"] = str(root / "browsers" / server["name"] / npm["version"])
+                environment["PLAYWRIGHT_BROWSERS_PATH"] = str(
+                    root / "browsers" / server["name"] / self.STABLE_VERSION_LINK
+                )
             result[server["name"]] = {"command": command, "args": args, "env": environment}
         return result
 

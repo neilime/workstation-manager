@@ -198,6 +198,70 @@ main setup
         assert secret not in result.stdout + result.stderr
 
 
+def test_reusable_bitwarden_session_detection_prefers_unlocked_vaults(tmp_path):
+    """The session probe reuses an unlocked vault and falls back to prompting when it is locked."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "sudo").write_text('#!/bin/sh\nshift 2\nexec "$@"\n')
+    (bin_dir / "sudo").chmod(0o755)
+    (bin_dir / "bw").write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = status ] || exit 2\n'
+        'printf \'{"status":"%s","serverUrl":"https://x"}\' "${FIXTURE_BW_STATUS:-locked}"\n'
+    )
+    (bin_dir / "bw").chmod(0o755)
+    definitions = (ROOT / "workstation.sh").read_text().rsplit('main "$@"', 1)[0]
+    probe = (
+        definitions
+        + '\nTARGET_USER=tester\nTARGET_USER_HOME="$HOME"\n'
+        + "if reusable_bitwarden_session_available; then echo DECISION=reuse; else echo DECISION=prompt; fi\n"
+    )
+    for status, expected in (("unlocked", "reuse"), ("locked", "prompt")):
+        result = subprocess.run(
+            ["sh", "-s"],
+            input=probe,
+            env={
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+                "HOME": str(tmp_path),
+                "BW_SESSION": "fixture-session",
+                "FIXTURE_BW_STATUS": status,
+            },
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        assert f"DECISION={expected}" in result.stdout, f"{status}: {result.stdout}{result.stderr}"
+
+
+def test_terminal_prompts_are_skipped_when_a_session_is_reused(tmp_path):
+    """A reusable session is passed to Ansible without prompting for Bitwarden credentials."""
+    definitions = (ROOT / "workstation.sh").read_text().rsplit('main "$@"', 1)[0]
+    result = subprocess.run(
+        ["sh", "-s"],
+        input=definitions
+        + r"""
+has_interactive_terminal() { return 0; }
+reusable_bitwarden_session_available() { BITWARDEN_SESSION_VALUE=reused-session; return 0; }
+prompt_for_bitwarden_login() { echo PROMPT_SHOULD_NOT_RUN; exit 90; }
+prepare_action_dependencies() { :; }
+run_ansible_pull_with_bitwarden_retry() {
+    [ "$BITWARDEN_SESSION_VALUE" = reused-session ] || exit 91
+    [ -z "$PROMPTED_BITWARDEN_EMAIL" ] || exit 92
+}
+main setup
+""",
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "will reuse the unlocked Bitwarden CLI session" in result.stdout
+    assert "PROMPT_SHOULD_NOT_RUN" not in result.stdout
+
+
 @pytest.mark.parametrize("arguments", [["help"], ["--help"], ["backup", "--help"]])
 def test_help_requires_neither_credentials_nor_terminal(arguments):
     """Help documents normal usage without requiring credentials or a terminal."""

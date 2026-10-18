@@ -37,6 +37,8 @@ _TEARDOWN_CHECKS = (
     "Device Info Counts",
 )
 
+_REMOVAL_BINDING = "workstationDeviceRemoved"
+
 # Use the page's native callbacks without loading diagnostic modules. Native
 # WebUI events remain usable when the page's module loader rejects an import.
 _START_TEARDOWN = r"""(() => {
@@ -108,7 +110,7 @@ _TEARDOWN_STATE = r"""(identity => {
 # succeed after its short upload deadline even when deletion was not committed.
 _WATCH_REMOVAL = r"""(async identity => {
   const {addWebUiListener} = window.workstationSyncSettings;
-  if (typeof identity !== 'string' || !identity) return false;
+  if (typeof identity !== 'string' || !identity || typeof window[REMOVAL_BINDING] !== 'function') return false;
   // Chromium's ClientTagHash hashes the empty DeviceInfoSpecifics field
   // (EntitySpecifics field 154522, length-delimited) followed by DeviceInfo_<GUID>.
   // Tombstone commits retain this tag, so no all-data node query is needed.
@@ -134,13 +136,17 @@ _WATCH_REMOVAL = r"""(async identity => {
       state.acknowledged ||= Array.isArray(entries) && entries.some(
         entry => entry.id_string === state.requested && entry.response_type === 'SUCCESS');
       state.requested = null;
+      if (state.acknowledged) {
+        clearInterval(state.timer);
+        window[REMOVAL_BINDING]('true');
+      }
     }
   });
   // Native refresh schedules commit work as well as downloads. Keep prompting
   // it while the leave handler waits, before that handler stops the Sync engine.
   state.timer = setInterval(() => chrome.send('triggerRefresh'), 100);
   return true;
-})"""
+})""".replace("REMOVAL_BINDING", json.dumps(_REMOVAL_BINDING))
 
 
 def device_identity(profile: Path, *, require_initialized: bool = False) -> str | None:
@@ -172,6 +178,7 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
 
     native = NativeSync(pipe, str(profile))
     session = pipe.page("brave://sync-internals")
+    acknowledged = pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
     # Leaving changes Device Info, so verify its tracker and fresh server contact.
     # Browser-data recovery has already been tested by setup; aggregating every
     # data model here adds unrelated asynchronous callbacks to device teardown.
@@ -220,19 +227,16 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
         )
     # This native operation takes no device ID: it leaves only the selected
     # profile's current device, whose freshly-created identity was checked above.
-    try:
-        removed = pipe.evaluate(
-            native.settings,
-            "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')",
-            timeout=120,
-        )
-    finally:
-        acknowledged = pipe.evaluate(
-            session,
-            "clearInterval(window.workstationDeviceRemoval.timer); "
-            "window.workstationDeviceRemoval.acknowledged === true",
-        )
-    if removed is not True or acknowledged is not True:
+    removed = pipe.evaluate(
+        native.settings,
+        "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')",
+        timeout=120,
+    )
+    # Drain the diagnostic target's binding notifications without evaluating its
+    # page globals: native leave can discard that context after the server reply.
+    # The owning BrowserPipe closes the observer and its timer on every exit path.
+    pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
+    if removed is not True or acknowledged() is not True:
         raise ValueError("The Sync server did not confirm removal of the captured test device")
 
 

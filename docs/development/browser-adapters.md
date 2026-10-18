@@ -20,7 +20,9 @@ Add the role under
 `ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_<name>/`:
 
 - `tasks/main.yml`: install the browser, make it the default, keep Sync
-  available, and create declared profiles while preserving existing data.
+  available, and create declared profiles while preserving existing data. When the
+  browser is still running, an interactive run prompts to close it and retries;
+  a non-interactive run stops with the same instruction.
   Publish `workstation_manager_browser_desktop_file`.
 - `tasks/backup.yml`: inspect profiles without mutation. Publish
   `workstation_backup_browser_inspection` with `profiles`, `drift`, and

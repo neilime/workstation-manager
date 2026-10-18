@@ -97,6 +97,16 @@
       }}
   when: workstation_manager_resolved.desktop.gnome.favorites is not none
 
+- name: Report pending dock favorites that need a fresh session
+  ansible.builtin.debug:
+    msg: >-
+      Log out and back in so the dock shows favorites for applications installed
+      during this run. Flatpak launchers live under /var/lib/flatpak/exports/share,
+      which the current GNOME session only searches after the next login.
+  when:
+    - workstation_manager_resolved.desktop.gnome.favorites is not none
+    - workstation_manager_resolved.desktop.gnome.favorites | length > 0
+
 - name: Show Trash in Ubuntu Dock
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"

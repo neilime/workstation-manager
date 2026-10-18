@@ -182,9 +182,9 @@ def ai_resource_directory_tasks():
 def test_ai_resource_directories_use_normalized_user_ownership(tmp_path, public_defaults, private_overrides):
     """AI state and MCP package directories accept the production user schema and stay private."""
     home = tmp_path / "home"
-    config = merge_hash(public_defaults, private_overrides)
-    config["user"] = managed_user(home)
-    resolved = DesiredStateConfigNormalizer().normalize(config)
+    resolved = merge_hash(public_defaults, private_overrides)
+    resolved["user"] = managed_user(home)
+    resolved = DesiredStateConfigNormalizer().normalize(resolved)
     root = home / ".local/share/workstation-manager/ai-tools"
     state = home / ".local/state/workstation-manager/ai-tools"
     package = root / "npm/example/1.2.3"
@@ -208,6 +208,9 @@ def test_ai_resource_directories_use_normalized_user_ownership(tmp_path, public_
         assert directory.owner() == resolved["user"]["name"]
         assert directory.group() == resolved["user"]["name"]
         assert directory.stat().st_mode & 0o777 == 0o700
+    stable = package.parent / "current"
+    assert stable.is_symlink()
+    assert stable.resolve() == package.resolve()
     repeated = run_playbook(command, environment, cwd=tmp_path)
     assert repeated.returncode == 0, repeated.stdout + repeated.stderr
     assert "changed=0" in repeated.stdout
@@ -225,6 +228,7 @@ def test_provider_authentication_deferral_is_explicit_and_reported(tmp_path, aut
         or "ansible.builtin.debug" in task
     ]
     variables = {
+        "workstation_manager_use_become": False,
         "workstation_ai_config": {
             "authenticate": authenticate,
             "providers": {"codex": {"command": "fixture-client-not-installed"}},
@@ -235,7 +239,7 @@ def test_provider_authentication_deferral_is_explicit_and_reported(tmp_path, aut
     result = run_playbook(["ansible-playbook", "-i", "localhost,", str(playbook)], ansible_environment(tmp_path))
     if authenticate:
         assert result.returncode != 0
-        assert "Cannot access the AI client" in result.stdout
+        assert "Cannot access the AI client" in result.stdout, result.stdout + result.stderr
     else:
         assert result.returncode == 0, result.stdout + result.stderr
         assert "provider logins are not verified" in result.stdout

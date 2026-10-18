@@ -58,6 +58,28 @@ def test_provider_authentication_respects_persistent_login_and_preview(tmp_path,
     assert calls.exists() == (state != "preview")
 
 
+def test_inaccessible_ai_client_reports_the_concrete_access_failure(tmp_path):
+    """An unreachable client surfaces the concrete OS error and failing path for diagnosis."""
+    missing = tmp_path / "absent-codex"
+    task = {
+        "neilime.workstation_setup.ai_provider_auth": {
+            "home": str(tmp_path),
+            "provider": "codex",
+            "executable": str(missing),
+        },
+        "register": "login",
+    }
+    playbook = write_local_playbook(tmp_path / "auth.json", [task], {})
+    result = run_playbook(
+        ["ansible-playbook", "-i", "localhost,", str(playbook)],
+        ansible_environment(tmp_path),
+        cwd=tmp_path,
+    )
+    assert result.returncode != 0
+    assert "Cannot access the AI client or terminal" in result.stdout
+    assert "absent-codex" in result.stdout
+
+
 @pytest.mark.parametrize("state", ["available", "denied", "preview"])
 def test_mcp_credentials_and_access_checks_remain_private(tmp_path, state):
     """Resolved credentials reach only the server, and service failures cannot pass discovery checks."""

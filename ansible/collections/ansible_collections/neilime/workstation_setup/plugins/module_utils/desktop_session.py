@@ -1,4 +1,4 @@
-"""Read the managed user's live graphical session without forwarding credentials."""
+"""Discover the managed user's desktop and connect native commands to their terminal."""
 
 from __future__ import annotations
 
@@ -15,14 +15,14 @@ _DESKTOP_VARIABLES = frozenset(
         "XAUTHORITY",
         "DBUS_SESSION_BUS_ADDRESS",
         "XDG_RUNTIME_DIR",
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_TYPE",
     )
 )
 
 
-# One query returns the complete allowlisted environment.
-# pylint: disable=too-few-public-methods
 class DesktopSession:
-    """Discover desktop access through the effective user's systemd manager."""
+    """Use the effective user's live desktop and terminal without capturing sign-in codes."""
 
     @staticmethod
     def environment() -> dict[str, str]:
@@ -75,3 +75,35 @@ class DesktopSession:
             raise ValueError(message)
         environment.update({key: value for key, value in session.items() if key in _DESKTOP_VARIABLES and value})
         return environment
+
+    @staticmethod
+    def run_in_terminal(
+        command: list[str], *, terminal: str, home: Path, environment: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        """Run native sign-in with a live display when available and output confined to a real terminal."""
+        environment = dict(environment)
+        try:
+            session = DesktopSession.environment()
+        except (OSError, ValueError):
+            # Native clients can still display a URL for manual opening without a live desktop.
+            session = {}
+        for name in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE"):
+            if session.get(name):
+                environment[name] = session[name]
+        with open(terminal, "r+b", buffering=0) as tty:
+            if not tty.isatty():
+                raise ValueError("Sign-in requires an interactive terminal")
+            # Device codes belong to the user's terminal, outside Ansible's captured output.
+            # pylint: disable-next=unknown-option-value
+            # pylint: disable-next=ansible-bad-function
+            return subprocess.run(
+                command,
+                stdin=tty,
+                stdout=tty,
+                stderr=tty,
+                env=environment,
+                cwd=home,
+                text=True,
+                check=False,
+                timeout=300,
+            )

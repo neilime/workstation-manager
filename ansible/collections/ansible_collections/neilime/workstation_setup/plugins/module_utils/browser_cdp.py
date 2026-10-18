@@ -8,6 +8,7 @@ import select
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from types import TracebackType
 from urllib.parse import urlsplit, urlunsplit
 
@@ -52,6 +53,7 @@ class BrowserPipe:
         self.buffer = b""
         self.sequence = 0
         self.targets: list[str] = []
+        self.acknowledgements: dict[tuple[str, str], bool] = {}
         try:
             # Persistent private IPC retains this process across calls; __exit__ closes and reaps it.
             # The Ansible-only checker is absent from standalone Pylint.
@@ -86,7 +88,7 @@ class BrowserPipe:
             os.close(self.writer)
 
     def call(self, method: str, params: dict | None = None, session: str | None = None, timeout: float = 30) -> dict:
-        """Read a bounded response while discarding unrelated protocol events."""
+        """Read a bounded response, retaining only explicitly watched acknowledgements."""
 
         self.sequence += 1
         request = {"id": self.sequence, "method": method, "params": params or {}}
@@ -113,6 +115,7 @@ class BrowserPipe:
                 if not isinstance(message, dict):
                     raise BrowserProtocolError("Brave returned an invalid automation response")
                 if message.get("id") != self.sequence:
+                    self._record_acknowledgement(message)
                     continue
                 if "error" in message:
                     raise BrowserProtocolError(_protocol_rejection(message["error"]))
@@ -122,6 +125,29 @@ class BrowserPipe:
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise BrowserProtocolError("Brave's automation connection failed") from error
         raise BrowserProtocolError("Brave's automation request timed out")
+
+    def watch_acknowledgement(self, session: str, name: str) -> Callable[[], bool]:
+        """Latch a true binding signal outside page state for this connection's lifetime."""
+
+        key = (session, name)
+        if key in self.acknowledgements:
+            raise ValueError("The browser acknowledgement is already being watched")
+        self.acknowledgements[key] = False
+        self.call("Runtime.addBinding", {"name": name}, session)
+        return lambda: self.acknowledgements[key]
+
+    def _record_acknowledgement(self, message: dict) -> None:
+        """Discard event payloads except a fixed true signal from a registered target and binding."""
+
+        if message.get("method") != "Runtime.bindingCalled":
+            return
+        session = message.get("sessionId")
+        params = message.get("params")
+        if not isinstance(session, str) or not isinstance(params, dict):
+            return
+        name = params.get("name")
+        if isinstance(name, str) and (session, name) in self.acknowledgements and params.get("payload") == "true":
+            self.acknowledgements[(session, name)] = True
 
     def evaluate(self, session: str, expression: str, timeout: float = 30) -> object:
         """Return only explicitly selected values from trusted internal-page code."""

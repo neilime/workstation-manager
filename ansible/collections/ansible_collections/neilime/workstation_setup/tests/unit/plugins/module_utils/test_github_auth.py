@@ -5,6 +5,9 @@ import subprocess
 from unittest.mock import mock_open
 
 import pytest
+from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
+    github_auth,
+)
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.github_auth import (
     GitHubAuthentication,
 )
@@ -40,6 +43,7 @@ def authentication_fixture(tmp_path, monkeypatch):
                 assert options["stdin"] is options["stdout"] is options["stderr"]
                 assert "GH_PROMPT_DISABLED" not in environment
                 assert "input" not in options
+                state["login_environment"] = dict(environment)
             state["login"] = {
                 "state": "success",
                 "active": True,
@@ -124,15 +128,45 @@ def test_bootstrap_discovers_account_before_private_configuration(authentication
 
 
 def test_interactive_login_uses_browser_authorization_once(authentication, monkeypatch):
-    """Native sign-in uses the caller's terminal and the saved login is reused afterward."""
+    """Native sign-in uses the caller's terminal, the live desktop, and reuses the saved login."""
     auth, state = authentication
     state["login"] = {}
+    monkeypatch.setattr(
+        github_auth.DesktopSession,
+        "environment",
+        lambda: {
+            "DISPLAY": ":9",
+            "WAYLAND_DISPLAY": "wayland-9",
+            "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
+        },
+    )
     terminal = mock_open()
     terminal.return_value.isatty.return_value = True
     monkeypatch.setattr("builtins.open", terminal)
     assert auth.ensure(terminal="/dev/fixture-terminal")["authenticated"]
+    assert state["login_environment"]["DISPLAY"] == ":9"
+    assert state["login_environment"]["WAYLAND_DISPLAY"] == "wayland-9"
+    assert state["login_environment"]["XDG_CURRENT_DESKTOP"] == "ubuntu:GNOME"
     assert not auth.ensure()["changed"]
     assert sum(command[1:3] == ["auth", "login"] for command in state["calls"]) == 1
+
+
+def test_interactive_login_proceeds_when_the_desktop_session_is_unavailable(authentication, monkeypatch):
+    """A missing live session must not stop sign-in; gh still prints the URL for manual opening."""
+    auth, state = authentication
+    state["login"] = {}
+
+    def unavailable() -> dict[str, str]:
+        raise ValueError("Cannot read the managed user's desktop session environment; log in to GNOME and retry")
+
+    monkeypatch.setattr(github_auth.DesktopSession, "environment", unavailable)
+    terminal = mock_open()
+    terminal.return_value.isatty.return_value = True
+    monkeypatch.setattr("builtins.open", terminal)
+    assert auth.ensure(terminal="/dev/fixture-terminal")["authenticated"]
+    assert state["login_environment"] == {
+        key: value for key, value in auth.environment.items() if key != "GH_PROMPT_DISABLED"
+    }
 
 
 @pytest.mark.parametrize("failure", ["login", "plaintext"])

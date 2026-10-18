@@ -122,6 +122,18 @@
         - not ansible_check_mode
         - workstation_restore_git_reattach_results | length > 0
 
+    - name: Stop setup when Git repository recovery is incomplete
+      ansible.builtin.fail:
+        msg: >-
+          Git metadata could not be restored for:
+          {{ workstation_restore_git_reattach_results | selectattr('status', 'equalto', 'failed') |
+             map(attribute='relative_path') | join(', ') }}.
+          Restored project files have been preserved. Check the Git errors above,
+          verify repository access as the target user, and retry setup with the same archive.
+      when:
+        - not ansible_check_mode
+        - workstation_restore_git_reattach_results | selectattr('status', 'equalto', 'failed') | list | length > 0
+
     - name: Report restore completion
       ansible.builtin.debug:
         msg:

@@ -68,7 +68,11 @@ else:
     secret_tool.chmod(0o700)
     collection_root = tmp_path / "collections"
     isolated = collection_root / "ansible_collections/neilime/workstation_setup"
-    for relative in ("plugins/modules/github_auth.py", "plugins/module_utils/github_auth.py"):
+    for relative in (
+        "plugins/modules/github_auth.py",
+        "plugins/module_utils/github_auth.py",
+        "plugins/module_utils/desktop_session.py",
+    ):
         destination = isolated / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         source = (COLLECTION / relative).read_text()

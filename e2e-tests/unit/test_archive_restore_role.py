@@ -157,19 +157,19 @@ def fixture_git_archive(tmp_path, monkeypatch) -> dict:
     (origin / "tracked.txt").write_text("remote-base\n")
     git("add", ".")
     git("commit", "--quiet", "-m", "Initial revision")
-    initial_commit = git("rev-parse", "HEAD")
     git("checkout", "--quiet", "-b", "topic")
     (origin / "topic.txt").write_text("topic-branch\n")
     git("add", ".")
     git("commit", "--quiet", "-m", "Topic revision")
+    head_commit = git("rev-parse", "HEAD")
     git("checkout", "--quiet", "main")
 
-    source = tmp_path / "source-home/Documents/dev-projects/client"
+    source = tmp_path / "source-home/Documents/dev-projects/organization/client"
     source.mkdir(parents=True)
     (source / "tracked.txt").write_text("remote-base\nlocal-change\n")
     (source / "local-note.txt").write_text("local-untracked\n")
     with tarfile.open(tmp_path / "recovery.tar.gz", "w:gz") as archive:
-        archive.add(source, arcname="Documents/dev-projects/client")
+        archive.add(source, arcname="Documents/dev-projects/organization/client")
     (tmp_path / "target-home").mkdir()
 
     binary_directory = tmp_path / "bin"
@@ -197,9 +197,9 @@ def fixture_git_archive(tmp_path, monkeypatch) -> dict:
     monkeypatch.setenv("PATH", f"{binary_directory}:{os.environ['PATH']}")
     remote_url = f"fixture@git.example.invalid:{origin}"
     return {
-        "relative_path": "client",
+        "relative_path": "organization/client",
         "branch": "topic",
-        "head_commit": initial_commit,
+        "head_commit": head_commit,
         "primary_remote_name": "upstream",
         "primary_remote_url": remote_url,
         "remotes": [{"name": "upstream", "url": remote_url}, {"name": "secondary", "url": str(origin)}],
@@ -227,7 +227,7 @@ def test_git_reattachment_configures_noninteractive_ssh_and_preserves_worktree(t
     result = restore_git_archive(tmp_path, git_archive)
     assert result.returncode == 0, result.stdout + result.stderr
     assert '"status": "reattached"' in result.stdout
-    project = tmp_path / "target-home/Documents/dev-projects/client"
+    project = tmp_path / "target-home/Documents/dev-projects" / git_archive["relative_path"]
     assert (project / "tracked.txt").read_text() == "remote-base\nlocal-change\n"
     assert (project / "local-note.txt").read_text() == "local-untracked\n"
     environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
@@ -236,12 +236,11 @@ def test_git_reattachment_configures_noninteractive_ssh_and_preserves_worktree(t
         return subprocess.check_output(["git", "-C", str(project), *arguments], env=environment, text=True).strip()
 
     assert git("branch", "--show-current") == branch
+    assert git("rev-parse", "HEAD") == git_archive["head_commit"]
     assert git("remote", "get-url", "upstream") == git_archive["primary_remote_url"]
     assert git("remote", "get-url", "secondary") == git_archive["remotes"][1]["url"]
     if branch:
         assert (project / "topic.txt").read_text() == "topic-branch\n"
-    else:
-        assert git("rev-parse", "HEAD") == git_archive["head_commit"]
     calls = [json.loads(line) for line in (tmp_path / "ssh-calls.jsonl").read_text().splitlines()]
     assert calls
     for call in calls:
@@ -259,18 +258,98 @@ def test_git_reattachment_configures_noninteractive_ssh_and_preserves_worktree(t
     assert git("config", "--get", "remote.upstream.fetch") == "+refs/heads/*:refs/remotes/upstream/*"
 
 
+@pytest.mark.parametrize("remote_state", ["deleted", "advanced", "unadvertised"])
+def test_git_restore_recovers_the_saved_commit_when_the_remote_branch_changes(tmp_path, git_archive, remote_state):
+    """A saved branch and local edits recover at their recorded commit despite remote branch changes."""
+    origin = tmp_path / "origin"
+    environment = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "Fixture",
+        "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+        "GIT_COMMITTER_NAME": "Fixture",
+        "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+    }
+
+    def git(*arguments: str) -> str:
+        return subprocess.check_output(["git", "-C", str(origin), *arguments], env=environment, text=True).strip()
+
+    if remote_state == "advanced":
+        git("checkout", "--quiet", "topic")
+        (origin / "tracked.txt").write_text("new remote contents\n")
+        git("add", ".")
+        git("commit", "--quiet", "-m", "Remote revision")
+        git("checkout", "--quiet", "main")
+    else:
+        if remote_state == "deleted":
+            git("merge", "--quiet", "--ff-only", "topic")
+        else:
+            git("config", "uploadpack.allowAnySHA1InWant", "true")
+        git("branch", "--delete", "--force", "topic")
+
+    result = restore_git_archive(tmp_path, git_archive)
+    assert result.returncode == 0, result.stdout + result.stderr
+    project = tmp_path / "target-home/Documents/dev-projects" / git_archive["relative_path"]
+    assert (
+        subprocess.check_output(["git", "-C", str(project), "rev-parse", "HEAD"], text=True).strip()
+        == git_archive["head_commit"]
+    )
+    current_branch = subprocess.check_output(["git", "-C", str(project), "branch", "--show-current"], text=True).strip()
+    assert current_branch == "topic"
+    assert (project / "tracked.txt").read_text() == "remote-base\nlocal-change\n"
+    assert (project / "local-note.txt").read_text() == "local-untracked\n"
+
+
+def test_git_restore_fails_when_the_recorded_commit_cannot_be_recovered(tmp_path, git_archive):
+    """An unavailable saved commit fails recovery without substituting a newer revision or losing files."""
+    git_archive["head_commit"] = "f" * 40
+    result = restore_git_archive(tmp_path, git_archive)
+    assert result.returncode != 0, result.stdout + result.stderr
+    project = tmp_path / "target-home/Documents/dev-projects" / git_archive["relative_path"]
+    assert (project / "tracked.txt").read_text() == "remote-base\nlocal-change\n"
+    assert (project / "local-note.txt").read_text() == "local-untracked\n"
+    assert not (project / ".git").exists()
+
+
 def test_git_reattachment_preserves_restored_files_after_ssh_rejection(tmp_path, git_archive):
     """A rejected SSH connection must be reported without losing archived worktree files."""
     (tmp_path / "reject-ssh").touch()
     result = restore_git_archive(tmp_path, git_archive)
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode != 0, result.stdout + result.stderr
     assert "Host key verification failed" in result.stdout
     assert '"status": "failed"' in result.stdout
-    project = tmp_path / "target-home/Documents/dev-projects/client"
+    project = tmp_path / "target-home/Documents/dev-projects" / git_archive["relative_path"]
     assert (project / "tracked.txt").read_text() == "remote-base\nlocal-change\n"
     assert (project / "local-note.txt").read_text() == "local-untracked\n"
     assert not (project / ".git").exists()
     assert not project.with_name("client.workstation-manager-restore-overlay").exists()
+
+
+def test_git_reattachment_preserves_worktree_when_moving_it_fails(tmp_path, git_archive):
+    """A failed move must not let recovery delete the only restored project copy."""
+    move = tmp_path / "bin/mv"
+    move.write_text("#!/bin/sh\nexit 1\n")
+    move.chmod(0o755)
+    result = restore_git_archive(tmp_path, git_archive)
+    assert result.returncode != 0, result.stdout + result.stderr
+    project = tmp_path / "target-home/Documents/dev-projects" / git_archive["relative_path"]
+    assert (project / "tracked.txt").read_text() == "remote-base\nlocal-change\n"
+    assert (project / "local-note.txt").read_text() == "local-untracked\n"
+    assert not (tmp_path / "ssh-calls.jsonl").exists()
+
+
+def test_git_reattachment_preserves_existing_recovery_overlay(tmp_path, git_archive):
+    """A retained recovery directory requires intervention before any clone or deletion."""
+    project = tmp_path / "target-home/Documents/dev-projects" / git_archive["relative_path"]
+    overlay = project.with_name("client.workstation-manager-restore-overlay")
+    overlay.mkdir(parents=True)
+    (overlay / "recovery-note.txt").write_text("saved recovery work\n")
+    result = restore_git_archive(tmp_path, git_archive)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert (overlay / "recovery-note.txt").read_text() == "saved recovery work\n"
+    assert (project / "local-note.txt").read_text() == "local-untracked\n"
+    assert not (tmp_path / "ssh-calls.jsonl").exists()
 
 
 def test_git_restore_check_mode_does_not_connect_or_extract(tmp_path, git_archive):

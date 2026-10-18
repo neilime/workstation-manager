@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,6 +17,10 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_paths import (
     BrowserProfilePathsPlanner,
 )
+
+
+class BrowserProfilesBlocked(ValueError):
+    """Signal that Brave holds the profile lock so setup can offer to close it and retry."""
 
 
 def _read_json(path: Path) -> dict:
@@ -60,6 +65,21 @@ def _write_file(path: Path, data: dict | bytes) -> None:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def _apply_password_manager(preferences: dict) -> None:
+    """Keep Bitwarden the effective password manager on managed profiles.
+
+    Brave's own "Set as default" toggle for third-party managers does not persist
+    per profile, which re-enables Brave's built-in password prompts. Seeding these
+    user-level preferences to off means Brave never offers to save passwords or
+    auto sign-in, so the extension stays in control even when it releases the
+    setting it normally governs.
+    """
+
+    for key in ("credentials_enable_service", "credentials_enable_autosignin"):
+        if preferences.get(key) is not False:
+            preferences[key] = False
 
 
 def _apply_theme(preferences: dict, colors: object) -> None:
@@ -123,6 +143,35 @@ def _brave_running(proc_root: Path = Path("/proc")) -> bool:
     return False
 
 
+_SINGLETON_FILES = ("SingletonLock", "SingletonSocket", "SingletonCookie")
+
+
+def _profile_lock_is_stale(root: Path) -> bool:
+    """A profile lock is stale when this host created it but its recorded process has exited."""
+
+    try:
+        host, _separator, process = os.readlink(root / "SingletonLock").rpartition("-")
+    except OSError:
+        return False
+    return host == socket.gethostname() and process.isdigit() and not (Path("/proc") / process).exists()
+
+
+def _profile_locked(root: Path) -> bool:
+    """Report a Singleton lock a live local or remote browser may still hold, ignoring stale ones."""
+
+    return os.path.lexists(root / "SingletonLock") and not _profile_lock_is_stale(root)
+
+
+def _clear_stale_profile_lock(root: Path) -> None:
+    """Remove the Singleton files of a lock this host left behind, matching Brave's own recovery."""
+
+    if os.path.lexists(root / "SingletonLock") and _profile_lock_is_stale(root):
+        for name in _SINGLETON_FILES:
+            artifact = root / name
+            if os.path.lexists(artifact):
+                artifact.unlink()
+
+
 def _profile_paths(root: Path, profiles: list[dict]) -> Iterator[tuple[Path, dict]]:
     """Resolve unique profile identities and reject linked profile directories."""
 
@@ -173,6 +222,7 @@ def _plan_profile(
     if not preferences_path.exists():
         preferences = {"profile": {"name": label, "using_default_name": False}}
     _apply_theme(preferences, declaration.get("theme_colors"))
+    _apply_password_manager(preferences)
     # Setup preserves names; an explicit remote reconciliation replaces them.
     profile_preferences = preferences.get("profile", {})
     if not isinstance(profile_preferences, dict):
@@ -199,7 +249,10 @@ def seed_browser_profiles(
     """Register profiles and restore their declared native theme color and avatar.
 
     Existing names change only with explicit replace_names approval.
-    Brave owns other settings after creation, including pinned tabs and Sync.
+    Each managed profile also keeps Brave's built-in password save and auto
+    sign-in prompts off so the configured Bitwarden extension stays the effective
+    password manager. Brave owns other settings after creation, including pinned
+    tabs and Sync.
     Check mode computes the complete plan but never creates directories or files.
     """
 
@@ -219,8 +272,10 @@ def seed_browser_profiles(
     profile_state.setdefault("last_used", next(iter(info_cache)))
     if json.dumps(local_state, sort_keys=True) != original_local_state:
         planned_files.append((local_state_path, local_state))
-    if planned_files and (os.path.lexists(root / "SingletonLock") or _brave_running()):
-        raise ValueError("Close Brave completely before changing profiles; a Brave process or SingletonLock is present")
+    if planned_files and (_profile_locked(root) or _brave_running()):
+        raise BrowserProfilesBlocked(
+            "Close Brave completely before changing profiles; a Brave process or SingletonLock is present"
+        )
     if planned_files and not check_mode:
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         for path, data in planned_files:

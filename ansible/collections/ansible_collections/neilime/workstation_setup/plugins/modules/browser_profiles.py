@@ -17,7 +17,7 @@ description:
   - Registers profiles loaded from the Bitwarden collection in Brave Local State.
   - Seeds a name only when a profile has no Preferences file.
   - Applies the first configured palette color as the native profile theme.
-  - Refuses changes when Brave holds its user data directory lock.
+  - Reports a blocker instead of failing when Brave holds its user data directory lock.
 author:
   - workstation-manager contributors (@neilime)
 attributes:
@@ -40,7 +40,16 @@ EXAMPLES = r"""
 
 # pylint: enable=duplicate-code
 
-RETURN = r""""""
+RETURN = r"""
+blocked:
+  description: Whether a running Brave or its profile lock prevented changing profiles.
+  type: bool
+  returned: success
+blocker:
+  description: Actionable reason setup must close Brave before retrying.
+  type: str
+  returned: when blocked
+"""
 
 # Ansible requires runtime imports after the module documentation.
 # pylint: disable=wrong-import-position
@@ -66,9 +75,11 @@ def main() -> None:
             module.params["profiles"],
             module.check_mode,
         )
+    except browser_profile_seed.BrowserProfilesBlocked as error:
+        module.exit_json(changed=False, blocked=True, blocker=str(error))
     except (OSError, ValueError) as error:
         module.fail_json(msg=str(error))
-    module.exit_json(changed=changed)
+    module.exit_json(changed=changed, blocked=False)
 
 
 if __name__ == "__main__":

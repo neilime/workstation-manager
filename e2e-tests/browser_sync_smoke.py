@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
@@ -37,6 +38,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_
     DesktopSession,
 )
 from browser_sync_fixture import (  # noqa: E402
+    _REMOVAL_BINDING,
     _START_TEARDOWN,
     _TEARDOWN_CHECKS,
     _TEARDOWN_STATE,
@@ -311,9 +313,11 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     )
 
 
-def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
+def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[], bool]:
     """Only a fresh successful commit for the captured device proves server removal."""
 
+    acknowledged = pipe.watch_acknowledgement(page, _REMOVAL_BINDING)
+    assert acknowledged() is False
     pipe.evaluate(
         page,
         """(() => {
@@ -368,8 +372,20 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> None:
             })()""".replace("FIXTURE", json.dumps(event)).replace("OFFSET", str(offset)),
         )
         assert result is expected
+        assert acknowledged() is expected
     pipe.evaluate(page, "clearInterval(window.workstationDeviceRemoval.timer); true")
     print("Device removal requires a fresh successful server commit for its captured identity.", flush=True)
+    return acknowledged
+
+
+def navigate_teardown_page(pipe: BrowserPipe, page: str, url: str) -> None:
+    """Wait for the owned diagnostic tab to finish its requested navigation."""
+
+    pipe.call("Page.navigate", {"url": url}, page)
+    deadline = time.monotonic() + 10
+    while not pipe.evaluate(page, f"location.href === {json.dumps(url)} && document.readyState === 'complete'"):
+        assert time.monotonic() < deadline, "Teardown diagnostic page did not finish navigation"
+        time.sleep(0.1)
 
 
 def teardown_readiness(pipe: BrowserPipe) -> None:
@@ -400,11 +416,7 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         },
         page,
     )
-    pipe.call("Page.navigate", {"url": "chrome://sync-internals/"}, page)
-    deadline = time.monotonic() + 10
-    while not pipe.evaluate(page, "location.href === 'chrome://sync-internals/' && document.readyState === 'complete'"):
-        assert time.monotonic() < deadline, "Teardown diagnostic page did not load"
-        time.sleep(0.1)
+    navigate_teardown_page(pipe, page, "chrome://sync-internals/")
     for resource in ("chrome://sync-internals/about.js", "chrome://resources/js/cr.js"):
         assert pipe.evaluate(page, f"import({json.dumps(resource)}).then(() => false, () => true)") is True
     # Exercise the callback contract independently of the page's module loader.
@@ -460,25 +472,20 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         "matches": False,
         "needsNavigation": False,
     }
-    device_removal_acknowledgement(pipe, page)
+    acknowledged = device_removal_acknowledgement(pipe, page)
     # A navigation discards all observer state. Recover the owned page and require
     # fresh evidence; a previously ready context must not authorize device removal.
-    pipe.call("Page.navigate", {"url": "about:blank"}, page)
-    deadline = time.monotonic() + 10
-    while not pipe.evaluate(page, "location.href === 'about:blank' && document.readyState === 'complete'"):
-        assert time.monotonic() < deadline, "Teardown fixture navigation did not finish"
-        time.sleep(0.1)
+    navigate_teardown_page(pipe, page, "about:blank")
     assert pipe.evaluate(page, _START_TEARDOWN) is False
     assert teardown_snapshot() == unavailable
+    assert pipe.evaluate(page, "typeof window.workstationDeviceRemoval === 'undefined'") is True
+    pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, page)
+    assert acknowledged() is True
     pipe.call("Network.setBlockedURLs", {"urlPatterns": []}, page)
-    pipe.call("Page.navigate", {"url": "chrome://sync-internals/"}, page)
-    deadline = time.monotonic() + 10
-    while not pipe.evaluate(page, "location.href === 'chrome://sync-internals/' && document.readyState === 'complete'"):
-        assert time.monotonic() < deadline, "Teardown diagnostic page did not recover"
-        time.sleep(0.1)
+    navigate_teardown_page(pipe, page, "chrome://sync-internals/")
     assert teardown_snapshot() == pending
     print(
-        "Teardown verifies native status and removal, and recovers lost diagnostic pages with fresh evidence.",
+        "Teardown retains confirmed removal across navigation, and recovers lost pages with fresh evidence.",
         flush=True,
     )
 

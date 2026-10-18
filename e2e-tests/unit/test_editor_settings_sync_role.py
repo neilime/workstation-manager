@@ -39,9 +39,10 @@ class EditorSettingsSyncRoleTests(unittest.TestCase):
                             "name": "Verify the editor remains untouched",
                             "ansible.builtin.assert": {
                                 "that": [
-                                    "workstation_manager_vscode_settings_sync_session_environment is skipped",
+                                    "workstation_manager_vscode_settings_sync_session is skipped",
                                     "not workstation_manager_vscode_should_request_settings_sync",
                                     "workstation_manager_vscode_settings_sync_command is skipped",
+                                    "not (workstation_manager_vscode_settings_sync_signed_in | default(false))",
                                     "not workstation_manager_vscode_should_remind_settings_sync",
                                 ]
                             },

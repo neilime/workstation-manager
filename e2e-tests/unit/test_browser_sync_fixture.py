@@ -176,25 +176,73 @@ def test_live_device_identity_is_required_before_leaving(matches: bool, monkeypa
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.evaluate.side_effect = [teardown_state(matches=matches), True, True, True]
+    pipe.watch_acknowledgement.return_value = lambda: True
+    pipe.evaluate.side_effect = [teardown_state(matches=matches), True, True]
     if matches:
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
-        assert pipe.evaluate.call_count == 4
+        assert pipe.evaluate.call_count == 3
+        pipe.call.assert_called_once_with(
+            "Runtime.removeBinding", {"name": "workstationDeviceRemoved"}, pipe.page.return_value
+        )
     else:
         with pytest.raises(ValueError, match="live browser device no longer matches"):
             browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
         assert pipe.evaluate.call_count == 1
-    pipe.call.assert_not_called()
+        pipe.call.assert_not_called()
 
 
-def test_native_leave_callback_requires_server_deletion_acknowledgement(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A successful local leave callback cannot certify an uncommitted server deletion."""
+@pytest.mark.parametrize("removed,acknowledged", [(True, False), (False, True)])
+def test_native_leave_requires_both_local_and_server_confirmation(
+    removed: bool, acknowledged: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The native leave callback and server deletion acknowledgement must both succeed."""
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.evaluate.side_effect = [teardown_state(), True, True, False]
+    pipe.watch_acknowledgement.return_value = lambda: acknowledged
+    pipe.evaluate.side_effect = [teardown_state(), True, removed]
     with pytest.raises(ValueError, match="server did not confirm removal"):
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+
+
+@pytest.mark.parametrize("acknowledged", [False, True])
+def test_teardown_retains_server_confirmation_after_diagnostic_page_loss(
+    acknowledged: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Losing page globals after native leave neither loses nor invents server confirmation."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    pipe = mock.Mock()
+    pipe.watch_acknowledgement.return_value = lambda: acknowledged
+    pipe.evaluate.side_effect = [
+        teardown_state(),
+        True,
+        True,
+        ValueError("diagnostic page globals were discarded"),
+    ]
+    if acknowledged:
+        browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    else:
+        with pytest.raises(ValueError, match="server did not confirm removal"):
+            browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    assert pipe.evaluate.call_count == 3
+
+
+def test_native_leave_failure_is_not_masked_by_diagnostic_page_loss(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed native leave stays failed even when its observer page also disappears."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    pipe = mock.Mock()
+    pipe.watch_acknowledgement.return_value = lambda: True
+    pipe.evaluate.side_effect = [
+        teardown_state(),
+        True,
+        ValueError("native leave failed"),
+        ValueError("diagnostic page globals were discarded"),
+    ]
+    with pytest.raises(ValueError, match="native leave failed"):
+        browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    assert pipe.evaluate.call_count == 3
 
 
 def test_teardown_requires_native_callbacks_before_requesting_removal(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -223,25 +271,29 @@ def test_teardown_reloads_a_lost_context_and_rechecks_identity(matches: bool, mo
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     mock_teardown_clock(monkeypatch)
     pipe = mock.Mock()
+    pipe.watch_acknowledgement.return_value = lambda: True
     pipe.evaluate.side_effect = [
         teardown_state(failed=("Diagnostic Page", "Readiness Observer"), needs_navigation=True),
         teardown_state(matches=matches),
-        True,
         True,
         True,
     ]
     pipe.call.return_value = {}
     if matches:
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device", timeout=5)
-        assert pipe.evaluate.call_count == 5
+        assert pipe.evaluate.call_count == 4
     else:
         with pytest.raises(ValueError, match="live browser device no longer matches"):
             browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device", timeout=5)
         assert pipe.evaluate.call_count == 2
-    pipe.call.assert_called_once_with(
-        "Page.navigate", {"url": "chrome://sync-internals/"}, pipe.page.return_value, timeout=5
-    )
-    first_poll, navigation, second_poll = pipe.method_calls[1:4]
+    expected = [mock.call("Page.navigate", {"url": "chrome://sync-internals/"}, pipe.page.return_value, timeout=5)]
+    if matches:
+        expected.append(
+            mock.call("Runtime.removeBinding", {"name": "workstationDeviceRemoved"}, pipe.page.return_value)
+        )
+    assert pipe.call.call_args_list == expected
+    observations = [call for call in pipe.method_calls if call[0] in {"evaluate", "call"}]
+    first_poll, navigation, second_poll = observations[:3]
     assert [first_poll[0], navigation[0], second_poll[0]] == ["evaluate", "call", "evaluate"]
     assert "SyncSetupReset" not in first_poll.args[1]
     assert second_poll.kwargs["timeout"] == 3

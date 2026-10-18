@@ -23,6 +23,15 @@
     NPM_CONFIG_CACHE: "{{ workstation_ai_root }}/npm-cache"
     NPM_CONFIG_USERCONFIG: /dev/null
 
+- name: Expose the pinned MCP package through a stable version-independent path
+  ansible.builtin.file:
+    src: "{{ workstation_ai_package_dir | basename }}"
+    path: "{{ workstation_ai_package_dir | dirname }}/current"
+    state: link
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    force: true
+
 - name: Provision the matching Playwright browser
   ansible.builtin.include_tasks: playwright.yml
   when: workstation_ai_server.playwright | length > 0

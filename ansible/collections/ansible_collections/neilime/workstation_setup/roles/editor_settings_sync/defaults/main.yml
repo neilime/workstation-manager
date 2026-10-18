@@ -1,0 +1,4 @@
+---
+# Seconds setup waits for the one-time interactive VS Code Settings Sync sign-in
+# to complete before continuing. Sign-in itself cannot be automated.
+editor_settings_sync_signin_timeout: 300

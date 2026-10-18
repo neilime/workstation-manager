@@ -25,7 +25,7 @@ profile, and removes CopyQ applications while preserving their history.
 Setup always enables GNOME dark mode, dock Trash, and GNOME Software updates.
 Browser automation discovers the managed user's live desktop environment,
 including when setup runs through SSH. See the [browser adapter contract](../../../../../docs/development/browser-adapters.md).
-Dock favorites use the public defaults; null preserves existing favorites.
+Dock favorites use the public defaults, including Orca; null preserves existing favorites.
 Wallpaper settings are applied only when the dotfiles-managed image exists.
 Setup installs native Simple Scan/SANE and removes duplicate scanner Flatpaks
 without deleting their data. BleachBit runs saved presets weekly through a user timer and also

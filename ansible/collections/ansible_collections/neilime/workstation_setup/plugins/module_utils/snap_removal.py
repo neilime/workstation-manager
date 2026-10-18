@@ -171,17 +171,19 @@ class SnapRemoval:
         )
 
     @staticmethod
-    def require_closed_applications() -> None:
-        """Avoid taking an inconsistent archive of running graphical applications."""
+    def require_closed_applications(background: set[str]) -> None:
+        """Block on running user applications while allowing snapd-managed background daemons."""
         for executable in Path("/proc").glob("[0-9]*/exe"):
             try:
                 target = os.readlink(executable)
-            except FileNotFoundError:
+            except (FileNotFoundError, PermissionError):
                 continue
-            if target.startswith("/snap/") and not target.startswith("/snap/snapd/"):
-                raise ValueError(
-                    "Close Snap applications, including background windows, then rerun setup to preserve their data."
-                )
+            match = re.match(r"/snap/([^/]+)/", target)
+            if match is None or match.group(1) == "snapd" or match.group(1) in background:
+                continue
+            raise ValueError(
+                "Close Snap applications, including background windows, then rerun setup to preserve their data."
+            )
 
     def remove(self, backup_directory: str, *, check_mode: bool) -> dict[str, object]:
         """Verify recovery, then remove all Snap state."""
@@ -194,9 +196,8 @@ class SnapRemoval:
         if check_mode or not changed:
             return {"changed": changed, "backup_archive": ""}
         # Stop service writes before archiving; GUI applications must be closed by their user.
-        if any(groups):
-            self._stop_services()
-        self.require_closed_applications()
+        background = self._stop_services() if any(groups) else set()
+        self.require_closed_applications(background)
         data_paths = [
             path
             for path in [Path("/var/snap"), Path("/var/lib/snapd/snapshots"), *user_paths]
@@ -231,19 +232,22 @@ class SnapRemoval:
                     "Purging snapd would remove other packages. Reconcile those dependencies before retrying."
                 )
 
-    def _stop_services(self) -> None:
-        """Stop only actual Snap services before preserving their data."""
+    def _stop_services(self) -> set[str]:
+        """Stop active Snap services and report every snap that runs a background daemon."""
         services = SnapInventory.read("/v2/apps?select=service")
         if not isinstance(services, list):
             raise ValueError("Cannot inspect Snap services before data preservation.")
+        daemons: set[str] = set()
         for service in services:
             if not isinstance(service, dict) or not all(isinstance(service.get(key), str) for key in ("snap", "name")):
                 raise ValueError("Invalid Snap service inventory; no package or data removal was attempted.")
+            daemons.add(service["snap"])
             if service.get("active"):
                 self.command(
                     ["snap", "stop", service["snap"] + "." + service["name"]],
                     "Cannot stop Snap services; no package or data removal was attempted.",
                 )
+        return daemons
 
     @staticmethod
     def _remove_paths(paths: list[Path]) -> None:

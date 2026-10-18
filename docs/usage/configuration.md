@@ -58,8 +58,10 @@ saved in your desktop keyring. If sign-in is needed, it starts
 in your browser. Keep your desktop keyring unlocked so the login can be saved.
 Git then uses this login to download `workstation-config`.
 
-After downloading configuration, the entrypoint asks for your Bitwarden email and
-password. Bitwarden uses the configured server to retrieve keys and application
+After downloading configuration, the entrypoint reuses an already-unlocked
+Bitwarden CLI session when one is available (for example after you run `bw unlock`
+and export `BW_SESSION`); otherwise it asks for your Bitwarden email and password.
+Bitwarden uses the configured server to retrieve keys and application
 secrets. Setup verifies that the GitHub login matches `development.github.account`
 after loading configuration and reuses it throughout installation. GitHub
 bootstrap authentication also runs when needed during `--dry-run`.
@@ -232,10 +234,13 @@ code --wait path/to/file
 ```
 
 The integrated terminal uses native `/usr/bin/zsh`. Setup preserves unrelated
-JSONC settings and personal profiles. Open Visual Studio Code after setup, check
-your profiles and extensions, and complete sign-in if requested. Project settings
-may override the selected terminal. Settings Sync uses the native configuration
-directory.
+JSONC settings and personal profiles. When run on the desktop, setup turns on
+Settings Sync, opens Visual Studio Code, and pauses for a one-time interactive
+sign-in (reusing an existing GitHub account from Copilot without re-entering
+credentials); it then continues automatically once sign-in completes. This
+sign-in cannot be automated. If it is skipped or times out, setup prints the
+manual sign-in steps. Project settings may override the selected terminal.
+Settings Sync uses the native configuration directory.
 
 Public [development defaults](../../ansible/group_vars/all.yml) own software
 selection and release pins. AI applications and extensions are configured together
@@ -321,9 +326,13 @@ graphical login when no session is available.
 
 Setup always enables dark mode and shows Trash in Ubuntu Dock. The
 [public defaults](../../ansible/group_vars/all.yml) select Brave and define the
-ordered dock favorites. Set `desktop.gnome.favorites: null` to preserve existing
+ordered dock favorites, including Orca (`orca-ide.desktop`). Set
+`desktop.gnome.favorites: null` to preserve existing
 favorites or `favorites: []` to clear the dock.
 Use `browser` in the favorites list for the selected browser adapter's desktop entry.
+Log out and back in after the first setup: the running GNOME session predates the
+Flatpak installation, so Flatpak favorites such as Bitwarden, Slack, and Spotify
+only appear in the dock once a fresh login searches their launcher directory.
 
 Manage the wallpaper through Chezmoi at
 `~/.local/share/backgrounds/wallpaper.jpg`. Setup selects that image for both light

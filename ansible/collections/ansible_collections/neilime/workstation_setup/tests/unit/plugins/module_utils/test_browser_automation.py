@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -49,6 +50,9 @@ while True:
     response={'id':message['id'],'result':{'accepted':True}}
     if method=='error':
         response={'id':message['id'],'error':message.get('params') or {'message':'private-browser-secret'}}
+    if method=='events':
+        for event in message['params']['events']:
+            os.write(4,json.dumps(event).encode()+b'\0')
     os.write(4,b'{"method":"event","params":{"secret":"private-event"}}\0')
     data=json.dumps(response).encode()+b'\0'
     os.write(4,data[:5]); os.write(4,data[5:])
@@ -62,6 +66,47 @@ def test_pipe_handles_events_and_partial_frames_without_a_network_listener() -> 
     with BrowserPipe([sys.executable, "-c", _CHILD], dict(os.environ)) as pipe:
         assert pipe.call("fixture") == {"accepted": True}
     assert pipe.process.returncode == 0
+
+
+def test_binding_acknowledgement_survives_context_loss_and_is_scoped_to_its_target() -> None:
+    """Only the watched target's true signal survives navigation while other event data is discarded."""
+
+    def event(session: object = "diagnostics", name: object = "confirmed", payload: object = "true") -> dict:
+        return {"method": "Runtime.bindingCalled", "sessionId": session, "params": {"name": name, "payload": payload}}
+
+    with BrowserPipe([sys.executable, "-c", _CHILD], dict(os.environ)) as pipe:
+        acknowledged = pipe.watch_acknowledgement("diagnostics", "confirmed")
+        other = pipe.watch_acknowledgement("other", "confirmed")
+        pipe.call(
+            "events",
+            {
+                "events": [
+                    event("other"),
+                    event(name="unwatched"),
+                    event(payload="false"),
+                    event(payload=True),
+                    event(payload="private-browser-data"),
+                    event(name=[]),
+                    event(session=[]),
+                    {"method": "Runtime.bindingCalled", "sessionId": "diagnostics", "params": None},
+                ]
+            },
+        )
+        assert acknowledged() is False
+        assert other() is True
+        pipe.call(
+            "events",
+            {
+                "events": [
+                    event(),
+                    {"method": "Runtime.executionContextsCleared", "sessionId": "diagnostics"},
+                    event(payload="false"),
+                ]
+            },
+        )
+        assert acknowledged() is True
+        with pytest.raises(ValueError, match="already being watched"):
+            pipe.watch_acknowledgement("diagnostics", "confirmed")
 
 
 def test_closed_diagnostic_target_does_not_prevent_browser_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -428,7 +473,7 @@ def test_process_selection_is_scoped_to_the_managed_root(tmp_path: Path, monkeyp
 
 
 def test_profile_lock_is_retained_without_launching_a_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A stale or foreign lock cannot be bypassed by automatic synchronization."""
+    """A live or foreign lock cannot be bypassed by automatic synchronization."""
 
     lock = tmp_path / "SingletonLock"
     lock.symlink_to("fixture-owner")
@@ -440,6 +485,26 @@ def test_profile_lock_is_retained_without_launching_a_browser(tmp_path: Path, mo
         with lifecycle.closed_browser(str(tmp_path)):
             pytest.fail("Locked profiles must not enter the operation")
     assert lock.is_symlink()
+    launch.assert_not_called()
+
+
+def test_stale_local_profile_lock_is_cleared_before_operation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A lock this host left behind after Brave exited is cleared so recovery can proceed."""
+
+    lock = tmp_path / "SingletonLock"
+    lock.symlink_to(f"{socket.gethostname()}-2147483646")
+    (tmp_path / "SingletonSocket").symlink_to("/run/user/0/stale.sock")
+    monkeypatch.setattr(lifecycle, "browser_processes", lambda _root: [])
+    monkeypatch.setattr(lifecycle.DesktopSession, "environment", lambda: {"DISPLAY": ":0"})
+    launch = Mock()
+    monkeypatch.setattr(lifecycle.subprocess, "Popen", launch)
+    entered = False
+    with lifecycle.closed_browser(str(tmp_path)) as (executable, _environment):
+        entered = True
+        assert executable
+        assert not os.path.lexists(lock)
+        assert not os.path.lexists(tmp_path / "SingletonSocket")
+    assert entered
     launch.assert_not_called()
 
 

@@ -1,5 +1,7 @@
 ---
 - name: Ensure the managed user's copilot login is available
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
   neilime.workstation_setup.ai_provider_auth:
     home: "{{ workstation_manager_resolved.user.home }}"
     provider: copilot
