@@ -75,6 +75,27 @@ def test_sync_requires_fresh_machine_evidence_and_matching_codes(fixture: tuple)
     assert not any("remote-debugging-port" in argument for argument in pipe.call_args.args[0])
 
 
+@pytest.mark.parametrize("failed_refresh", [0, 1])
+def test_failed_vault_refresh_stops_recovery_before_accepting_cached_records(
+    fixture: tuple, failed_refresh: int
+) -> None:
+    """Both initial reads and post-Sync verification require a successful vault refresh."""
+
+    vault, pipe, native, _lifecycle = fixture
+    vault.run.side_effect = [b""] * failed_refresh + [ValueError("vault refresh failed")]
+
+    with pytest.raises(ValueError, match="vault refresh failed"):
+        live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault)
+
+    native.prune_devices.assert_not_called()
+    assert vault.selected_item.call_count == failed_refresh
+    if failed_refresh:
+        native.wait.assert_called_once()
+        pipe.return_value.__exit__.assert_called_once()
+    else:
+        pipe.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "action,choices",
     [

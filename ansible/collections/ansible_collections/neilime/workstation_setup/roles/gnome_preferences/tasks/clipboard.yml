@@ -85,52 +85,6 @@
     key: /org/gnome/shell/disable-extension-version-validation
     value: "false"
 
-- name: Inspect the managed user's running CopyQ process
-  ansible.builtin.command:
-    argv:
-      - pgrep
-      - --uid
-      - "{{ workstation_manager_resolved.user.name }}"
-      - --exact
-      - copyq
-  register: workstation_manager_clipboard_copyq
-  changed_when: false
-  failed_when: workstation_manager_clipboard_copyq.rc not in [0, 1]
-  check_mode: false
-
-- name: Discover the current desktop session before switching clipboard managers
-  become: "{{ workstation_manager_gnome_use_become_user }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  neilime.workstation_setup.desktop_session_info:
-  register: workstation_manager_clipboard_session
-  when: workstation_manager_clipboard_copyq.rc == 0
-
-- name: Close CopyQ gracefully before enabling the replacement
-  become: "{{ workstation_manager_gnome_use_become_user }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  ansible.builtin.command:
-    argv: [flatpak, run, com.github.hluk.copyq, exit]
-  environment: "{{ workstation_manager_clipboard_session.environment }}"
-  changed_when: true
-  when:
-    - not ansible_check_mode
-    - workstation_manager_clipboard_copyq.rc == 0
-
-- name: Remove CopyQ applications while retaining their history and configuration
-  become: "{{ workstation_manager_use_become }}"
-  community.general.flatpak:
-    name: com.github.hluk.copyq
-    state: absent
-    method: system
-
-- name: Remove the user CopyQ installation while retaining its data
-  become: "{{ workstation_manager_gnome_use_become_user }}"
-  become_user: "{{ workstation_manager_resolved.user.name }}"
-  community.general.flatpak:
-    name: com.github.hluk.copyq
-    state: absent
-    method: user
-
 - name: Read enabled GNOME extensions
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
@@ -175,8 +129,6 @@
       | list
       | to_json }}
 
-- name: Report clipboard activation and preserved recovery data
+- name: Report clipboard activation
   ansible.builtin.debug:
-    msg:
-      - Log out and back in to load the pinned Clipboard Indicator release into GNOME Shell.
-      - CopyQ history remains in ~/.var/app/com.github.hluk.copyq and ~/.config/copyq; it is not converted or deleted.
+    msg: Log out and back in to load the pinned Clipboard Indicator release into GNOME Shell.

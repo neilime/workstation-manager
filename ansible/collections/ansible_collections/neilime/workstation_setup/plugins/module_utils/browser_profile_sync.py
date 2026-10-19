@@ -7,6 +7,7 @@ import copy
 import json
 import os
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -82,20 +83,36 @@ class BrowserVault:
     def run(self, *arguments: str, data: bytes | None = None) -> bytes:
         """Return raw CLI output only to the sensitive synchronization path."""
 
-        return_code, stdout, _stderr = self.run_command(
-            ["bw", *arguments],
-            data=data,
-            binary_data=True,
-            encoding=None,
-            environ_update=self.environment,
-        )
-        if return_code:
-            operation = "read browser record" if arguments[:2] == ("get", "item") else "synchronize browser recovery"
-            raise ValueError(
-                f"Bitwarden browser operation {operation} failed (exit status {return_code}); "
-                "rerun setup or backup to unlock the vault and check access to the configured collection"
+        # Sync only downloads the vault. Match collection loading's retry budget
+        # without replaying writes that may already have reached the server.
+        attempts = 4 if arguments == ("sync",) else 1
+        for attempt in range(attempts):
+            return_code, stdout, _stderr = self.run_command(
+                ["bw", *arguments],
+                data=data,
+                binary_data=True,
+                encoding=None,
+                environ_update=self.environment,
             )
-        return stdout
+            if return_code == 0:
+                return stdout
+            if attempt + 1 < attempts:
+                time.sleep(5)
+        operation = {
+            ("sync",): "sync browser vault",
+            ("get", "item"): "read browser record",
+            ("get", "attachment"): "read browser attachment",
+            ("create", "attachment"): "create browser attachment",
+            ("delete", "attachment"): "delete browser attachment",
+            ("edit", "item"): "update browser record",
+            ("encode",): "encode browser record",
+            ("status",): "check vault status",
+        }.get(arguments[:2], "synchronize browser recovery")
+        raise ValueError(
+            f"Bitwarden browser operation {operation} failed (exit status {return_code}) "
+            f"after {attempts} {'attempts' if attempts > 1 else 'attempt'}; "
+            "check network access and the configured collection, then rerun setup or backup to unlock the vault"
+        )
 
     def item(self, item_id: str) -> dict:
         """Read a selected record without rendering its note or attachments."""

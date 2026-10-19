@@ -35,6 +35,10 @@
     state: present
     method: system
     flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+  register: flatpak_apps_remote
+  until: flatpak_apps_remote is succeeded
+  retries: 3
+  delay: 10
 
 - name: Install declared Flatpak applications
   become: "{{ workstation_manager_use_become }}"
@@ -43,6 +47,10 @@
     state: present
     method: system
     remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+  register: flatpak_apps_install
+  until: flatpak_apps_install is succeeded
+  retries: 3
+  delay: 10
   when: workstation_manager_resolved.desktop.flatpak.packages | length > 0
 
 - name: Apply native scanner delivery

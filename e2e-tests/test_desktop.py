@@ -175,18 +175,12 @@ def test_native_scanner_has_one_delivery(host) -> None:
 
 
 def test_selected_clipboard_extension_is_active(host, workstation_config) -> None:
-    """The managed release must load in Wayland with exactly one clipboard manager."""
+    """The pinned Clipboard Indicator release must load in the Wayland session."""
     selection = workstation_config["desktop"]["clipboard_indicator"]
     root = f"{host.user().home}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com"
     metadata = json.loads(host.file(f"{root}/metadata.json").content_string)
     assert str(metadata["version"]) == selection["version"]
     assert host.file(f"{root}/extension.zip").sha256sum == selection["sha256"]
-    assert host.run("pgrep --uid %s --exact copyq", host.user().name).rc == 1
-    for method in ("--system", "--user"):
-        assert (
-            "com.github.hluk.copyq"
-            not in host.check_output("flatpak list %s --app --columns=application", method).splitlines()
-        )
     environment = (
         f"XDG_RUNTIME_DIR=/run/user/{host.user().uid} "
         f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{host.user().uid}/bus"

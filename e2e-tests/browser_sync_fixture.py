@@ -10,17 +10,20 @@ from pathlib import Path
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
     BrowserPipe,
+    BrowserProtocolError,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
     automation_arguments,
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
+    _GET_ABOUT,
     _SETTINGS_BRIDGE,
     NativeSync,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
     _REMOVAL_BINDING,
+    _REMOVAL_CHECKS,
     _WATCH_REMOVAL,
 )
 
@@ -28,6 +31,7 @@ _TEARDOWN_CHECKS = (
     "Diagnostic Page",
     "Native Callbacks",
     "Readiness Observer",
+    "Status Response",
     "Transport State",
     "Fresh Download",
     "Sync Cycle Ongoing",
@@ -55,20 +59,14 @@ _START_TEARDOWN = r"""(() => {
     }
   });
   addWebUiListener('onAboutInfoUpdated', about => { state.about = about; });
-  addWebUiListener('onEntityCountsUpdated', ({entityCounts}) => {
-    const row = (state.about.type_status || []).find(item => item.name === entityCounts.dataType);
-    if (row) {
-      row.num_entries = entityCounts.entities;
-      row.num_live = entityCounts.nonTombstoneEntities;
-    }
-  });
   chrome.send('setIncludeSpecifics', [false]);
   chrome.send('requestDataAndRegisterForUpdates');
   chrome.send('triggerRefresh');
   return true;
 })()""".replace("SETTINGS_BRIDGE", _SETTINGS_BRIDGE)
 
-_TEARDOWN_STATE = r"""(identity => {
+_TEARDOWN_STATE = (
+    r"""(async (identity, timeoutMs) => {
   const checks = Object.fromEntries(CHECK_NAMES.map(name => [name, false]));
   const expectedPage = location.href === 'chrome://sync-internals/';
   const loaded = document.readyState === 'complete';
@@ -82,12 +80,15 @@ _TEARDOWN_STATE = r"""(identity => {
     return {active: false, ready: false, matches: false,
       needsNavigation: !expectedPage || loaded, checks};
   }
-  const {about, downloaded} = window.workstationSync;
+  const response = await BOUNDED_ABOUT(timeoutMs, window.workstationSyncSettings);
+  const about = response?.info || {};
+  const {downloaded} = window.workstationSync;
   const stats = Object.fromEntries((about.details || []).flatMap(
     section => section.data.map(item => [item.stat_name, item.stat_value])));
-  const device = (about.type_status || []).find(row => row.name === 'Device Info');
+  const device = (response?.rows || []).find(row => row.name === 'Device Info');
   const active = stats['Transport State'] === 'Active';
   Object.assign(checks, {
+    'Status Response': response !== null && about === window.workstationSync.about,
     'Transport State': active,
     'Fresh Download': downloaded === true,
     'Sync Cycle Ongoing': stats['Sync Cycle Ongoing'] === false,
@@ -102,10 +103,13 @@ _TEARDOWN_STATE = r"""(identity => {
     'Device Info Counts': Number.isInteger(device?.num_entries) && device.num_entries === device.num_live
   });
   const ready = Object.entries(checks).every(([name, passed]) => name === 'Transport State' || passed);
-  if (active && stats['Sync Cycle Ongoing'] === false && !ready) chrome.send('triggerRefresh');
-  chrome.send('requestDataAndRegisterForUpdates');
+  if (checks['Status Response'] && active && stats['Sync Cycle Ongoing'] === false && !ready)
+    chrome.send('triggerRefresh');
   return {active, ready, matches: stats['Sync Client ID'] === identity, needsNavigation: false, checks};
-})""".replace("START_TEARDOWN", _START_TEARDOWN).replace("CHECK_NAMES", json.dumps(_TEARDOWN_CHECKS))
+})""".replace("START_TEARDOWN", _START_TEARDOWN)
+    .replace("BOUNDED_ABOUT", _GET_ABOUT)
+    .replace("CHECK_NAMES", json.dumps(_TEARDOWN_CHECKS))
+)
 
 
 def device_identity(profile: Path, *, require_initialized: bool = False) -> str | None:
@@ -132,6 +136,22 @@ def device_identity(profile: Path, *, require_initialized: bool = False) -> str 
     return initialized[0]
 
 
+def incomplete_removal_checks(pipe: BrowserPipe, session: str) -> str:
+    """Report fixed observation stages without exposing device IDs or protocol payloads."""
+
+    try:
+        checks = pipe.evaluate(session, "window.workstationDeviceRemoval?.checks", timeout=5)
+    except BrowserProtocolError:
+        return "removal observer unavailable"
+    if (
+        not isinstance(checks, dict)
+        or set(checks) != set(_REMOVAL_CHECKS)
+        or any(not isinstance(value, bool) for value in checks.values())
+    ):
+        return "removal observer unavailable"
+    return ", ".join(name for name in _REMOVAL_CHECKS if not checks[name]) or "binding delivery"
+
+
 def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float = 120) -> None:
     """Leave only a captured test device after checking its live identity and tracker."""
 
@@ -144,10 +164,11 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     deadline = time.monotonic() + timeout
     checks = dict.fromkeys(_TEARDOWN_CHECKS, False)
     while time.monotonic() < deadline:
+        snapshot_timeout = min(30, max(0.001, deadline - time.monotonic()))
         state = pipe.evaluate(
             session,
-            f"{_TEARDOWN_STATE}({json.dumps(identity)})",
-            timeout=min(30, max(0.001, deadline - time.monotonic())),
+            f"{_TEARDOWN_STATE}({json.dumps(identity)}, {int(snapshot_timeout * 1000)})",
+            timeout=snapshot_timeout + 5,
         )
         if not isinstance(state, dict) or set(state) != {"active", "ready", "matches", "needsNavigation", "checks"}:
             raise ValueError("Brave returned unsupported teardown diagnostics; the test device identity was retained")
@@ -193,10 +214,13 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     if removed is not True:
         raise ValueError("Brave did not confirm leaving the captured test device")
     # The settings callback and diagnostic event arrive from separate targets.
-    # Keep the binding installed until its event arrives, without evaluating page
-    # globals that native leave may discard. The owning pipe closes every target.
+    # Keep the binding installed until its event arrives; confirmation must not
+    # depend on page globals that leave may discard. The pipe closes every target.
     if pipe.wait_for_acknowledgement(session, _REMOVAL_BINDING) is not True:
-        raise ValueError("The Sync server did not confirm removal of the captured test device")
+        raise ValueError(
+            "The Sync server did not confirm removal of the captured test device; "
+            f"incomplete checks: {incomplete_removal_checks(pipe, session)}"
+        )
     pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
 
 

@@ -401,6 +401,12 @@ download the matching reviewed archive, refresh its SHA-256, and rerun the
 The old digest deliberately prevents installation of an unreviewed new version;
 these updates never automerge. GNOME compatibility is checked against the
 downloaded metadata before extraction.
+The Vitals system monitor follows the same workflow through its own custom
+Renovate datasource, extracting the version from `desktop.system_monitor`;
+reviewers refresh its SHA-256 and requalify the panel on Wayland. See
+[ADR 0003](adr/adr-0003-desktop-system-monitor.md).
+GNOME extension digests must match the downloaded reviewed archives; configuration
+validation rejects all-zero placeholders before setup changes the workstation.
 Dependabot handles GitHub Actions, Docker images, and Python packages; it does not
 support Ansible Galaxy collections.
 
@@ -469,7 +475,9 @@ introduced after capture; preexisting workstation profiles cannot be claimed as
 test devices. Each device must complete a fresh Sync download and have a healthy
 Device Info tracker before its leave request. Teardown reads native status and
 entity-count events through the page's existing WebUI callbacks, without importing
-browser modules. The native smoke test also checks readiness and removal with
+browser modules. Each readiness observation requests fresh status and waits for
+its asynchronous counts; cached idle status cannot authorize leaving during a
+busy cycle. The native smoke test also checks readiness and removal with
 those imports blocked. If its diagnostic page is replaced before removal,
 teardown restores that automation tab within the same timeout and requires fresh
 Sync evidence. Timeout reports retain the last observed check names even when
@@ -490,6 +498,9 @@ After the leave callback returns, teardown waits up to 30 seconds for the bindin
 event before removing its observer; the two pages can deliver their replies independently.
 Both the native leave callback and server acknowledgement must succeed; page loss
 cannot stand in for either confirmation or hide a failed leave request.
+Missing acknowledgements report incomplete commit-request, tombstone, and response
+stages when the observer is still available, without exposing device identities
+or protocol payloads.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup
 failure, it prints Lima logs and attempts a bounded guest diagnostic command
 before teardown. Inspect the `Prepare e2e VM and tooling` job output for provisioning,

@@ -91,7 +91,10 @@ removing data; archive integrity is checked when setup applies the plan.
 An APT preference prevents automatic snapd reinstallation.
 
 GNOME Software and its Flatpak plugin manage applications and updates, with
-automatic downloads enabled for the managed account. Setup installs Ptyxis and
+automatic downloads enabled for the managed account. Setup retries failed Flatpak
+remote configuration and application installation up to three times, waiting ten
+seconds between attempts. Persistent failures stop setup; rerunning setup resumes
+installation of missing applications. Setup installs Ptyxis and
 includes it in the default dock favorites while preserving existing terminal profiles.
 
 ## Prepare Bitwarden collections
@@ -353,10 +356,22 @@ paste-on-select, with `Super+Shift+V` as its only global shortcut. Check that th
 shortcut is free in your desktop and apps during the
 [Wayland acceptance checks](../development/adr/adr-0001-workstation-toolchain.md#gnome-clipboard-indicator).
 
-Setup closes CopyQ and removes its system and user Flatpak installations.
-`~/.var/app/com.github.hluk.copyq` and `~/.config/copyq` remain intact for recovery;
-existing history is not imported into Clipboard Indicator. Setup preserves
-existing `~/.config` permissions, including Chezmoi's private mode.
+Setup preserves existing `~/.config` permissions, including Chezmoi's private mode.
+
+### Desktop system monitor
+
+Setup installs and enables the [Vitals](https://github.com/corecoding/Vitals)
+GNOME top-bar system monitor, showing live CPU, memory, temperature, network, and
+storage. Inherit its version and checksum pins from public configuration
+(`desktop.system_monitor`).
+
+Setup verifies the archive digest, identity, and detected GNOME version before
+installation, preserves unrelated extensions, and keeps GNOME compatibility
+validation enabled. When the companion repository provides
+`~/.config/vitals/settings.ini` (a `[vitals]` section), setup applies those
+preferences through `dconf`; otherwise the indicator uses upstream defaults. Log
+out and back in after installation or an update. See
+[ADR 0003](../development/adr/adr-0003-desktop-system-monitor.md).
 
 Simple Scan uses Ubuntu's native `simple-scan` and `sane-utils` packages. Setup
 removes duplicate system and user Flatpak installations without deleting their

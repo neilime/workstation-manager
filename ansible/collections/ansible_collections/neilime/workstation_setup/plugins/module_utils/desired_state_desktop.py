@@ -20,7 +20,8 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
         """Return the normalized desktop section."""
 
         desktop = self._resolver.mapping(config.get("desktop"), "workstation_manager.desktop")
-        clipboard = self._clipboard(desktop)
+        clipboard = self._pinned_extension(desktop, "clipboard_indicator")
+        system_monitor = self._pinned_extension(desktop, "system_monitor")
         flatpak = self._resolver.mapping(desktop.get("flatpak"), "workstation_manager.desktop.flatpak")
         browser = desktop.get("browser", defaults.get("browser"))
         if not isinstance(browser, str) or re.fullmatch(r"[a-z][a-z0-9_]*", browser) is None:
@@ -44,13 +45,10 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             raise ValueError(
                 "Simple Scan is installed through APT; remove org.gnome.SimpleScan from desktop.flatpak.packages"
             )
-        if "com.github.hluk.copyq" in packages:
-            raise ValueError(
-                "Clipboard Indicator replaces CopyQ; remove com.github.hluk.copyq from desktop.flatpak.packages"
-            )
 
         return {
             "clipboard_indicator": clipboard,
+            "system_monitor": system_monitor,
             "flatpak": {
                 "remote": self._resolver.first_non_empty_string(
                     flatpak.get("remote"),
@@ -67,15 +65,17 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             "gnome": {"favorites": favorites},
         }
 
-    def _clipboard(self, desktop: dict[str, object]) -> dict[str, object]:
-        """Require reviewed pins for the managed clipboard extension."""
-        clipboard = self._resolver.mapping(
-            desktop.get("clipboard_indicator"),
-            "desktop.clipboard_indicator",
+    def _pinned_extension(self, desktop: dict[str, object], key: str) -> dict[str, object]:
+        """Require reviewed version and digest pins for a managed GNOME extension."""
+        extension = self._resolver.mapping(
+            desktop.get(key),
+            f"desktop.{key}",
             allowed_keys={"version", "sha256"},
         )
         for field, pattern in (("version", r"[1-9][0-9]*"), ("sha256", r"[0-9a-f]{64}")):
-            value = clipboard.get(field)
+            value = extension.get(field)
             if not isinstance(value, str) or re.fullmatch(pattern, value) is None:
-                raise ValueError(f"desktop.clipboard_indicator.{field} requires an explicit valid pin")
-        return clipboard
+                raise ValueError(f"desktop.{key}.{field} requires an explicit valid pin")
+        if extension["sha256"] == "0" * 64:
+            raise ValueError(f"desktop.{key}.sha256 must be the reviewed archive digest, not an all-zero placeholder")
+        return extension

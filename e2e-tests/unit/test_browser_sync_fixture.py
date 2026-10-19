@@ -19,6 +19,7 @@ browser_fixture = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(browser_fixture)
 # Build synthetic diagnostics with the implementation's fixed, private allowlist.
 TEARDOWN_CHECKS = browser_fixture._TEARDOWN_CHECKS  # pylint: disable=protected-access
+REMOVAL_CHECKS = browser_fixture._REMOVAL_CHECKS  # pylint: disable=protected-access
 
 
 def write_device(root: Path, name: str, guid: str, *, initialized: bool = True) -> None:
@@ -200,11 +201,33 @@ def test_native_leave_requires_both_local_and_server_confirmation(
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.wait_for_acknowledgement.return_value = acknowledged
-    pipe.evaluate.side_effect = [teardown_state(), True, removed]
+    pipe.evaluate.side_effect = [teardown_state(), True, removed, dict.fromkeys(REMOVAL_CHECKS, False)]
     message = "server did not confirm removal" if removed else "Brave did not confirm leaving"
     with pytest.raises(ValueError, match=message):
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
     pipe.call.assert_not_called()
+
+
+def test_missing_removal_reports_only_incomplete_protocol_stages(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Distinguish a missing tombstone from an unconfirmed response without logging device data."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    pipe = mock.Mock()
+    pipe.wait_for_acknowledgement.return_value = False
+    checks = {**dict.fromkeys(REMOVAL_CHECKS, True), "Matching Response": False, "Server Acknowledgement": False}
+    pipe.evaluate.side_effect = [teardown_state(), True, True, checks]
+    with pytest.raises(ValueError, match="incomplete checks: Matching Response, Server Acknowledgement$"):
+        browser_fixture.leave_device(pipe, Path("/fixture/Default"), "private-test-device")
+    pipe.call.assert_not_called()
+
+
+@pytest.mark.parametrize("invalid", [None, {"private-device": False}, dict.fromkeys(REMOVAL_CHECKS, "private-value")])
+def test_removal_diagnostics_reject_untrusted_fields(invalid: object) -> None:
+    """Malformed diagnostic payloads never enter the teardown error message."""
+
+    pipe = mock.Mock()
+    pipe.evaluate.return_value = invalid
+    assert browser_fixture.incomplete_removal_checks(pipe, "session") == "removal observer unavailable"
 
 
 def test_teardown_waits_for_server_evidence_before_removing_the_observer(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -243,14 +266,14 @@ def test_teardown_retains_server_confirmation_after_diagnostic_page_loss(
         teardown_state(),
         True,
         True,
-        ValueError("diagnostic page globals were discarded"),
+        browser_fixture.BrowserProtocolError("diagnostic page globals were discarded"),
     ]
     if acknowledged:
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
     else:
         with pytest.raises(ValueError, match="server did not confirm removal"):
             browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
-    assert pipe.evaluate.call_count == 3
+    assert pipe.evaluate.call_count == (3 if acknowledged else 4)
 
 
 def test_native_leave_failure_is_not_masked_by_diagnostic_page_loss(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -321,7 +344,7 @@ def test_teardown_reloads_a_lost_context_and_rechecks_identity(matches: bool, mo
     first_poll, navigation, second_poll = observations[:3]
     assert [first_poll[0], navigation[0], second_poll[0]] == ["evaluate", "call", "evaluate"]
     assert "SyncSetupReset" not in first_poll.args[1]
-    assert second_poll.kwargs["timeout"] == 3
+    assert second_poll.kwargs["timeout"] == 8
 
 
 def test_teardown_context_recovery_cannot_extend_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -334,7 +357,7 @@ def test_teardown_context_recovery_cannot_extend_the_deadline(monkeypatch: pytes
     pipe.call.return_value = {}
     with pytest.raises(ValueError, match="incomplete checks: Diagnostic Page$"):
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device", timeout=3)
-    assert [call.kwargs["timeout"] for call in pipe.evaluate.call_args_list] == [3, 1]
+    assert [call.kwargs["timeout"] for call in pipe.evaluate.call_args_list] == [8, 6]
     assert [call.kwargs["timeout"] for call in pipe.call.call_args_list] == [3, 1]
     assert all("SyncSetupReset" not in call.args[1] for call in pipe.evaluate.call_args_list)
 
