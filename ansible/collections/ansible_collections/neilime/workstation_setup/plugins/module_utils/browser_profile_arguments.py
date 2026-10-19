@@ -18,6 +18,8 @@ def browser_profile_argument_spec() -> dict:
                 "directory": {"type": "str"},
                 "item_id": {"type": "str", "required": True},
                 "theme_colors": {"type": "list", "elements": "str"},
+                "bookmark_bar": {"type": "str", "choices": ["always", "new_tab", "never"]},
+                "confirm_close_tabs": {"type": "bool"},
                 "avatar_attachment_id": {"type": "str"},
                 "avatar_png": {"type": "str", "no_log": True},
             },

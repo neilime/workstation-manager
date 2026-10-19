@@ -7,6 +7,9 @@ import re
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     desired_state_support,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
+    disposable_device_names,
+)
 
 
 # pylint: disable=too-few-public-methods
@@ -56,6 +59,11 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                 "packages": packages,
             },
             "browser": browser,
+            "browser_sync_disposable_device_names": disposable_device_names(
+                desktop.get(
+                    "browser_sync_disposable_device_names", defaults.get("browser_sync_disposable_device_names")
+                )
+            ),
             "gnome": {"favorites": favorites},
         }
 

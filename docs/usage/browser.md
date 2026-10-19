@@ -7,6 +7,18 @@ Browser recovery during backup can connect profiles to their stored chains and
 verify synchronization automatically. Setup sets HTTP, HTTPS, and HTML defaults
 for the managed user, including Ubuntu and GNOME desktop-specific associations.
 
+Setup and approved backup synchronization keep **This Device** and remove other
+Sync entries with exactly the same device name. Differently named devices are
+preserved by default. You can explicitly remove additional device names through
+`desktop.browser_sync_disposable_device_names` in your private override; its
+[public default](../../ansible/group_vars/all.yml) is an empty list.
+Cleanup requires a successful Sync cycle, server acknowledgement for every
+deletion, and a checked device list. Dry runs never remove devices.
+
+Use unique computer names within a Sync chain: same-name entries are treated as
+duplicates. List an additional name as disposable only when all remote devices
+with that exact name can be removed.
+
 For each managed profile, setup also keeps Brave's built-in "Offer to save
 passwords" and "Auto Sign-in" prompts off so the Bitwarden extension stays the
 effective password manager. Brave's own default-password-manager toggle does not
@@ -31,14 +43,16 @@ accessible, nonempty, and contain valid profile records.
 
 Create one Bitwarden secure note per profile in that collection:
 
-| Field                            | Content                                           |
-| -------------------------------- | ------------------------------------------------- |
-| Name                             | Profile label, such as `Personal`                 |
-| Custom field `id`                | Stable identifier, such as `personal`             |
-| Custom field `directory`         | Native directory: `Default`, `Profile 1`, etc.    |
-| Notes                            | The profile's stable first 24 Sync recovery words |
-| Optional `theme_colors`          | One to three comma-separated `#RRGGBB` colors     |
-| Optional attachment `avatar.png` | PNG, up to 256 KiB and 1024 × 1024 pixels         |
+| Field                            | Content                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| Name                             | Profile label, such as `Personal`                                         |
+| Custom field `id`                | Stable identifier, such as `personal`                                     |
+| Custom field `directory`         | Native directory: `Default`, `Profile 1`, etc.                            |
+| Notes                            | The profile's stable first 24 Sync recovery words                         |
+| Optional `theme_colors`          | One to three comma-separated `#RRGGBB` colors                             |
+| Optional `bookmark_bar`          | `always`, `new_tab`, or `never`                                           |
+| Optional `confirm_close_tabs`    | `true` to ask before closing multiple tabs; `false` to disable the prompt |
+| Optional attachment `avatar.png` | PNG, up to 256 KiB and 1024 × 1024 pixels                                 |
 
 Identifiers use lowercase letters, numbers, and dashes. Keep both identifiers
 and directories unique. For an existing profile, open `brave://version` and use
@@ -65,7 +79,8 @@ and Bitwarden when renaming a profile.
    Successful synchronization cannot prove that every file or setting you expected
    was saved by another device.
 
-Setup can switch an existing configured profile to its stored chain. It preserves
+Setup reuses an existing matching chain without enrolling the device again. It
+can switch an existing configured profile to its stored chain. It preserves
 unrelated browser data and does not update Bitwarden recovery words. Brave closes
 safely for recovery and reopens if it was running. Dry runs preview recovery
 without launching Brave or joining chains.
@@ -111,14 +126,39 @@ intentional change, update `theme_colors` or replace `avatar.png` in Bitwarden.
 Removing either optional value stops managing it and leaves the existing local
 appearance intact.
 
+## Bookmark-bar visibility
+
+Backup offers to save each profile's explicit bookmark-bar choice in its
+Bitwarden note. Run backup on the computer with the intended setting and choose
+`save` for the listed profiles. You can also set the note's `bookmark_bar` custom
+field to `always`, `new_tab`, or `never`.
+
+Setup applies that saved choice to the corresponding profile and verifies it
+after Brave Sync finishes. If Sync changes it, setup reapplies the choice through
+Brave, waits for synchronization, and checks it again. A policy conflict or failed
+verification stops recovery. Profiles without this field retain their own choice;
+setup does not force the bookmark bar on every profile. Dry runs change nothing.
+
+## Close-all-tabs confirmation
+
+Backup also offers to save each profile's explicit **Warn me before closing
+window with multiple tabs** choice. Choose `save` on the original computer, or
+set the profile note's `confirm_close_tabs` custom field to `true` or `false`.
+Setup restores and verifies the saved choice on the destination profile. Both
+enabled and disabled choices are preserved; omitting the field leaves it unmanaged
+by setup. Dry runs leave the local preference and Bitwarden unchanged.
+
+Brave stores this confirmation locally rather than registering it for native
+Sync, so the Bitwarden field carries the choice between computers.
+
 ## Before backup
 
 [Backup](backup-and-restore.md) compares local profiles with the collection,
-including names, directories, declared main colors, logos, and saved Sync
+including names, directories, declared main colors, bookmark-bar and close-tabs choices, logos, and saved Sync
 configuration. Name checks use the names shown in Brave's profile picker.
 The prompt names affected profiles and offers machine actions:
 
-- `save` updates existing Bitwarden records from local names, colors, and logos.
+- `save` updates existing Bitwarden records from local names, colors, bookmark-bar and close-tabs choices, and logos.
   It preserves recovery words, unrelated fields, and secondary palette colors.
   Disabled logos and managed colors that no longer exist locally are removed
   from the corresponding note.

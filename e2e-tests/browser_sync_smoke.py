@@ -19,6 +19,9 @@ WORKSPACE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WORKSPACE / "ansible/collections"))
 
 # pylint: disable=wrong-import-position
+from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
+    browser_profile_preferences,
+)
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (  # noqa: E402
     BrowserPipe,
     BrowserProtocolError,
@@ -34,15 +37,17 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     _START,
     NativeSync,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (  # noqa: E402
+    _REMOVAL_BINDING,
+    _WATCH_REMOVAL,
+)
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
     DesktopSession,
 )
 from browser_sync_fixture import (  # noqa: E402
-    _REMOVAL_BINDING,
     _START_TEARDOWN,
     _TEARDOWN_CHECKS,
     _TEARDOWN_STATE,
-    _WATCH_REMOVAL,
 )
 
 # pylint: enable=wrong-import-position
@@ -67,7 +72,7 @@ def diagnostic_fixture() -> dict:
         "Server Connection": "OK",
         "Auth Error": "OK",
     }
-    types = ["Bookmarks", "Passwords", "Preferences", "Extensions", "Sessions"]
+    types = ["Bookmarks", "Passwords", "Preferences", "Extensions", "Sessions", "Device Info"]
     return {
         "about": {
             "details": [{"data": [{"stat_name": key, "stat_value": value} for key, value in stats.items()]}],
@@ -330,8 +335,8 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[],
           return true;
         })()""",
     )
-    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}('')") is False
-    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}('captured-device')") is True
+    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}([])") is False
+    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}(['captured-device', 'second-device'])") is True
     # Exercise the actual interval which prompts uploads during native leave.
     assert (
         pipe.evaluate(
@@ -351,7 +356,10 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[],
         (tag, "", True, "", "SUCCESS", 0, False),
         (tag, "captured-server-id", True, "captured-server-id", "TRANSIENT_ERROR", 0, False),
         (tag, "captured-server-id", True, "another-server-id", "SUCCESS", 0, False),
-        (tag, "captured-server-id", True, "captured-server-id", "SUCCESS", 0, True),
+        (tag, "captured-server-id", True, "captured-server-id", "SUCCESS", 0, False),
+        # Every selected device needs its own successful commit, including retries.
+        ("dCXwbGioGJWMGC5alsHTmMfUlAQ=", "second-id", True, "second-id", "TRANSIENT_ERROR", 0, False),
+        ("dCXwbGioGJWMGC5alsHTmMfUlAQ=", "second-id", True, "second-id", "SUCCESS", 0, True),
     ]
     for request_tag, request_id, deleted, response_id, response_type, offset, expected in cases:
         event = {
@@ -479,6 +487,9 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
     assert pipe.evaluate(page, _START_TEARDOWN) is False
     assert teardown_snapshot() == unavailable
     assert pipe.evaluate(page, "typeof window.workstationDeviceRemoval === 'undefined'") is True
+    # Runtime bindings must be reinstalled in the replacement page context,
+    # even though the JavaScript observer itself has been discarded.
+    assert pipe.evaluate(page, f"typeof window[{json.dumps(_REMOVAL_BINDING)}] === 'function'") is True
     pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, page)
     assert acknowledged() is True
     pipe.call("Network.setBlockedURLs", {"urlPatterns": []}, page)
@@ -648,6 +659,24 @@ def restore_open_profiles(environment: dict[str, str]) -> None:
     print("Original profile windows restored; the temporary automation profile stayed closed.", flush=True)
 
 
+def profile_preferences(pipe: BrowserPipe, native: NativeSync) -> None:
+    """Exercise native visibility writes and readback without joining a real chain."""
+
+    for choices in (
+        {"bookmark_bar": "never", "confirm_close_tabs": False},
+        {"bookmark_bar": "new_tab", "confirm_close_tabs": True},
+        {"bookmark_bar": "always", "confirm_close_tabs": False},
+    ):
+        expected = json.dumps(browser_profile_preferences.native_profile_preferences(choices))
+        result = pipe.evaluate(
+            native.settings, f"{browser_profile_preferences.PROFILE_PREFERENCES_SCRIPT}({expected}, true)"
+        )
+        assert isinstance(result, dict)
+        assert result["supported"] is True and result["matches"] is True
+        native.profile_preferences(choices, restore=False)
+    print("Per-profile bookmark-bar and close-tabs settings passed native readback.", flush=True)
+
+
 def main() -> None:
     """Run only inside Lima, preserving a synthetic tab across automation restarts."""
 
@@ -675,9 +704,11 @@ def main() -> None:
             teardown_readiness(pipe)
             code = pending_chain(pipe, native)
             sync_selection(pipe, native.settings)
+            profile_preferences(pipe, native)
         with BrowserPipe(arguments, environment) as pipe:
             native = NativeSync(pipe, directory + "/Default")
             assert native.code() == code, "Native code could not be decrypted after restarting"
+            native.profile_preferences({"bookmark_bar": "always", "confirm_close_tabs": False}, restore=False)
             assert native.wait(timeout=2) is False, "Offline Sync was incorrectly verified"
             targets = pipe.call("Target.getTargets")["targetInfos"]
             assert any(target["url"] == "data:text/plain,workstation-session-fixture" for target in targets), (

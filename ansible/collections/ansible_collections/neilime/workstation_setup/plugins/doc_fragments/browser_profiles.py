@@ -42,6 +42,13 @@ options:
           - The first color selects the native profile theme; remaining colors are retained as metadata.
         type: list
         elements: str
+      bookmark_bar:
+        description: Optional per-profile bookmark-bar visibility restored and verified by setup.
+        type: str
+        choices: [always, new_tab, never]
+      confirm_close_tabs:
+        description: Optional per-profile confirmation before closing a window with multiple tabs.
+        type: bool
       avatar_attachment_id:
         description: Optional Bitwarden attachment identity, never written to browser settings.
         type: str

@@ -10,6 +10,16 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     BrowserPipe,
     BrowserProtocolError,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_preferences import (
+    PROFILE_PREFERENCES_SCRIPT,
+    native_profile_preferences,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
+    _REMOVAL_BINDING,
+    _WATCH_REMOVAL,
+    SyncDeviceList,
+    disposable_device_names,
+)
 
 _DIAGNOSTIC_CHECKS = (
     "Transport State",
@@ -91,7 +101,8 @@ _SNAPSHOT = r"""(async (timeoutMs) => {
   checks['Auth Error'] = typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK');
   checks['Actionable Error'] = aboutInfo?.actionable_error_detected === false;
   checks['Unrecoverable Error'] = aboutInfo?.unrecoverable_error_detected === false;
-  checks['Required Data Types'] = ['Bookmarks', 'Passwords', 'Preferences', 'Extensions', 'Sessions'].every(
+  const required = ['Bookmarks', 'Passwords', 'Preferences', 'Extensions', 'Sessions', 'Device Info'];
+  checks['Required Data Types'] = required.every(
     name => active.some(row => row.name === name));
   checks['Data Type Status'] = rows.every(
     row => row.status === 'ok' || (row.status === 'severity_info' && row.state === 'Not Running'));
@@ -256,8 +267,9 @@ def recovery_words(value: object) -> str:
 class NativeSync:
     """Operate only on the selected profile through its own native Sync handlers."""
 
-    def __init__(self, pipe: BrowserPipe, profile_path: str) -> None:
+    def __init__(self, pipe: BrowserPipe, profile_path: str, *, disposable_names: list[str] | None = None) -> None:
         self.pipe = pipe
+        self.disposable_names = disposable_device_names([] if disposable_names is None else disposable_names)
         self.pending_reason = "Sync verification did not complete"
         version = pipe.page("brave://version")
         matches = self._evaluate(
@@ -315,6 +327,26 @@ class NativeSync:
                 "Brave could not read its recovery code; check desktop keyring access"
             ) from error
 
+    def profile_preferences(self, choices: dict, *, restore: bool) -> None:
+        """Verify saved per-profile choices, restoring them through native settings only during setup."""
+
+        expected = json.dumps(native_profile_preferences(choices))
+        result = self._evaluate(
+            self.settings,
+            f"{PROFILE_PREFERENCES_SCRIPT}({expected}, {json.dumps(restore)})",
+            "checking profile preferences",
+        )
+        if not isinstance(result, dict) or result.get("supported") is not True:
+            raise BrowserProtocolError("Brave's profile preferences interface is unavailable")
+        if result.get("matches") is not True:
+            raise BrowserProtocolError("Brave's profile preferences differ from Bitwarden; check policy or run setup")
+        if not isinstance(result.get("changed"), bool) or (not restore and result["changed"]):
+            raise BrowserProtocolError("Brave returned unsupported profile preferences diagnostics")
+        if result.get("changed") is True:
+            if not self.wait():
+                raise BrowserProtocolError(f"Brave did not synchronize profile preferences; {self.pending_reason}")
+            self.profile_preferences(choices, restore=False)
+
     def protocol_error_codes(self) -> list[int]:
         """Read only numeric Sync error codes, never the server's response payload."""
 
@@ -339,6 +371,42 @@ class NativeSync:
                 if isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= 255:
                     codes.add(code)
         return sorted(codes)
+
+    def prune_devices(self) -> int:
+        """Remove selected remote registrations only with server acknowledgement and a verified readback."""
+
+        before = SyncDeviceList(self._request("SyncGetDeviceList"))
+        identities = before.removal_ids(self.disposable_names)
+        if not identities:
+            return 0
+        session = self.pipe.page("brave://sync-internals")
+        if self._evaluate(session, _SETTINGS_BRIDGE, "initializing device removal callbacks") is not True:
+            raise BrowserProtocolError("Brave's device removal callbacks are unavailable")
+        acknowledged = self.pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
+        if (
+            self._evaluate(session, f"{_WATCH_REMOVAL}({json.dumps(identities)})", "observing device removal")
+            is not True
+        ):
+            raise BrowserProtocolError("Brave could not observe Sync device removal")
+        # Revalidate after observer installation, before issuing any deletion.
+        current = SyncDeviceList(self._request("SyncGetDeviceList"))
+        if current.current != before.current or any(
+            current.devices.get(identity) != before.devices[identity] for identity in identities
+        ):
+            raise BrowserProtocolError("Brave's Sync device list changed before cleanup; retry")
+        for identity in identities:
+            if self._request("SyncDeleteDevice", identity) is not True:
+                raise BrowserProtocolError("Brave rejected Sync device removal")
+        if not self.wait():
+            raise BrowserProtocolError(
+                f"Brave did not finish Sync device cleanup; incomplete checks: {self.pending_reason}"
+            )
+        self.pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
+        if not acknowledged():
+            raise BrowserProtocolError("The Sync server did not confirm device cleanup")
+        after = SyncDeviceList(self._request("SyncGetDeviceList"))
+        after.verify_cleanup(before, self.disposable_names)
+        return len(identities)
 
     def restore(self, code: str, *, reset: bool = False) -> None:
         """Join an approved chain with Brave's current pairing suffix and verify it."""

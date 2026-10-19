@@ -17,6 +17,8 @@ description:
   - Registers profiles loaded from the Bitwarden collection in Brave Local State.
   - Seeds a name only when a profile has no Preferences file.
   - Applies the first configured palette color as the native profile theme.
+  - Applies declared bookmark-bar visibility without changing undeclared choices.
+  - Applies declared close-tabs confirmation without changing other profiles or undeclared choices.
   - Reports a blocker instead of failing when Brave holds its user data directory lock.
 author:
   - workstation-manager contributors (@neilime)

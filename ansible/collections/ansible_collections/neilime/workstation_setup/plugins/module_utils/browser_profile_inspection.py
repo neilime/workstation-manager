@@ -13,6 +13,13 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_paths import (
     BrowserProfilePathsPlanner,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_preferences import (
+    PROFILE_PREFERENCE_DEFAULTS,
+    bookmark_bar_mode,
+    close_tabs_confirmation,
+    saved_bookmark_bar,
+    saved_close_tabs_confirmation,
+)
 
 _IGNORED_PROFILES = {"System Profile", "Guest Profile"}
 _SYNC_TYPES = ("bookmarks", "passwords", "extensions", "preferences", "tabs")
@@ -110,6 +117,10 @@ def _declarations(profiles: list[dict], planner: BrowserProfilePathsPlanner) -> 
         }
         if colors is not None:
             declarations[directory]["theme_color"] = colors[0].upper()
+        if declaration.get("bookmark_bar") is not None:
+            declarations[directory]["bookmark_bar"] = bookmark_bar_mode(declaration["bookmark_bar"])
+        if declaration.get("confirm_close_tabs") is not None:
+            declarations[directory]["confirm_close_tabs"] = close_tabs_confirmation(declaration["confirm_close_tabs"])
         if declaration.get("avatar_png") is not None:
             declarations[directory]["avatar"] = decode_avatar_png(declaration["avatar_png"])
     return declarations
@@ -177,6 +188,8 @@ def _inspect_profile(root: Path, directory: str, declaration: dict, cache: dict)
         "preferences_present": preferences_path.is_file(),
         "sync": sync,
         "sync_issues": issues,
+        "bookmark_bar": saved_bookmark_bar(preferences),
+        "confirm_close_tabs": saved_close_tabs_confirmation(preferences),
     }
     drift = []
     if not declaration:
@@ -217,7 +230,31 @@ def _inspect_profile(root: Path, directory: str, declaration: dict, cache: dict)
     return observed, drift
 
 
-def inspect_browser_profiles(user_data_dir: str, profiles: list[dict]) -> dict:
+def _preference_drift(observed: dict, declaration: dict, include_unsaved: bool) -> list[dict]:
+    """Compare effective choices while offering only explicit unsaved preferences for capture."""
+
+    result = []
+    for key, default in PROFILE_PREFERENCE_DEFAULTS.items():
+        actual = observed[key] if observed[key] is not None else default
+        configured = declaration.get(key)
+        differs = configured is not None and actual != configured
+        unsaved = include_unsaved and configured is None and observed[key] is not None
+        if differs or unsaved:
+            result.append(
+                {
+                    "kind": key,
+                    "id": declaration["id"],
+                    "directory": observed["directory"],
+                    "configured_value": configured,
+                    "observed_value": actual,
+                }
+            )
+    return result
+
+
+def inspect_browser_profiles(
+    user_data_dir: str, profiles: list[dict], *, include_unsaved_preferences: bool = False
+) -> dict:
     """Compare sanitized collection records with registered and on-disk profiles.
 
     A registered profile without Preferences is incomplete. An on-disk profile
@@ -247,6 +284,8 @@ def inspect_browser_profiles(user_data_dir: str, profiles: list[dict]) -> dict:
             drift.append({"kind": "missing", "directory": directory, "id": declarations[directory]["id"]})
             continue
         observed, profile_drift = _inspect_profile(root, directory, declarations.get(directory, {}), cache)
+        if directory in declarations:
+            profile_drift.extend(_preference_drift(observed, declarations[directory], include_unsaved_preferences))
         inventory.append(observed)
         drift.extend(profile_drift)
     return {

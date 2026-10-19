@@ -49,6 +49,8 @@ workstation_manager:
         - com.bitwarden.desktop
     # Select the browser adapter; installation details belong to its role.
     browser: brave
+    # Optional extra names to remove from Sync; same-name duplicates are cleaned automatically.
+    browser_sync_disposable_device_names: []
     gnome:
       # An explicit empty list clears the dock favorites.
       favorites:

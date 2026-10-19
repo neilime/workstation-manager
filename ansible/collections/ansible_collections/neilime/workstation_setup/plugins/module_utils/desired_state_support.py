@@ -140,6 +140,7 @@ class DesiredStateDefaultsFactory:
                     "packages": [],
                 },
                 "browser": "brave",
+                "browser_sync_disposable_device_names": [],
                 "gnome": {
                     "favorites": None,
                 },

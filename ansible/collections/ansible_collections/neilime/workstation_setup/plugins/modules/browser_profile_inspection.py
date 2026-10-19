@@ -11,12 +11,14 @@ DOCUMENTATION = r"""
 module: browser_profile_inspection
 extends_documentation_fragment:
   - neilime.workstation_setup.browser_profiles
-short_description: Inspect Brave profile, theme color, and local Sync configuration drift
+short_description: Inspect Brave profile appearance and local Sync configuration drift
 version_added: '1.0.0'
 description:
   - Compares sanitized Bitwarden collection profiles with native registrations and Preferences files.
   - Compares the first configured palette color with the native profile theme.
-  - Returns profile metadata, declared native theme color observations, and local Sync configuration booleans only.
+  - Compares saved bookmark-bar visibility and reports explicit local choices not yet saved in Bitwarden.
+  - Compares saved close-tabs confirmation and reports explicit enabled or disabled choices not yet saved.
+  - Returns sanitized profile appearance metadata and local Sync configuration booleans only.
   - Never returns encrypted seeds or recovery words, and never modifies browser files.
   - Local settings do not prove that synchronization with the server has completed.
 author:
@@ -49,7 +51,7 @@ profiles:
   type: list
   elements: dict
 drift:
-  description: Added, missing, renamed, unregistered, incomplete, or theme color profile diagnostics.
+  description: Profile identity, registration, completeness, theme, avatar, bookmark-bar, and close-tabs diagnostics.
   returned: always
   type: list
   elements: dict
@@ -80,7 +82,7 @@ def main() -> None:
     )
     try:
         result = browser_profile_inspection.inspect_browser_profiles(
-            module.params["user_data_dir"], module.params["profiles"]
+            module.params["user_data_dir"], module.params["profiles"], include_unsaved_preferences=True
         )
     except (OSError, ValueError) as error:
         module.fail_json(msg=str(error))

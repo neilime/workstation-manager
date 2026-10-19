@@ -12,6 +12,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarde
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_paths import (
     BrowserProfilePathsPlanner,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_preferences import (
+    bookmark_bar_mode,
+)
 
 
 class BrowserProfileMetadata(TypedDict):
@@ -22,6 +25,8 @@ class BrowserProfileMetadata(TypedDict):
     directory: str
     item_id: str
     theme_colors: NotRequired[list[str]]
+    bookmark_bar: NotRequired[str]
+    confirm_close_tabs: NotRequired[bool]
     avatar_attachment_id: NotRequired[str]
 
 
@@ -33,7 +38,7 @@ def _profile_fields(item: dict, reader: BitwardenItemFieldReader) -> dict[str, s
         name = field.get("name")
         if not isinstance(name, str):
             raise ValueError("custom field names must be strings")
-        if name not in {"id", "directory", "theme_colors"}:
+        if name not in {"id", "directory", "theme_colors", "bookmark_bar", "confirm_close_tabs"}:
             continue
         if name in values:
             raise ValueError(f"custom field '{name}' must occur exactly once")
@@ -90,6 +95,12 @@ def _profile_metadata(item: object) -> BrowserProfileMetadata:
         "directory": directory,
         "item_id": item_id,
     }
+    if "bookmark_bar" in values:
+        profile["bookmark_bar"] = bookmark_bar_mode(values["bookmark_bar"])
+    if "confirm_close_tabs" in values:
+        if values["confirm_close_tabs"] not in {"true", "false"}:
+            raise ValueError("custom field 'confirm_close_tabs' must be true or false")
+        profile["confirm_close_tabs"] = values["confirm_close_tabs"] == "true"
     if "theme_colors" in values:
         colors = [color.strip().upper() for color in values["theme_colors"].split(",")]
         if not 1 <= len(colors) <= 3 or any(not re.fullmatch(r"#[0-9A-F]{6}", color) for color in colors):

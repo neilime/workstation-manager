@@ -1,4 +1,4 @@
-"""Create native Brave profiles and apply declared colors and avatars."""
+"""Create native Brave profiles and apply declared profile settings."""
 
 from __future__ import annotations
 
@@ -16,6 +16,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_paths import (
     BrowserProfilePathsPlanner,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_preferences import (
+    native_profile_preferences,
 )
 
 
@@ -223,6 +226,9 @@ def _plan_profile(
         preferences = {"profile": {"name": label, "using_default_name": False}}
     _apply_theme(preferences, declaration.get("theme_colors"))
     _apply_password_manager(preferences)
+    for key, value in native_profile_preferences(declaration).items():
+        section, name = key.split(".", 1)
+        _object(preferences, section)[name] = value
     # Setup preserves names; an explicit remote reconciliation replaces them.
     profile_preferences = preferences.get("profile", {})
     if not isinstance(profile_preferences, dict):
@@ -246,7 +252,7 @@ def _plan_profile(
 def seed_browser_profiles(
     user_data_dir: str, profiles: list[dict], check_mode: bool = False, *, replace_names: bool = False
 ) -> bool:
-    """Register profiles and restore their declared native theme color and avatar.
+    """Register profiles and restore their declared appearance and confirmation choices.
 
     Existing names change only with explicit replace_names approval.
     Each managed profile also keeps Brave's built-in password save and auto

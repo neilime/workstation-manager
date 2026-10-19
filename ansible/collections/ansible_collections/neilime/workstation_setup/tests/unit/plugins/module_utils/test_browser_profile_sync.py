@@ -150,6 +150,63 @@ def test_local_sync_preserves_recovery_words_fields_and_secondary_colors(fixture
     )["drift"]
 
 
+def test_bookmark_bar_roundtrip_saves_local_choice_and_restores_it_on_another_machine(fixture: tuple) -> None:
+    """Backup records an unsaved Always choice and setup recreates it without relying on Sync contents."""
+
+    root, vault, profiles = fixture
+    seed_browser_profiles(str(root), [{**profiles[0], "bookmark_bar": "always"}])
+    path = root / "Default/Preferences"
+    before = path.read_bytes()
+    assert sync.sync_browser_profiles(str(root), profiles, "save", vault, check_mode=True)
+    assert not vault.calls
+    assert sync.sync_browser_profiles(str(root), profiles, "save", vault)
+    assert path.read_bytes() == before
+    saved = [dict(profile) for profile in bitwarden_browser_profiles([vault.record])]
+    assert saved[0]["bookmark_bar"] == "always"
+    assert vault.record["notes"] == "synthetic-recovery-note"
+    assert {field["name"]: field["value"] for field in vault.record["fields"]}["unrelated"] == "keep-me"
+    assert not sync.sync_browser_profiles(str(root), saved, "save", vault)
+    other = root / "other-machine"
+    assert sync.sync_browser_profiles(str(other), saved, "restore", vault)
+    restored = json.loads((other / "Default/Preferences").read_text())
+    assert restored["bookmark_bar"]["show_on_all_tabs"] is True
+    assert restored["bookmark_bar"]["visibility_state"] == 0
+    assert not sync.sync_browser_profiles(str(other), saved, "restore", vault)
+
+
+def test_unsaved_bookmark_choice_only_offers_save() -> None:
+    """An absent recovery value cannot offer a destructive guessed restore."""
+
+    actions = sync.browser_sync_directions(
+        {"drift": [{"kind": "bookmark_bar", "id": "fixture", "configured_value": None, "observed_value": "always"}]}
+    )
+    assert set(actions) == {"save"}
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_close_tabs_confirmation_roundtrip_preserves_each_explicit_choice(fixture: tuple, enabled: bool) -> None:
+    """Backup captures enabled and disabled confirmation; setup restores the exact value on another computer."""
+
+    root, vault, profiles = fixture
+    seed_browser_profiles(str(root), [{**profiles[0], "confirm_close_tabs": enabled}])
+    path = root / "Default/Preferences"
+    before = path.read_bytes()
+    assert sync.sync_browser_profiles(str(root), profiles, "save", vault, check_mode=True)
+    assert not vault.calls
+    assert sync.sync_browser_profiles(str(root), profiles, "save", vault)
+    assert path.read_bytes() == before
+    saved = [dict(profile) for profile in bitwarden_browser_profiles([vault.record])]
+    assert saved[0]["confirm_close_tabs"] is enabled
+    assert vault.record["notes"] == "synthetic-recovery-note"
+    assert {field["name"]: field["value"] for field in vault.record["fields"]}["unrelated"] == "keep-me"
+    assert not sync.sync_browser_profiles(str(root), saved, "save", vault)
+    other = root / "other-machine"
+    assert sync.sync_browser_profiles(str(other), saved, "restore", vault)
+    restored = json.loads((other / "Default/Preferences").read_text())
+    assert restored["brave"]["enable_window_closing_confirm"] is enabled
+    assert not sync.sync_browser_profiles(str(other), saved, "restore", vault)
+
+
 def test_failed_save_verification_stops_synchronization(fixture: tuple) -> None:
     """Successful CLI execution cannot hide an unexpected change to the saved recovery note."""
 
