@@ -12,6 +12,9 @@ from unittest.mock import Mock
 
 import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
+    browser_cdp as cdp,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     browser_lifecycle as lifecycle,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
@@ -177,6 +180,21 @@ def test_acknowledgement_wait_requires_registration_and_accepts_a_latched_signal
             },
         )
         assert pipe.wait_for_acknowledgement("diagnostics", "confirmed", timeout=0) is True
+
+
+def test_partial_event_traffic_cannot_extend_the_acknowledgement_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unfinished event must time out even when more bytes keep arriving."""
+
+    pipe = object.__new__(BrowserPipe)
+    pipe.reader = 42
+    pipe.buffer = b""
+    pipe.acknowledgements = {("diagnostics", "confirmed"): False}
+    ticks = iter(range(10))
+    monkeypatch.setattr(cdp.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(cdp.select, "select", lambda *_args: ([pipe.reader], [], []))
+    monkeypatch.setattr(cdp.os, "read", lambda *_args: b"unfinished")
+    assert pipe.wait_for_acknowledgement("diagnostics", "confirmed", timeout=3) is False
+    assert pipe.buffer == b"unfinished"
 
 
 @pytest.mark.parametrize("method", ["timeout", "error", "invalid", "oversized"])

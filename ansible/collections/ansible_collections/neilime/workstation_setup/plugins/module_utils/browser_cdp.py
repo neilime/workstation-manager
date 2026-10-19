@@ -120,7 +120,8 @@ class BrowserPipe:
 
         try:
             while b"\0" not in self.buffer:
-                if not select.select([self.reader], [], [], max(0, deadline - time.monotonic()))[0]:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([self.reader], [], [], remaining)[0]:
                     return None
                 chunk = os.read(self.reader, 65536)
                 if not chunk:
