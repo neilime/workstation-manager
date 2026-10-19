@@ -84,26 +84,27 @@ _WATCH_REMOVAL = r"""(async identities => {
   })));
   const remaining = new Set(tags);
   const state = window.workstationDeviceRemoval = {
-    since: Date.now(), requested: new Map(), acknowledged: false
+    since: Date.now(), requested: [], acknowledged: false
   };
   addWebUiListener('onProtocolEvent', event => {
     if (typeof event.time !== 'number' || event.time < state.since) return;
     if (event.type === 'Commit Request') {
       const entries = event.proto?.commit?.entries;
-      const own = Array.isArray(entries) ? entries.filter(
-        entry => remaining.has(entry.client_tag_hash) && entry.deleted === true
-          && typeof entry.id_string === 'string' && entry.id_string) : [];
-      state.requested = new Map(own.map(entry => [entry.id_string, entry.client_tag_hash]));
+      state.requested = Array.isArray(entries) ? entries.map(entry =>
+        remaining.has(entry.client_tag_hash) && entry.deleted === true
+          && typeof entry.id_string === 'string' && entry.id_string ? entry.client_tag_hash : null) : [];
     }
-    if (event.type === 'Commit Response' && state.requested.size) {
+    if (event.type === 'Commit Response' && state.requested.length) {
       const entries = event.proto?.commit?.entryresponse;
-      if (Array.isArray(entries)) {
-        for (const entry of entries) {
-          if (entry.response_type === 'SUCCESS') remaining.delete(state.requested.get(entry.id_string));
-        }
+      // Sync correlates responses by request position. Response IDs are optional
+      // and may be reassigned; require the complete batch before matching it.
+      if (Array.isArray(entries) && entries.length === state.requested.length) {
+        entries.forEach((entry, index) => {
+          if (entry.response_type === 'SUCCESS') remaining.delete(state.requested[index]);
+        });
       }
       state.acknowledged = remaining.size === 0;
-      state.requested.clear();
+      state.requested = [];
       if (state.acknowledged) {
         clearInterval(state.timer);
         window[REMOVAL_BINDING]('true');

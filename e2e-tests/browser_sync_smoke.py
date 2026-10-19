@@ -355,19 +355,26 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[],
         (None, "captured-server-id", True, "captured-server-id", "SUCCESS", 0, False),
         (tag, "", True, "", "SUCCESS", 0, False),
         (tag, "captured-server-id", True, "captured-server-id", "TRANSIENT_ERROR", 0, False),
+        # Response IDs may be reassigned or omitted: the protocol uses request order.
         (tag, "captured-server-id", True, "another-server-id", "SUCCESS", 0, False),
-        (tag, "captured-server-id", True, "captured-server-id", "SUCCESS", 0, False),
         # Every selected device needs its own successful commit, including retries.
         ("dCXwbGioGJWMGC5alsHTmMfUlAQ=", "second-id", True, "second-id", "TRANSIENT_ERROR", 0, False),
-        ("dCXwbGioGJWMGC5alsHTmMfUlAQ=", "second-id", True, "second-id", "SUCCESS", 0, True),
+        ("dCXwbGioGJWMGC5alsHTmMfUlAQ=", "second-id", True, None, "SUCCESS", 0, True),
     ]
     for request_tag, request_id, deleted, response_id, response_type, offset, expected in cases:
-        event = {
+        event: dict = {
             "request": {
                 "commit": {"entries": [{"id_string": request_id, "client_tag_hash": request_tag, "deleted": deleted}]}
             },
             "response": {"commit": {"entryresponse": [{"id_string": response_id, "response_type": response_type}]}},
         }
+        if response_id is None:
+            del event["response"]["commit"]["entryresponse"][0]["id_string"]
+        # A successful unrelated entry must not acknowledge the selected device.
+        event["request"]["commit"]["entries"].insert(
+            0, {"id_string": "unrelated-id", "client_tag_hash": "unrelated-tag", "deleted": True}
+        )
+        event["response"]["commit"]["entryresponse"].insert(0, {"response_type": "SUCCESS"})
         result = pipe.evaluate(
             page,
             """(() => {
@@ -375,11 +382,18 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[],
               const fixture = FIXTURE;
               const time = Date.now() + OFFSET;
               webUIListenerCallback('onProtocolEvent', {time, type: 'Commit Request', proto: fixture.request});
-              webUIListenerCallback('onProtocolEvent', {time, type: 'Commit Response', proto: fixture.response});
+              const respond = () => webUIListenerCallback(
+                'onProtocolEvent', {time, type: 'Commit Response', proto: fixture.response});
+              if (DELAYED) setTimeout(respond, 100);
+              else respond();
               return window.workstationDeviceRemoval.acknowledged;
-            })()""".replace("FIXTURE", json.dumps(event)).replace("OFFSET", str(offset)),
+            })()""".replace("FIXTURE", json.dumps(event))
+            .replace("OFFSET", str(offset))
+            .replace("DELAYED", json.dumps(expected)),
         )
-        assert result is expected
+        assert result is False
+        if expected:
+            assert pipe.wait_for_acknowledgement(page, _REMOVAL_BINDING, timeout=5) is True
         assert acknowledged() is expected
     pipe.evaluate(page, "clearInterval(window.workstationDeviceRemoval.timer); true")
     print("Device removal requires a fresh successful server commit for its captured identity.", flush=True)

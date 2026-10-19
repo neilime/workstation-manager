@@ -382,7 +382,7 @@ class NativeSync:
         session = self.pipe.page("brave://sync-internals")
         if self._evaluate(session, _SETTINGS_BRIDGE, "initializing device removal callbacks") is not True:
             raise BrowserProtocolError("Brave's device removal callbacks are unavailable")
-        acknowledged = self.pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
+        self.pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
         if (
             self._evaluate(session, f"{_WATCH_REMOVAL}({json.dumps(identities)})", "observing device removal")
             is not True
@@ -401,9 +401,9 @@ class NativeSync:
             raise BrowserProtocolError(
                 f"Brave did not finish Sync device cleanup; incomplete checks: {self.pending_reason}"
             )
-        self.pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
-        if not acknowledged():
+        if self.pipe.wait_for_acknowledgement(session, _REMOVAL_BINDING) is not True:
             raise BrowserProtocolError("The Sync server did not confirm device cleanup")
+        self.pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
         after = SyncDeviceList(self._request("SyncGetDeviceList"))
         after.verify_cleanup(before, self.disposable_names)
         return len(identities)

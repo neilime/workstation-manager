@@ -137,7 +137,7 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
 
     native = NativeSync(pipe, str(profile))
     session = pipe.page("brave://sync-internals")
-    acknowledged = pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
+    pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
     # Leaving changes Device Info, so verify its tracker and fresh server contact.
     # Browser-data recovery has already been tested by setup; aggregating every
     # data model here adds unrelated asynchronous callbacks to device teardown.
@@ -190,12 +190,14 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
         "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')",
         timeout=120,
     )
-    # Drain the diagnostic target's binding notifications without evaluating its
-    # page globals: native leave can discard that context after the server reply.
-    # The owning BrowserPipe closes the observer and its timer on every exit path.
-    pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
-    if removed is not True or acknowledged() is not True:
+    if removed is not True:
+        raise ValueError("Brave did not confirm leaving the captured test device")
+    # The settings callback and diagnostic event arrive from separate targets.
+    # Keep the binding installed until its event arrives, without evaluating page
+    # globals that native leave may discard. The owning pipe closes every target.
+    if pipe.wait_for_acknowledgement(session, _REMOVAL_BINDING) is not True:
         raise ValueError("The Sync server did not confirm removal of the captured test device")
+    pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
 
 
 class BrowserSyncFixture:

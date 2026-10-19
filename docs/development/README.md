@@ -479,12 +479,15 @@ server response for that exact device's deletion;
 Brave's local leave acknowledgement alone does not prove removal.
 Deletion requests are matched using Chromium's native
 [client tag hash](https://github.com/chromium/chromium/blob/main/components/sync/base/client_tag_hash.cc),
-derived from the captured device GUID, and their server IDs are matched to
-successful commit responses. This keeps teardown independent of node queries
+derived from the captured device GUID. Successful commit responses are matched
+by request position, as required by the Sync protocol; response IDs may change
+or be omitted. This keeps teardown independent of node queries
 across unrelated browser data types. The matched response emits a boolean through
 a target-scoped DevTools binding. The automation connection retains that
 acknowledgement if native leave discards the diagnostic page's JavaScript state.
 The Runtime domain stays enabled to reinstall the binding after navigation.
+After the leave callback returns, teardown waits up to 30 seconds for the binding
+event before removing its observer; the two pages can deliver their replies independently.
 Both the native leave callback and server acknowledgement must succeed; page loss
 cannot stand in for either confirmation or hide a failed leave request.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup

@@ -66,7 +66,7 @@ def native_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[NativeSync, Mock, M
     instance = NativeSync(pipe, "/fixture/Default", disposable_names=["fixture-vm"])
     pipe.evaluate.side_effect = None
     pipe.evaluate.return_value = True
-    pipe.watch_acknowledgement.return_value = lambda: True
+    pipe.wait_for_acknowledgement.return_value = True
     request = Mock()
     wait = Mock(return_value=True)
     monkeypatch.setattr(instance, "_request", request)
@@ -100,7 +100,7 @@ def test_device_cleanup_cannot_claim_unverified_deletions(native: tuple, failure
     request.side_effect = [before, rechecked, failure != "rejected", after]
     pipe.evaluate.return_value = failure != "observer"
     wait.return_value = failure != "pending"
-    pipe.watch_acknowledgement.return_value = lambda: failure != "unacknowledged"
+    pipe.wait_for_acknowledgement.return_value = failure != "unacknowledged"
     with pytest.raises(BrowserProtocolError):
         instance.prune_devices()
     if failure in {"observer", "changed"}:
