@@ -176,7 +176,7 @@ def test_live_device_identity_is_required_before_leaving(matches: bool, monkeypa
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.watch_acknowledgement.return_value = lambda: True
+    pipe.wait_for_acknowledgement.return_value = True
     pipe.evaluate.side_effect = [teardown_state(matches=matches), True, True]
     if matches:
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
@@ -199,10 +199,35 @@ def test_native_leave_requires_both_local_and_server_confirmation(
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.watch_acknowledgement.return_value = lambda: acknowledged
+    pipe.wait_for_acknowledgement.return_value = acknowledged
     pipe.evaluate.side_effect = [teardown_state(), True, removed]
-    with pytest.raises(ValueError, match="server did not confirm removal"):
+    message = "server did not confirm removal" if removed else "Brave did not confirm leaving"
+    with pytest.raises(ValueError, match=message):
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    pipe.call.assert_not_called()
+
+
+def test_teardown_waits_for_server_evidence_before_removing_the_observer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A successful leave callback can precede the diagnostic target's server event."""
+
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
+    pipe = mock.Mock()
+    pipe.watch_acknowledgement.return_value = lambda: False
+    pipe.evaluate.side_effect = [teardown_state(), True, True]
+
+    def delayed_acknowledgement(session: str, name: str) -> bool:
+        assert session == pipe.page.return_value
+        assert name == "workstationDeviceRemoved"
+        assert pipe.evaluate.call_count == 3
+        pipe.call.assert_not_called()
+        return True
+
+    pipe.wait_for_acknowledgement.side_effect = delayed_acknowledgement
+    browser_fixture.leave_device(pipe, Path("/fixture/Default"), "test-device")
+    pipe.wait_for_acknowledgement.assert_called_once()
+    pipe.call.assert_called_once_with(
+        "Runtime.removeBinding", {"name": "workstationDeviceRemoved"}, pipe.page.return_value
+    )
 
 
 @pytest.mark.parametrize("acknowledged", [False, True])
@@ -213,7 +238,7 @@ def test_teardown_retains_server_confirmation_after_diagnostic_page_loss(
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.watch_acknowledgement.return_value = lambda: acknowledged
+    pipe.wait_for_acknowledgement.return_value = acknowledged
     pipe.evaluate.side_effect = [
         teardown_state(),
         True,
@@ -233,7 +258,7 @@ def test_native_leave_failure_is_not_masked_by_diagnostic_page_loss(monkeypatch:
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.watch_acknowledgement.return_value = lambda: True
+    pipe.wait_for_acknowledgement.return_value = True
     pipe.evaluate.side_effect = [
         teardown_state(),
         True,
@@ -271,7 +296,7 @@ def test_teardown_reloads_a_lost_context_and_rechecks_identity(matches: bool, mo
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     mock_teardown_clock(monkeypatch)
     pipe = mock.Mock()
-    pipe.watch_acknowledgement.return_value = lambda: True
+    pipe.wait_for_acknowledgement.return_value = True
     pipe.evaluate.side_effect = [
         teardown_state(failed=("Diagnostic Page", "Readiness Observer"), needs_navigation=True),
         teardown_state(matches=matches),

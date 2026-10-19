@@ -184,6 +184,8 @@ delete callbacks alone do not prove removal. Unrelated device names are preserve
 The deletion observer is shared with VM teardown. Its DevTools Runtime domain
 stays enabled so bindings survive diagnostic-page navigation; only the fixed
 acknowledgement signal is retained from runtime events.
+The observer remains installed during a bounded wait for that signal, including
+events delivered after the native operation's callback.
 Each native node query is bounded within the overall verification deadline.
 Missing replies remain unverified and are retried; late replies do not count as
 fresh observations. Explicit native rejections and broken automation connections

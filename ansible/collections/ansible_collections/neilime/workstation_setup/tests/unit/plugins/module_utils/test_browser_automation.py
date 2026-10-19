@@ -32,7 +32,7 @@ _ENCRYPTION_READY = {"available": True, "decryptionFailed": False}
 
 # Exercise actual anonymous-pipe framing with a tiny stand-in for the browser.
 _CHILD = r"""
-import json,os
+import json,os,time
 buffer=b''
 while True:
     while b'\0' not in buffer:
@@ -56,6 +56,10 @@ while True:
     os.write(4,b'{"method":"event","params":{"secret":"private-event"}}\0')
     data=json.dumps(response).encode()+b'\0'
     os.write(4,data[:5]); os.write(4,data[5:])
+    if method=='delayed-events':
+        time.sleep(0.05)
+        for event in message['params']['events']:
+            os.write(4,json.dumps(event).encode()+b'\0')
     if method=='Browser.close': break
 """
 
@@ -123,6 +127,56 @@ def test_closed_diagnostic_target_does_not_prevent_browser_shutdown(monkeypatch:
 
         monkeypatch.setattr(pipe, "call", call)
     assert pipe.process.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "session,payload,expected",
+    [("diagnostics", "true", True), ("other", "true", False), ("diagnostics", "false", False)],
+)
+def test_acknowledgement_wait_receives_events_after_the_command_response(
+    session: str, payload: str, expected: bool
+) -> None:
+    """Delayed server evidence must arrive from the watched target, within a bounded wait."""
+
+    with BrowserPipe([sys.executable, "-c", _CHILD], dict(os.environ)) as pipe:
+        acknowledged = pipe.watch_acknowledgement("diagnostics", "confirmed")
+        pipe.call(
+            "delayed-events",
+            {
+                "events": [
+                    {
+                        "method": "Runtime.bindingCalled",
+                        "sessionId": session,
+                        "params": {"name": "confirmed", "payload": payload},
+                    }
+                ]
+            },
+        )
+        assert acknowledged() is False
+        assert pipe.wait_for_acknowledgement("diagnostics", "confirmed", timeout=0.2) is expected
+        assert acknowledged() is expected
+
+
+def test_acknowledgement_wait_requires_registration_and_accepts_a_latched_signal() -> None:
+    """A completed acknowledgement needs no live page or additional pipe traffic."""
+
+    with BrowserPipe([sys.executable, "-c", _CHILD], dict(os.environ)) as pipe:
+        with pytest.raises(ValueError, match="not being watched"):
+            pipe.wait_for_acknowledgement("diagnostics", "unwatched")
+        pipe.watch_acknowledgement("diagnostics", "confirmed")
+        pipe.call(
+            "events",
+            {
+                "events": [
+                    {
+                        "method": "Runtime.bindingCalled",
+                        "sessionId": "diagnostics",
+                        "params": {"name": "confirmed", "payload": "true"},
+                    }
+                ]
+            },
+        )
+        assert pipe.wait_for_acknowledgement("diagnostics", "confirmed", timeout=0) is True
 
 
 @pytest.mark.parametrize("method", ["timeout", "error", "invalid", "oversized"])

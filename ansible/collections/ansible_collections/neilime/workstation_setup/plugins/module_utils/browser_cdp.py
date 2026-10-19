@@ -100,20 +100,9 @@ class BrowserPipe:
                 data = data[os.write(self.writer, data) :]
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
-                if b"\0" not in self.buffer:
-                    if not select.select([self.reader], [], [], max(0, deadline - time.monotonic()))[0]:
-                        break
-                    chunk = os.read(self.reader, 65536)
-                    if not chunk:
-                        raise BrowserProtocolError("Brave closed its automation connection")
-                    self.buffer += chunk
-                    if len(self.buffer) > 1024 * 1024:
-                        raise BrowserProtocolError("Brave returned an oversized automation response")
-                    continue
-                raw, self.buffer = self.buffer.split(b"\0", 1)
-                message = json.loads(raw)
-                if not isinstance(message, dict):
-                    raise BrowserProtocolError("Brave returned an invalid automation response")
+                message = self._read_message(deadline)
+                if message is None:
+                    break
                 if message.get("id") != self.sequence:
                     self._record_acknowledgement(message)
                     continue
@@ -125,6 +114,27 @@ class BrowserPipe:
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
             raise BrowserProtocolError("Brave's automation connection failed") from error
         raise BrowserProtocolError("Brave's automation request timed out")
+
+    def _read_message(self, deadline: float) -> dict | None:
+        """Read one private-pipe frame within the caller's deadline."""
+
+        try:
+            while b"\0" not in self.buffer:
+                if not select.select([self.reader], [], [], max(0, deadline - time.monotonic()))[0]:
+                    return None
+                chunk = os.read(self.reader, 65536)
+                if not chunk:
+                    raise BrowserProtocolError("Brave closed its automation connection")
+                self.buffer += chunk
+                if len(self.buffer) > 1024 * 1024:
+                    raise BrowserProtocolError("Brave returned an oversized automation response")
+            raw, self.buffer = self.buffer.split(b"\0", 1)
+            message = json.loads(raw)
+            if not isinstance(message, dict):
+                raise BrowserProtocolError("Brave returned an invalid automation response")
+            return message
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise BrowserProtocolError("Brave's automation connection failed") from error
 
     def watch_acknowledgement(self, session: str, name: str) -> Callable[[], bool]:
         """Latch a true binding signal outside page state for this connection's lifetime."""
@@ -138,6 +148,20 @@ class BrowserPipe:
         self.call("Runtime.enable", session=session)
         self.call("Runtime.addBinding", {"name": name}, session)
         return lambda: self.acknowledgements[key]
+
+    def wait_for_acknowledgement(self, session: str, name: str, timeout: float = 30) -> bool:
+        """Wait for a watched event without relying on a command response or page context."""
+
+        key = (session, name)
+        if key not in self.acknowledgements:
+            raise ValueError("The browser acknowledgement is not being watched")
+        deadline = time.monotonic() + timeout
+        while not self.acknowledgements[key] and time.monotonic() < deadline:
+            message = self._read_message(deadline)
+            if message is None:
+                break
+            self._record_acknowledgement(message)
+        return self.acknowledgements[key]
 
     def _record_acknowledgement(self, message: dict) -> None:
         """Discard event payloads except a fixed true signal from a registered target and binding."""
