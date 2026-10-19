@@ -82,15 +82,17 @@ The loader reads `secrets.bitwarden.browser_profiles_collection_id`. An empty
 selector produces `[]`; a configured collection must be accessible and nonempty.
 See the [user record schema](../usage/browser.md#configure-recovery).
 
-| Metadata key           | Meaning                                             |
-| ---------------------- | --------------------------------------------------- |
-| `id`                   | Stable profile identifier                           |
-| `label`                | Bitwarden note name                                 |
-| `directory`            | Native profile directory basename                   |
-| `item_id`              | Bitwarden note UUID                                 |
-| `theme_colors`         | Optional list of one to three normalized hex colors |
-| `avatar_attachment_id` | Optional attachment identifier                      |
-| `avatar_png`           | Optional base64 PNG, loaded into memory             |
+| Metadata key           | Meaning                                                      |
+| ---------------------- | ------------------------------------------------------------ |
+| `id`                   | Stable profile identifier                                    |
+| `label`                | Bitwarden note name                                          |
+| `directory`            | Native profile directory basename                            |
+| `item_id`              | Bitwarden note UUID                                          |
+| `theme_colors`         | Optional list of one to three normalized hex colors          |
+| `avatar_attachment_id` | Optional attachment identifier                               |
+| `avatar_png`           | Optional base64 PNG, loaded into memory                      |
+| `bookmark_bar`         | Optional `always`, `new_tab`, or `never` visibility          |
+| `confirm_close_tabs`   | Optional boolean controlling the close-all-tabs confirmation |
 
 Recovery words are validated as present but are not exposed in this inventory.
 The canonical vault record stores only the stable first 24 words. If a copied
@@ -105,7 +107,7 @@ must contain only selected metadata and drift details, never notes or image data
 The [Brave role](../../ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_brave)
 uses `~/.config/BraveSoftware/Brave-Browser` under the resolved user's home. Its
 managed policy permits Sync; it cannot enroll profiles. Seeding creates missing
-profiles and applies declared colors and avatars while preserving existing
+profiles and applies declared colors, bookmark-bar visibility, close-tabs confirmation, and avatars while preserving existing
 names and other preferences. Explicit `restore` reconciliation also replaces
 profile names and enables Sync everything for managed profiles; `save` updates
 existing vault metadata and avatars without changing recovery words. Approved
@@ -114,6 +116,23 @@ exit request, preserve session tabs, and reopen it afterward if it was running.
 Locks are never removed and processes are never force-killed. Setup restores
 profile metadata, enables Sync everything, joins the stored chains, and requires
 verified live synchronization. Preview runs do not launch Brave.
+
+Backup inspection also reports explicit local bookmark-bar and close-tabs choices
+that have no saved field, offering `save` without inventing a restore value.
+Saving changes only that profile's existing note. Setup leaves unspecified
+preferences unmanaged. The adapter keeps the native visibility enum, all-tabs
+flag, and Brave NTP flag consistent. After Sync, native settings readback verifies
+the saved choice; setup can reapply it through `chrome.settingsPrivate`, then
+requires another verified Sync cycle and readback. Backup never repairs a
+different choice locally. Only status booleans leave the settings page.
+The `confirm_close_tabs` field is a boolean in module arguments and the literal
+text `true` or `false` in the Bitwarden note. It maps to
+`brave.enable_window_closing_confirm`; an absent local preference uses Brave's
+default of enabled for drift checks, but is not captured as an explicit choice.
+Brave registers it as a local profile preference in
+[its preference definitions](https://github.com/brave/brave-core/blob/master/browser/brave_profile_prefs.cc),
+so native readback and flushed-file checks verify restoration independently of
+Sync. The browser's regular graceful-shutdown protections remain in place.
 
 Live verification uses Brave's native WebUI APIs through inherited anonymous
 DevTools pipes. It opens no debugging port and does not copy profiles, bypass
@@ -152,6 +171,19 @@ chain.
 Native leave/join acknowledgements have a two-minute deadline because they wait
 for initial synchronization. Local recovery-code reads keep their shorter
 automation deadline; successful enrollment still requires full Sync verification.
+An existing seed is compared even when saved transport flags say setup is
+incomplete; a matching chain must not be rejoined. After successful Sync, the
+adapter removes other entries matching the current device's exact name or
+`desktop.browser_sync_disposable_device_names`. It requires one unambiguous
+native current device, protects that GUID, and rechecks the list before mutation.
+The additional-name list defaults to empty; test VMs use their actual current
+device name for duplicate cleanup and their fixture teardown for leaving Sync.
+Device Info must participate in verification. Each deletion needs a fresh
+successful server commit for its client tag and a device-list readback; native
+delete callbacks alone do not prove removal. Unrelated device names are preserved.
+The deletion observer is shared with VM teardown. Its DevTools Runtime domain
+stays enabled so bindings survive diagnostic-page navigation; only the fixed
+acknowledgement signal is retained from runtime events.
 Each native node query is bounded within the overall verification deadline.
 Missing replies remain unverified and are retried; late replies do not count as
 fresh observations. Explicit native rejections and broken automation connections

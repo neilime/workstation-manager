@@ -23,6 +23,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     inspect_browser_profiles,
     sync_everything_drift,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_preferences import (
+    PROFILE_PREFERENCE_DEFAULTS,
+)
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_seed import (
     _brave_running,
     _object,
@@ -31,8 +34,8 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     seed_browser_profiles,
 )
 
-_REMOTE_KINDS = {"missing", "renamed", "theme_color", "avatar", "unregistered", "missing_preferences"}
-_LOCAL_KINDS = {"renamed", "theme_color", "avatar"}
+_LOCAL_KINDS = {"renamed", "theme_color", "avatar", *PROFILE_PREFERENCE_DEFAULTS}
+_REMOTE_KINDS = {"missing", "unregistered", "missing_preferences", *_LOCAL_KINDS}
 
 
 class BrowserSyncBlocked(ValueError):
@@ -46,12 +49,18 @@ def browser_sync_directions(inspection: dict) -> dict[str, str]:
     actions = {}
     if kinds & _LOCAL_KINDS:
         actions["save"] = (
-            "Replace saved names, colors and logos with local values; Brave closes and reopens automatically. "
-            "Absent or disabled customizations are removed from Bitwarden; recovery words stay unchanged."
+            "Save local names, colors, bookmark-bar and close-tabs choices, and logos; "
+            "Brave closes and reopens automatically. "
+            "Absent colors and disabled logos are removed from Bitwarden; recovery words stay unchanged."
         )
     repairs = []
-    if kinds & _REMOTE_KINDS:
-        repairs.append("restore saved profile names, colors and logos locally")
+    if any(
+        issue.get("id")
+        and issue["kind"] in _REMOTE_KINDS
+        and (issue["kind"] not in PROFILE_PREFERENCE_DEFAULTS or issue.get("configured_value") is not None)
+        for issue in inspection["drift"]
+    ):
+        repairs.append("restore saved profile names, colors, bookmark-bar and close-tabs choices, and logos locally")
     if sync_everything_drift(inspection):
         repairs.append("enable Sync everything")
     if repairs:
@@ -163,6 +172,11 @@ def _local_patch(item: dict, observed: dict, kinds: set[str]) -> dict:
         if observed["theme_color"] is not None:
             colors = [observed["theme_color"], *old["value"].split(",")[1:]]
             result["fields"].append({**old, "value": ", ".join(color.strip() for color in colors)})
+    for key, default in PROFILE_PREFERENCE_DEFAULTS.items():
+        if key in kinds:
+            value = observed[key] if observed[key] is not None else default
+            result["fields"] = [field for field in result.get("fields", []) if field["name"] != key]
+            result["fields"].append({"name": key, "type": 0, "value": str(value).lower()})
     return result
 
 
@@ -227,7 +241,7 @@ def sync_browser_profiles(
 
     if direction not in {"save", "restore"}:
         raise ValueError("Unsupported browser synchronization direction")
-    inspection = inspect_browser_profiles(user_data_dir, profiles)
+    inspection = inspect_browser_profiles(user_data_dir, profiles, include_unsaved_preferences=direction == "save")
     if direction not in browser_sync_directions(inspection):
         return False
     root = Path(user_data_dir)

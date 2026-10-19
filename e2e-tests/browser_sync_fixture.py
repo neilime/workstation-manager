@@ -19,6 +19,10 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     _SETTINGS_BRIDGE,
     NativeSync,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
+    _REMOVAL_BINDING,
+    _WATCH_REMOVAL,
+)
 
 _TEARDOWN_CHECKS = (
     "Diagnostic Page",
@@ -36,8 +40,6 @@ _TEARDOWN_CHECKS = (
     "Device Info Status",
     "Device Info Counts",
 )
-
-_REMOVAL_BINDING = "workstationDeviceRemoved"
 
 # Use the page's native callbacks without loading diagnostic modules. Native
 # WebUI events remain usable when the page's module loader rejects an import.
@@ -105,49 +107,6 @@ _TEARDOWN_STATE = r"""(identity => {
   return {active, ready, matches: stats['Sync Client ID'] === identity, needsNavigation: false, checks};
 })""".replace("START_TEARDOWN", _START_TEARDOWN).replace("CHECK_NAMES", json.dumps(_TEARDOWN_CHECKS))
 
-# Device payloads and server IDs stay inside the diagnostic page. Only the
-# acknowledgement boolean crosses the pipe. A native leave callback alone can
-# succeed after its short upload deadline even when deletion was not committed.
-_WATCH_REMOVAL = r"""(async identity => {
-  const {addWebUiListener} = window.workstationSyncSettings;
-  if (typeof identity !== 'string' || !identity || typeof window[REMOVAL_BINDING] !== 'function') return false;
-  // Chromium's ClientTagHash hashes the empty DeviceInfoSpecifics field
-  // (EntitySpecifics field 154522, length-delimited) followed by DeviceInfo_<GUID>.
-  // Tombstone commits retain this tag, so no all-data node query is needed.
-  const input = new Uint8Array([
-    0xd2, 0xb9, 0x4b, 0x00, ...new TextEncoder().encode('DeviceInfo_' + identity)
-  ]);
-  const digest = await crypto.subtle.digest('SHA-1', input);
-  const tag = btoa(String.fromCharCode(...new Uint8Array(digest)));
-  const state = window.workstationDeviceRemoval = {
-    since: Date.now(), requested: null, acknowledged: false
-  };
-  addWebUiListener('onProtocolEvent', event => {
-    if (typeof event.time !== 'number' || event.time < state.since) return;
-    if (event.type === 'Commit Request') {
-      const entries = event.proto?.commit?.entries;
-      const own = Array.isArray(entries) ? entries.filter(
-        entry => entry.client_tag_hash === tag && entry.deleted === true
-          && typeof entry.id_string === 'string' && entry.id_string) : [];
-      state.requested = own.length === 1 ? own[0].id_string : null;
-    }
-    if (event.type === 'Commit Response' && state.requested) {
-      const entries = event.proto?.commit?.entryresponse;
-      state.acknowledged ||= Array.isArray(entries) && entries.some(
-        entry => entry.id_string === state.requested && entry.response_type === 'SUCCESS');
-      state.requested = null;
-      if (state.acknowledged) {
-        clearInterval(state.timer);
-        window[REMOVAL_BINDING]('true');
-      }
-    }
-  });
-  // Native refresh schedules commit work as well as downloads. Keep prompting
-  // it while the leave handler waits, before that handler stops the Sync engine.
-  state.timer = setInterval(() => chrome.send('triggerRefresh'), 100);
-  return true;
-})""".replace("REMOVAL_BINDING", json.dumps(_REMOVAL_BINDING))
-
 
 def device_identity(profile: Path, *, require_initialized: bool = False) -> str | None:
     """Read initialized device identity metadata without returning recovery words."""
@@ -213,10 +172,9 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
         elif state["active"]:
             if not state["matches"]:
                 raise ValueError("The live browser device no longer matches the captured test identity")
-            if (
-                state["ready"]
-                and pipe.evaluate(session, f"{_WATCH_REMOVAL}({json.dumps(identity)})", timeout=15) is True
-            ):
+            if state["ready"]:
+                if pipe.evaluate(session, f"{_WATCH_REMOVAL}({json.dumps([identity])})", timeout=15) is not True:
+                    raise ValueError("Brave could not observe device removal; the test identity was retained")
                 break
         time.sleep(min(2, max(0, deadline - time.monotonic())))
     else:

@@ -11,6 +11,7 @@
         user_data_dir: "{{ browser_brave_user_data_dir }}"
         profiles: "{{ workstation_manager_browser_profiles }}"
         action: "{{ workstation_backup_recovery_choices['browser-sync'] }}"
+        disposable_device_names: "{{ workstation_manager_resolved.desktop.browser_sync_disposable_device_names }}"
         collection_id: "{{ workstation_manager_resolved.secrets.bitwarden.browser_profiles_collection_id }}"
         session: "{{ bitwarden_collection_session }}"
       register: browser_brave_live_sync

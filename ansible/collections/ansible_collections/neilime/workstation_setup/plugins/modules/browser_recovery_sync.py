@@ -19,9 +19,15 @@ description:
   - Saves local recovery codes after a backup direction choice or joins stored chains
     during setup or approved backup recovery.
   - Never exposes a debugging port, exports recovery codes, or removes profile locks.
+  - Removes other devices with the current device's exact name and explicitly configured disposable names.
 author:
   - workstation-manager contributors (@neilime)
 options:
+  disposable_device_names:
+    description: Exact names of disposable remote devices to remove; the current device is always preserved.
+    type: list
+    elements: str
+    default: []
   action:
     description: Run Sync, save local recovery codes, or join stored recovery chains.
     type: str
@@ -97,6 +103,7 @@ def main() -> None:
             "action": {"type": "str", "required": True, "choices": ["sync", "save", "restore", "retry"]},
             "collection_id": {"type": "str", "required": True},
             "session": {"type": "str", "required": True, "no_log": True},
+            "disposable_device_names": {"type": "list", "elements": "str", "default": []},
         }
     )
     module = AnsibleModule(argument_spec=arguments, supports_check_mode=True)
@@ -112,6 +119,7 @@ def main() -> None:
             module.params["action"],
             vault,
             check_mode=module.check_mode,
+            disposable_names=module.params["disposable_device_names"],
         )
     except browser_lifecycle.BrowserLifecycleBlocked as error:
         module.exit_json(

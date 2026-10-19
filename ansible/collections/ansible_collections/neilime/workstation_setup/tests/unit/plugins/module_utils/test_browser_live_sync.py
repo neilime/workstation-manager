@@ -75,6 +75,55 @@ def test_sync_requires_fresh_machine_evidence_and_matching_codes(fixture: tuple)
     assert not any("remote-debugging-port" in argument for argument in pipe.call_args.args[0])
 
 
+@pytest.mark.parametrize(
+    "action,choices",
+    [
+        ("sync", {"bookmark_bar": "always"}),
+        ("restore", {"bookmark_bar": "always"}),
+        ("sync", {"confirm_close_tabs": False}),
+        ("restore", {"confirm_close_tabs": False}),
+        ("restore", {"bookmark_bar": "never", "confirm_close_tabs": True}),
+    ],
+)
+def test_saved_preferences_are_verified_after_sync_and_device_cleanup(
+    fixture: tuple, action: str, choices: dict
+) -> None:
+    """Only setup may restore preferences; backup verifies choices including explicitly disabled confirmation."""
+
+    vault, _pipe, native, _lifecycle = fixture
+    result = live.sync_browser_recovery("/fixture", [{**PROFILE, **choices}], action, vault)
+    assert result["verified"] is True
+    native.profile_preferences.assert_called_once_with(choices, restore=action == "restore")
+    operations = [call[0] for call in native.method_calls]
+    assert operations.index("wait") < operations.index("prune_devices") < operations.index("profile_preferences")
+
+
+def test_failed_bookmark_bar_verification_stops_recovery(fixture: tuple) -> None:
+    """A successful Sync cycle cannot hide a missing saved visibility preference."""
+
+    vault, _pipe, native, _lifecycle = fixture
+    native.profile_preferences.side_effect = ValueError("bookmark-bar verification failed")
+    with pytest.raises(ValueError, match="bookmark-bar verification failed"):
+        live.sync_browser_recovery("/fixture", [{**PROFILE, "bookmark_bar": "always"}], "restore", vault)
+
+
+@pytest.mark.parametrize("choices", [{"bookmark_bar": "always"}, {"confirm_close_tabs": False}])
+def test_preferences_changed_during_browser_exit_are_not_repaired_offline(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch, choices: dict
+) -> None:
+    """A changed flushed value must fail instead of claiming that an offline rewrite reached Sync."""
+
+    vault, _pipe, _native, _lifecycle = fixture
+    clean = live.inspect_browser_profiles("/fixture", [PROFILE])
+    drifted = {**clean, "drift": [{"kind": next(iter(choices)), "directory": "Default", "id": "fixture"}]}
+    monkeypatch.setattr(live, "inspect_browser_profiles", Mock(side_effect=[clean, clean, drifted]))
+    repair = Mock()
+    monkeypatch.setattr(live, "sync_browser_profiles", repair)
+    with pytest.raises(ValueError, match="did not retain"):
+        live.sync_browser_recovery("/fixture", [{**PROFILE, **choices}], "restore", vault)
+    repair.assert_not_called()
+
+
 @pytest.mark.parametrize("status", ["mismatch", "pending"])
 def test_detected_drift_returns_actions_without_claiming_verification(fixture: tuple, status: str) -> None:
     """A choice to sync cannot count as confirmation while either recovery check fails."""
@@ -88,6 +137,7 @@ def test_detected_drift_returns_actions_without_claiming_verification(fixture: t
     assert all(call.args == ("sync",) for call in vault.run.call_args_list)
     native.restore.assert_not_called()
     assert REMOTE not in repr(result) and LOCAL not in repr(result)
+    native.prune_devices.assert_not_called()
 
 
 def test_restore_uses_stored_chain_and_verifies_the_result(fixture: tuple) -> None:
@@ -152,6 +202,7 @@ def test_preview_does_not_launch_brave_or_access_the_vault(fixture: tuple) -> No
     assert result["verified"] is False and result["changed"] is False
     pipe.assert_not_called()
     native.code.assert_not_called()
+    native.prune_devices.assert_not_called()
     lifecycle.assert_not_called()
     vault.run.assert_not_called()
 
@@ -343,3 +394,45 @@ def test_restore_joins_new_profile_without_writing_recovery_words(
     native.wait.assert_called_once()
     assert all(call.args == ("sync",) for call in vault.run.call_args_list)
     assert native.code.call_count == 1
+
+
+@pytest.mark.parametrize("action", ["restore", "sync"])
+def test_matching_chain_is_reused_despite_incomplete_saved_flags(fixture: tuple, action: str) -> None:
+    """A saved seed must be compared before enrollment, preserving identity on repeated setup and backup."""
+
+    vault, _pipe, native, _lifecycle = fixture
+    inspection = live.inspect_browser_profiles("/fixture", [PROFILE])
+    inspection["profiles"][0]["sync"].update({"requested": False, "has_setup_completed": False})
+    for _attempt in range(2):
+        assert live.sync_browser_recovery("/fixture", [PROFILE], action, vault)["verified"]
+    native.restore.assert_not_called()
+    assert native.wait.call_count == 2
+
+
+def test_live_sync_cleans_configured_devices_only_after_successful_sync(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setup and backup pass exact configured names after fresh recovery verification."""
+
+    vault, _pipe, native, _lifecycle = fixture
+    constructor = Mock(return_value=native)
+    monkeypatch.setattr(live, "NativeSync", constructor)
+    assert live.sync_browser_recovery("/fixture", [PROFILE], "sync", vault, disposable_names=["fixture-vm"])["verified"]
+    native.prune_devices.assert_called_once_with()
+    assert constructor.call_args.kwargs["disposable_names"] == ["fixture-vm"]
+    calls = [call[0] for call in native.method_calls]
+    assert calls.index("wait") < calls.index("prune_devices")
+    native.prune_devices.reset_mock()
+    native.wait.return_value = False
+    assert not live.sync_browser_recovery("/fixture", [PROFILE], "sync", vault)["verified"]
+    native.prune_devices.assert_not_called()
+
+
+def test_cleanup_failure_stops_recovery_instead_of_offering_an_unverified_success(fixture: tuple) -> None:
+    """Device cleanup is an approved mutation whose failed verification must stop the operation."""
+
+    vault, pipe, native, _lifecycle = fixture
+    native.prune_devices.side_effect = ValueError("The Sync server did not confirm device cleanup")
+    with pytest.raises(ValueError, match="did not confirm"):
+        live.sync_browser_recovery("/fixture", [PROFILE], "sync", vault)
+    pipe.return_value.__exit__.assert_called_once()

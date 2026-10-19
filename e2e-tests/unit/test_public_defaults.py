@@ -30,6 +30,11 @@ def test_public_defaults_preserve_configured_versions_and_desktop_preferences(
         expected = "v" + revision.removeprefix("v")
         assert resolved["development"]["github"]["extensions"][repository] == expected
     assert resolved["desktop"]["browser"] == public_defaults["desktop"]["browser"]
+    assert (
+        resolved["desktop"]["browser_sync_disposable_device_names"]
+        == public_defaults["desktop"]["browser_sync_disposable_device_names"]
+        == []
+    )
     assert resolved["desktop"]["gnome"] == public_defaults["desktop"]["gnome"]
 
 

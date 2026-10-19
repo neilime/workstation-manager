@@ -11,6 +11,9 @@
 # General workstation settings and standard development tools inherit the public defaults.
 # Dock favorites, including Orca, also inherit the public defaults.
 # Keep maintained release pins in ansible/group_vars/all.yml, not in this private example.
+# Browser Sync cleanup preserves differently named devices by default.
+# Optional desktop.browser_sync_disposable_device_names lists exact extra names to remove.
+# Per-profile bookmark_bar and confirm_close_tabs choices belong in the Bitwarden profile notes.
 development:
   github:
     # Required non-secret username for the persistent managed-user login.

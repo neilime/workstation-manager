@@ -494,3 +494,28 @@ def test_missing_context7_selector_fails_before_setup(with_tool_versions):
     del config["secrets"]["bitwarden"]["context7-api-key"]
     with pytest.raises(ValueError, match="context7-api-key.*is required"):
         DesiredStateConfigNormalizer().normalize(config)
+
+
+def test_browser_device_cleanup_preserves_other_names_by_default(with_tool_versions) -> None:
+    """Omitting cleanup selectors cannot make any other computer or test VM disposable."""
+
+    resolved = DesiredStateConfigNormalizer().normalize(with_tool_versions({}), {"USER": "fixture"})
+    assert resolved["desktop"]["browser_sync_disposable_device_names"] == []
+
+
+@pytest.mark.parametrize("names", [[], ["test-vm", "test-vm", "another-test-vm"]])
+def test_browser_disposable_device_names_are_explicit_and_deduplicated(with_tool_versions, names) -> None:
+    """An empty list preserves other device names; configured names keep their exact spelling."""
+
+    config = with_tool_versions({"desktop": {"browser_sync_disposable_device_names": names}})
+    resolved = DesiredStateConfigNormalizer().normalize(config, {"USER": "fixture"})
+    assert resolved["desktop"]["browser_sync_disposable_device_names"] == list(dict.fromkeys(names))
+
+
+@pytest.mark.parametrize("names", [None, "test-vm", [""], [" test-vm"], ["test\nvm"], [42]])
+def test_browser_disposable_device_names_reject_ambiguous_configuration(with_tool_versions, names) -> None:
+    """Malformed cleanup selectors stop configuration before browser actions."""
+
+    config = with_tool_versions({"desktop": {"browser_sync_disposable_device_names": names}})
+    with pytest.raises(ValueError, match="disposable device names"):
+        DesiredStateConfigNormalizer().normalize(config, {"USER": "fixture"})

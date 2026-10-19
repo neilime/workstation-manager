@@ -456,6 +456,12 @@ Run `make e2e-down` after failures too. It asks the browser devices created by
 this test run to leave their Sync chains, then deletes the VM. A stopped VM is
 resumed for this cleanup. Failed browser teardown retains the local VM and recorded
 identities for diagnosis; GitHub-hosted runners still expire after their job.
+The next successful setup in a VM with the same device name removes abandoned
+registrations through [same-name device cleanup](../usage/browser.md).
+VM names are not included in workstation cleanup defaults. This also works with
+custom `VM_NAME` values, using the name reported by Brave.
+Use separate chains for concurrent test runs so their shared device names cannot
+cause one run to remove another run's registration.
 Use `make e2e-reset` before reusing a VM. `VM_NAME` selects a different instance.
 Browser setup requires an absent Brave profile tree and records each initialized
 test device's identity. Teardown checks those exact identities and ignores profiles
@@ -478,6 +484,7 @@ successful commit responses. This keeps teardown independent of node queries
 across unrelated browser data types. The matched response emits a boolean through
 a target-scoped DevTools binding. The automation connection retains that
 acknowledgement if native leave discards the diagnostic page's JavaScript state.
+The Runtime domain stays enabled to reinstall the binding after navigation.
 Both the native leave callback and server acknowledgement must succeed; page loss
 cannot stand in for either confirmation or hide a failed leave request.
 The VM downloads Ubuntu packages over HTTPS with bounded retries. On startup

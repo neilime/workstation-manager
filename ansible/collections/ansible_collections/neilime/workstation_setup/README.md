@@ -24,7 +24,11 @@ installs and enables the checksum-pinned GNOME extension, applies the companion
 profile, and removes CopyQ applications while preserving their history.
 Setup always enables GNOME dark mode, dock Trash, and GNOME Software updates.
 Browser automation discovers the managed user's live desktop environment,
-including when setup runs through SSH. See the [browser adapter contract](../../../../../docs/development/browser-adapters.md).
+including when setup runs through SSH. It reuses matching Sync chains and verifies
+duplicate-device cleanup according to the [browser guide](../../../../../docs/usage/browser.md).
+Backup can save per-profile bookmark-bar visibility and close-tabs confirmation
+in Bitwarden; setup restores and verifies the saved choices after Sync.
+See the [browser adapter contract](../../../../../docs/development/browser-adapters.md).
 Dock favorites use the public defaults, including Orca; null preserves existing favorites.
 Wallpaper settings are applied only when the dotfiles-managed image exists.
 Setup installs native Simple Scan/SANE and removes duplicate scanner Flatpaks
@@ -70,8 +74,8 @@ is loaded. Context7 requires a Bitwarden API-key item selector. See the
 for selections and sign-in steps.
 SSH restoration rejects private-key material in a Bitwarden `public_key` field
 before writing the key pair. Browser inspection uses registered profile names
-before falling back to saved per-profile names. Browser backup can explicitly
-restore the required Sync everything setting. The live adapter then runs Sync,
+before falling back to saved per-profile names. Setup restores the required
+Sync everything setting. The live adapter then runs Sync,
 compares recovery codes privately with Bitwarden, and verifies approved save or
 restore actions automatically. Setup also enables Sync everything, joins
 configured profiles to their stored chains, and requires verified synchronization.

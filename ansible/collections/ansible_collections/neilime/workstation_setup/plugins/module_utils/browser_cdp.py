@@ -133,6 +133,9 @@ class BrowserPipe:
         if key in self.acknowledgements:
             raise ValueError("The browser acknowledgement is already being watched")
         self.acknowledgements[key] = False
+        # V8 reinstalls bindings in new page contexts only while Runtime is
+        # enabled. Diagnostic navigation must not silently lose the observer.
+        self.call("Runtime.enable", session=session)
         self.call("Runtime.addBinding", {"name": name}, session)
         return lambda: self.acknowledgements[key]
 

@@ -23,12 +23,19 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     inspect_browser_profiles,
     sync_everything_drift,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_preferences import (
+    PROFILE_PREFERENCE_DEFAULTS,
+)
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_reporting import (
+    _DEVICE_CLEANUP_NOTICE,
     _text,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_sync import (
     BrowserVault,
     sync_browser_profiles,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
+    disposable_device_names,
 )
 
 _MESSAGES = {
@@ -55,6 +62,7 @@ def live_sync_report(profiles: list[dict], issues: list[dict]) -> dict:
         sections.append(_MESSAGES[status] + "\n" + "\n".join(affected))
     summary = "\n\n".join(sections)
     summary += "\nBrave will close safely during this operation and reopen if it was running."
+    summary += "\n" + _DEVICE_CLEANUP_NOTICE
     if not issues:
         return {
             "summary": summary,
@@ -91,7 +99,10 @@ def _verify_profile(native: NativeSync, declaration: dict, action: str, vault: B
     """Reconcile one selected chain and verify both the upload and the recovery note."""
 
     item = vault.selected_item(declaration)
-    connected = state["seed_present"] and state["requested"] is not False and state["has_setup_completed"] is not False
+    # A saved seed still identifies a chain when startup or incomplete setup has
+    # left stale transport flags. Compare it before considering enrollment;
+    # rejoining a matching chain can replace its device identity.
+    connected = state["seed_present"]
     if not connected and action != "restore":
         return "not_connected"
     local = native.code() if connected else None
@@ -120,6 +131,10 @@ def _verify_profile(native: NativeSync, declaration: dict, action: str, vault: B
     vault.run("sync")
     if native.code() != recovery_words(vault.selected_item(declaration)["notes"]):
         raise ValueError("Browser recovery code changed during verification; backup stopped")
+    native.prune_devices()
+    choices = {key: declaration[key] for key in PROFILE_PREFERENCE_DEFAULTS if declaration.get(key) is not None}
+    if choices:
+        native.profile_preferences(choices, restore=action == "restore")
     return None
 
 
@@ -133,11 +148,33 @@ def _declared_profiles(profiles: list[dict], inspection: dict) -> list[dict]:
     ]
 
 
+def _verify_saved_profiles(user_data_dir: str, profiles: list[dict], vault: BrowserVault) -> None:
+    """Check flushed native settings before accepting recovery or repairing profile metadata."""
+
+    inspection = inspect_browser_profiles(user_data_dir, profiles)
+    if any(issue["kind"] in PROFILE_PREFERENCE_DEFAULTS for issue in inspection["drift"]):
+        raise ValueError("Brave did not retain the verified profile preferences; retry browser recovery")
+    if inspection["drift"] or sync_everything_drift(inspection):
+        sync_browser_profiles(user_data_dir, profiles, "restore", vault)
+        inspection = inspect_browser_profiles(user_data_dir, profiles)
+    if inspection["drift"] or sync_everything_drift(inspection):
+        raise ValueError("Sync changed saved profile settings; rerun backup to reconcile the new drift")
+
+
+# Keep module inputs explicit; preview and cleanup controls are keyword-only.
+# pylint: disable-next=too-many-arguments
 def sync_browser_recovery(
-    user_data_dir: str, profiles: list[dict], action: str, vault: BrowserVault, check_mode: bool = False
+    user_data_dir: str,
+    profiles: list[dict],
+    action: str,
+    vault: BrowserVault,
+    *,
+    check_mode: bool = False,
+    disposable_names: list[str] | None = None,
 ) -> dict:
     """Synchronize actual profiles and compare codes in memory, never exporting secrets."""
 
+    disposable_names = disposable_device_names([] if disposable_names is None else disposable_names)
     if action == "retry":
         action = "sync"
     if action not in {"sync", "save", "restore"}:
@@ -175,7 +212,9 @@ def sync_browser_recovery(
                 environment,
             ) as pipe:
                 status = _verify_profile(
-                    NativeSync(pipe, str(Path(user_data_dir) / declaration["directory"])),
+                    NativeSync(
+                        pipe, str(Path(user_data_dir) / declaration["directory"]), disposable_names=disposable_names
+                    ),
                     declaration,
                     action,
                     vault,
@@ -183,10 +222,5 @@ def sync_browser_recovery(
                 )
                 if status:
                     issues.append({**{key: declaration[key] for key in ("id", "directory", "label")}, "status": status})
-        inspection = inspect_browser_profiles(user_data_dir, profiles)
-        if inspection["drift"] or sync_everything_drift(inspection):
-            sync_browser_profiles(user_data_dir, profiles, "restore", vault)
-            inspection = inspect_browser_profiles(user_data_dir, profiles)
-        if inspection["drift"] or sync_everything_drift(inspection):
-            raise ValueError("Sync changed saved profile settings; rerun backup to reconcile the new drift")
+        _verify_saved_profiles(user_data_dir, profiles, vault)
     return {"changed": True, "verified": not issues, "issues": issues, **live_sync_report(profiles, issues)}

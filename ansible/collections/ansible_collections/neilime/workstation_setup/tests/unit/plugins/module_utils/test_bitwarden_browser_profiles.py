@@ -38,6 +38,52 @@ def test_parser_returns_only_profile_identity_metadata_without_mutating_records(
     assert item == original
 
 
+@pytest.mark.parametrize("mode", ["always", "new_tab", "never"])
+def test_bookmark_bar_is_profile_metadata_without_recovery_words(mode: str) -> None:
+    """Each supported visibility choice survives vault loading without exposing the note."""
+
+    item = profile_item()
+    item["fields"].append({"name": "bookmark_bar", "value": mode})
+    original = deepcopy(item)
+    result = bitwarden_browser_profiles([item])
+    assert result[0]["bookmark_bar"] == mode
+    assert _SECRET not in json.dumps(result)
+    assert item == original
+
+
+@pytest.mark.parametrize("values", [["Always"], [""], ["always", "never"]])
+def test_bookmark_bar_rejects_invalid_or_duplicate_fields(values: list[str]) -> None:
+    """Ambiguous vault declarations cannot select a visibility mode."""
+
+    item = profile_item()
+    item["fields"].extend({"name": "bookmark_bar", "value": value} for value in values)
+    with pytest.raises(ValueError, match="bookmark_bar"):
+        bitwarden_browser_profiles([item])
+
+
+@pytest.mark.parametrize("value,expected", [("true", True), ("false", False)])
+def test_close_tabs_confirmation_is_loaded_as_a_boolean(value: str, expected: bool) -> None:
+    """An explicit disabled choice remains present in the normalized profile."""
+
+    item = profile_item()
+    item["fields"].append({"name": "confirm_close_tabs", "value": value})
+    original = deepcopy(item)
+    result = bitwarden_browser_profiles([item])
+    assert result[0]["confirm_close_tabs"] is expected
+    assert _SECRET not in json.dumps(result)
+    assert item == original
+
+
+@pytest.mark.parametrize("values", [["yes"], ["False"], [""], ["true", "false"]])
+def test_close_tabs_confirmation_rejects_invalid_or_duplicate_fields(values: list[str]) -> None:
+    """Only one explicit true/false custom field can control the confirmation."""
+
+    item = profile_item()
+    item["fields"].extend({"name": "confirm_close_tabs", "value": value} for value in values)
+    with pytest.raises(ValueError, match="confirm_close_tabs"):
+        bitwarden_browser_profiles([item])
+
+
 @pytest.mark.parametrize("items", [None, {}, "secret value", []])
 def test_missing_or_inaccessible_collection_never_becomes_an_empty_profile_list(items):
     """An unavailable collection must fail instead of appearing successfully empty."""

@@ -371,7 +371,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self._write_live_adapter(setup / "browser_brave/tasks")
         self.variables["workstation_manager_use_become"] = False
         self.variables["workstation_manager_resolved"] = {
-            "desktop": {"browser": "brave"},
+            "desktop": {"browser": "brave", "browser_sync_disposable_device_names": ["fixture-vm"]},
             "user": {"name": "fixture", "home": str(self.fixture)},
             "secrets": {"bitwarden": {"browser_profiles_collection_id": "fixture-collection"}},
         }
@@ -426,6 +426,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
                     "sync": {"keep_everything_synced": True},
                     "brave_sync_v2": {"seed": "synthetic-browser-seed"},
                     "browser": {"theme": {"user_color2": int("654321", 16) - 0x1000000}},
+                    "bookmark_bar": {"show_on_all_tabs": True},
+                    "brave": {"enable_window_closing_confirm": False},
                     "extensions": {
                         "theme": {"id": "user_color_theme_id"},
                         "settings": {"fixture-extension": {"token": "synthetic-extension-token"}},
@@ -457,6 +459,10 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertEqual(current["profile"]["name"], expected)
         self.assertEqual(saved["name"], expected)
         self.assertEqual(saved["notes"], record["notes"])
+        self.assertEqual({field["name"]: field["value"] for field in saved["fields"]}["bookmark_bar"], "always")
+        self.assertTrue(current["bookmark_bar"]["show_on_all_tabs"])
+        self.assertEqual({field["name"]: field["value"] for field in saved["fields"]}["confirm_close_tabs"], "false")
+        self.assertIs(current["brave"]["enable_window_closing_confirm"], False)
         self.assertEqual(current["brave_sync_v2"]["seed"], "synthetic-browser-seed")
         self.assertEqual(current["pinned_tabs"], [{"url": "https://example.invalid"}])
         browser_export = json.loads(browser_export_path.read_text())

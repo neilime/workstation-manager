@@ -7,6 +7,11 @@ import textwrap
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_inspection import (
     sync_everything_drift,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_preferences import (
+    PROFILE_PREFERENCE_DEFAULTS,
+)
+
+_DEVICE_CLEANUP_NOTICE = "Verified Sync removes duplicate and configured disposable devices, keeping This Device."
 
 _ACTIONS = {
     "sync_everything_not_enabled": (
@@ -32,6 +37,14 @@ _ACTIONS = {
     "theme_color": (
         "Reconcile profile colors.",
         "Choose restore for stored colors, or save to save the local color choice.",
+    ),
+    "bookmark_bar": (
+        "Save or restore bookmark-bar visibility.",
+        "Choose save to keep the local choice in Bitwarden; setup restores a saved choice for this profile.",
+    ),
+    "confirm_close_tabs": (
+        "Save or restore close-tabs confirmation.",
+        "Choose save to keep the local choice in Bitwarden; setup restores a saved choice for this profile.",
     ),
     "missing_avatar_file": (
         "Restore missing profile logos.",
@@ -65,7 +78,16 @@ _SYNC_ISSUES = frozenset(
 )
 _AVATAR_ISSUES = ("missing_avatar_file", "avatar_content_changed", "avatar_disabled")
 _PROFILE_KINDS = frozenset(
-    ("undeclared", "missing", "renamed", "theme_color", "avatar", "unregistered", "missing_preferences")
+    (
+        "undeclared",
+        "missing",
+        "renamed",
+        "theme_color",
+        "avatar",
+        "unregistered",
+        "missing_preferences",
+        *PROFILE_PREFERENCE_DEFAULTS,
+    )
 )
 
 
@@ -123,6 +145,16 @@ def _profile_drift(record: dict, profiles: dict) -> tuple[str, str]:
             f": color {_text(record.get('observed_color') or 'unset')}, "
             f"expected {_text(record.get('configured_color'))}"
         )
+    elif kind in PROFILE_PREFERENCE_DEFAULTS:
+
+        def display(value: object) -> str:
+            if value is None:
+                return "not recorded"
+            if isinstance(value, bool):
+                return "enabled" if value else "disabled"
+            return _text(value)
+
+        description += f": {display(record.get('observed_value'))}, saved {display(record.get('configured_value'))}"
     return kind, description
 
 
@@ -198,6 +230,7 @@ def browser_sync_report(inspection: dict) -> str:
             "",
             "The script will run Sync and compare recovery codes with Bitwarden automatically.",
             "Brave will close safely during this operation and reopen if it was running.",
+            _DEVICE_CLEANUP_NOTICE,
         )
     )
     return "\n".join(lines)

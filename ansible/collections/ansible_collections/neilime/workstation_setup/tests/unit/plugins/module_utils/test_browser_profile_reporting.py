@@ -85,6 +85,21 @@ def test_repeated_sync_and_missing_logos_become_two_action_groups() -> None:
             "color unset, expected #123456",
         ),
         (
+            {"kind": "bookmark_bar", "configured_value": None, "observed_value": "always"},
+            "Save or restore bookmark-bar visibility.",
+            "always, saved not recorded",
+        ),
+        (
+            {"kind": "confirm_close_tabs", "configured_value": None, "observed_value": False},
+            "Save or restore close-tabs confirmation.",
+            "disabled, saved not recorded",
+        ),
+        (
+            {"kind": "confirm_close_tabs", "configured_value": False, "observed_value": True},
+            "Save or restore close-tabs confirmation.",
+            "enabled, saved disabled",
+        ),
+        (
             {"kind": "avatar", "issues": ["avatar_content_changed", "avatar_disabled"]},
             "Reconcile changed profile logos.",
             "save",
@@ -221,6 +236,8 @@ def test_live_sync_prompt_offers_machine_work_without_manual_checks() -> None:
     assert "automatically" in report
     assert "close safely" in report
     assert "reopen" in report
+    assert "removes duplicate and configured disposable devices" in report
+    assert "keeping This Device" in report
     assert "brave://" not in report
     assert "manual" not in report
     assert "first 24" not in report
