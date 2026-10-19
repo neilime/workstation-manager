@@ -19,9 +19,9 @@ cache described in the [integration guide](../../../../../docs/development/READM
 Bitwarden email login prompts privately once per challenge, ignores terminal redraws, and
 retries rejected codes with a fresh login attempt. Developer tool installation uses the GitHub credentials described in the
 [configuration guide](../../../../../docs/usage/configuration.md#edit-your-private-override).
-Chezmoi owns the wallpaper asset and Clipboard Indicator preferences. Setup
-installs and enables the checksum-pinned GNOME extension, applies the companion
-profile, and removes CopyQ applications while preserving their history.
+Chezmoi owns the wallpaper asset and desktop extension preferences. Setup
+installs and enables checksum-pinned Clipboard Indicator and Vitals extensions,
+compiles missing settings schemas, and applies available companion profiles.
 Setup always enables GNOME dark mode, dock Trash, and GNOME Software updates.
 Browser automation discovers the managed user's live desktop environment,
 including when setup runs through SSH. It reuses matching Sync chains and verifies
@@ -38,7 +38,9 @@ or on the next graphical login, preserving saved cleaner preferences.
 See [desktop configuration](../../../../../docs/usage/configuration.md#clipboard-and-personal-file-backup)
 and [cleanup policy](../../../../../docs/usage/cleanup.md).
 Developer tooling installs native Docker and GitHub CLI packages, a complete system
-Node.js LTS runtime, and verified mise releases for remaining user tools. Setup
+Node.js LTS runtime, and verified mise releases for remaining user tools. Flatpak
+remote configuration and application installation use bounded retries for download
+failures. Setup
 removes Snap after verified data preservation and rejects Snap-dependent boot or
 encryption. See [application delivery](../../../../../docs/usage/configuration.md#application-delivery)
 and [developer tools](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)

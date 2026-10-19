@@ -62,10 +62,17 @@ class SyncDeviceList:
 
 
 _REMOVAL_BINDING = "workstationDeviceRemoved"
+_REMOVAL_CHECKS = (
+    "Commit Request",
+    "Device Tombstone",
+    "Commit Response",
+    "Matching Response",
+    "Server Acknowledgement",
+)
 
 
-# Device payloads and server IDs stay inside the diagnostic page. Only the
-# acknowledgement boolean crosses the pipe. A native leave callback alone can
+# Device payloads and server IDs stay inside the diagnostic page. Only fixed
+# boolean checks cross the pipe. A native leave callback alone can
 # succeed after its short upload deadline even when deletion was not committed.
 _WATCH_REMOVAL = r"""(async identities => {
   const {addWebUiListener} = window.workstationSyncSettings;
@@ -84,26 +91,32 @@ _WATCH_REMOVAL = r"""(async identities => {
   })));
   const remaining = new Set(tags);
   const state = window.workstationDeviceRemoval = {
-    since: Date.now(), requested: [], acknowledged: false
+    since: Date.now(), requested: [], acknowledged: false,
+    checks: Object.fromEntries(CHECK_NAMES.map(name => [name, false]))
   };
   addWebUiListener('onProtocolEvent', event => {
     if (typeof event.time !== 'number' || event.time < state.since) return;
     if (event.type === 'Commit Request') {
+      state.checks['Commit Request'] = true;
       const entries = event.proto?.commit?.entries;
       state.requested = Array.isArray(entries) ? entries.map(entry =>
         remaining.has(entry.client_tag_hash) && entry.deleted === true
           && typeof entry.id_string === 'string' && entry.id_string ? entry.client_tag_hash : null) : [];
+      if (state.requested.some(tag => tag !== null)) state.checks['Device Tombstone'] = true;
     }
+    if (event.type === 'Commit Response') state.checks['Commit Response'] = true;
     if (event.type === 'Commit Response' && state.requested.length) {
       const entries = event.proto?.commit?.entryresponse;
       // Sync correlates responses by request position. Response IDs are optional
       // and may be reassigned; require the complete batch before matching it.
       if (Array.isArray(entries) && entries.length === state.requested.length) {
+        if (state.requested.some(tag => tag !== null)) state.checks['Matching Response'] = true;
         entries.forEach((entry, index) => {
           if (entry.response_type === 'SUCCESS') remaining.delete(state.requested[index]);
         });
       }
       state.acknowledged = remaining.size === 0;
+      state.checks['Server Acknowledgement'] = state.acknowledged;
       state.requested = [];
       if (state.acknowledged) {
         clearInterval(state.timer);
@@ -117,4 +130,4 @@ _WATCH_REMOVAL = r"""(async identities => {
   // it while the leave handler waits, before that handler stops the Sync engine.
   state.timer = setInterval(() => chrome.send('triggerRefresh'), 100);
   return true;
-})""".replace("REMOVAL_BINDING", json.dumps(_REMOVAL_BINDING))
+})""".replace("REMOVAL_BINDING", json.dumps(_REMOVAL_BINDING)).replace("CHECK_NAMES", json.dumps(_REMOVAL_CHECKS))

@@ -344,8 +344,7 @@ actual disk use before defining a storage budget.
 Install a reviewed extension archive for the detected GNOME major, recording its
 version and digest. Check updates weekly and test before advancing. Avoid installing
 from a moving Git branch. Run one clipboard manager at a time. Setup installs
-and enables Clipboard Indicator, closes and removes conflicting CopyQ applications,
-and preserves their data. It does not import that data into Clipboard Indicator.
+and enables Clipboard Indicator.
 
 Upstream warns that large images can briefly freeze the shell and direct paste
 does not work in every application. Acceptance therefore requires typical and
@@ -465,6 +464,7 @@ Installing the app does not establish encrypted backup or restore coverage.
 | VLC, `org.videolan.VLC`                                        | Required media app                           | Keep the Flatpak application for media playback.                                                                                                                                                                     |
 | JDownloader, `org.jdownloader.JDownloader`                     | Required download workflow                   | Keep the Flatpak application and account for its runtime and own updater.                                                                                                                                            |
 | Clipboard Indicator, `clipboard-indicator@tudmotu.com`         | Required GNOME clipboard extension           | Text/image history, search, pins, and quick paste. Validate GNOME compatibility and responsiveness with large images.                                                                                                |
+| Vitals, `Vitals@CoreCoding.com`                                | Managed GNOME top-bar system monitor         | Live CPU, memory, temperature, network, and storage in the panel. Pinned reviewed archive; see [ADR 0003](adr-0003-desktop-system-monitor.md). Validate GNOME compatibility and panel rendering on Wayland.          |
 | Simple Scan/SANE through Ubuntu APT                            | Required native scanner application          | Keep one installation and test actual scanner access.                                                                                                                                                                |
 | Déjà Dup, `org.gnome.DejaDup`                                  | Keep with a configured, tested backup policy | Installing it does not configure backups. Complement manager archives with routine personal-file backup; define destination, encryption, retention, and a restore drill. [Purpose](https://apps.gnome.org/DejaDup/). |
 | LibreOffice, `org.libreoffice.LibreOffice`                     | Required office app                          | Keep for offline work or document fidelity; no additional office suite is justified.                                                                                                                                 |

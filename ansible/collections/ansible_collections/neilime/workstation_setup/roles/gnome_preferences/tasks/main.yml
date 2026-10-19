@@ -41,6 +41,13 @@
       {{ workstation_manager_resolved.user.home ~ '/.local/share/workstation-manager/clipboard-indicator/'
          ~ workstation_manager_resolved.desktop.clipboard_indicator.sha256 }}
 
+- name: Install and enable the Vitals system monitor
+  ansible.builtin.include_tasks: system_monitor.yml
+  vars:
+    workstation_manager_system_monitor_directory: >-
+      {{ workstation_manager_resolved.user.home ~ '/.local/share/workstation-manager/system-monitor/'
+         ~ workstation_manager_resolved.desktop.system_monitor.sha256 }}
+
 - name: Bookmark the projects directory in Files
   ansible.builtin.import_tasks: file_bookmarks.yml
 

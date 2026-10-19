@@ -20,7 +20,10 @@ def with_tool_versions() -> Callable[[dict[str, Any]], dict[str, Any]]:
                 "context7-api-key": "22222222-2222-2222-2222-222222222222",
             }
         },
-        "desktop": {"clipboard_indicator": {"version": "123", "sha256": "a" * 64}},
+        "desktop": {
+            "clipboard_indicator": {"version": "123", "sha256": "a" * 64},
+            "system_monitor": {"version": "456", "sha256": "b" * 64},
+        },
         "development": {
             "github": {"account": "fixture"},
             "node": {"version": "1.2.3"},

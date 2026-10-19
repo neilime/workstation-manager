@@ -1,0 +1,156 @@
+---
+- name: Install the extension archive and settings dependencies
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name:
+      - libglib2.0-bin
+      - unzip
+    state: present
+
+- name: Prepare the versioned system monitor extension directory
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ workstation_manager_resolved.user.home }}/.local/share/gnome-shell/extensions"
+    - "{{ workstation_manager_system_monitor_directory }}"
+
+- name: Download the pinned reviewed system monitor extension
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.get_url:
+    url: >-
+      {{ 'https://extensions.gnome.org/extension-data/VitalsCoreCoding.com.v'
+         ~ workstation_manager_resolved.desktop.system_monitor.version ~ '.shell-extension.zip' }}
+    dest: "{{ workstation_manager_system_monitor_directory }}/extension.zip"
+    checksum: "sha256:{{ workstation_manager_resolved.desktop.system_monitor.sha256 }}"
+    mode: "0644"
+  when: not ansible_check_mode
+
+- name: Detect GNOME Shell version
+  ansible.builtin.command:
+    argv: [gnome-shell, --version]
+  changed_when: false
+  check_mode: false
+  register: workstation_manager_system_monitor_shell
+
+- name: Validate the system monitor archive before extraction
+  neilime.workstation_setup.system_monitor_archive_info:
+    path: "{{ workstation_manager_system_monitor_directory }}/extension.zip"
+    sha256: "{{ workstation_manager_resolved.desktop.system_monitor.sha256 }}"
+    version: "{{ workstation_manager_resolved.desktop.system_monitor.version }}"
+    shell_version: "{{ workstation_manager_system_monitor_shell.stdout }}"
+  when: not ansible_check_mode
+
+- name: Extract the reviewed system monitor extension
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.unarchive:
+    src: "{{ workstation_manager_system_monitor_directory }}/extension.zip"
+    dest: "{{ workstation_manager_system_monitor_directory }}"
+    remote_src: true
+  when: not ansible_check_mode
+
+- name: Compile the system monitor settings schema
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - glib-compile-schemas
+      - --strict
+      - "{{ workstation_manager_system_monitor_directory }}/schemas"
+    creates: "{{ workstation_manager_system_monitor_directory }}/schemas/gschemas.compiled"
+  when: not ansible_check_mode
+
+- name: Register the pinned extension with GNOME
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    src: "{{ workstation_manager_system_monitor_directory }}"
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/gnome-shell/extensions/Vitals@CoreCoding.com"
+    state: link
+  when: not ansible_check_mode
+
+- name: Inspect the Chezmoi-owned system monitor profile
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/vitals/settings.ini"
+  register: workstation_manager_system_monitor_profile
+
+- name: Read the Chezmoi-owned system monitor profile
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.slurp:
+    src: "{{ workstation_manager_resolved.user.home }}/.config/vitals/settings.ini"
+  register: workstation_manager_system_monitor_preferences
+  when: workstation_manager_system_monitor_profile.stat.exists
+
+- name: Apply the Chezmoi-owned system monitor preferences
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: "/org/gnome/shell/extensions/vitals/{{ item.key }}"
+    value: "{{ item.value }}"
+  loop: >-
+    {{ (workstation_manager_system_monitor_preferences.content | b64decode | community.general.from_ini)['vitals']
+       | dict2items }}
+  when: workstation_manager_system_monitor_profile.stat.exists
+
+- name: Keep GNOME extension compatibility validation enabled
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/disable-extension-version-validation
+    value: "false"
+
+- name: Read enabled GNOME extensions
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/enabled-extensions
+    state: read
+  register: workstation_manager_system_monitor_enabled
+
+- name: Enable Vitals without replacing other extensions
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/enabled-extensions
+    value: >-
+      @as {{ ((workstation_manager_system_monitor_enabled.value
+      | default('[]', true)
+      | regex_replace('^@as ', '')
+      | from_yaml) + ['Vitals@CoreCoding.com'])
+      | unique
+      | list
+      | to_json }}
+
+- name: Read explicitly disabled GNOME extensions
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/disabled-extensions
+    state: read
+  register: workstation_manager_system_monitor_disabled
+
+- name: Remove the selected system monitor extension from the disabled list
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/shell/disabled-extensions
+    value: >-
+      @as {{ (workstation_manager_system_monitor_disabled.value
+      | default('[]', true)
+      | regex_replace('^@as ', '')
+      | from_yaml)
+      | reject('equalto', 'Vitals@CoreCoding.com')
+      | list
+      | to_json }}
+
+- name: Report system monitor activation
+  ansible.builtin.debug:
+    msg: Log out and back in to load the pinned Vitals release into GNOME Shell.

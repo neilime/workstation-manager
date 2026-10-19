@@ -463,3 +463,63 @@ def test_vault_record_returns_valid_json() -> None:
     runner = Mock(return_value=(0, json.dumps(record).encode(), b""))
     vault = sync.BrowserVault("fixture-session", "fixture-collection", runner)
     assert vault.item(ITEM_ID) == record
+
+
+@pytest.mark.parametrize("failures", [0, 1, 3])
+def test_vault_sync_retries_failed_downloads_before_returning_fresh_output(
+    monkeypatch: pytest.MonkeyPatch, failures: int
+) -> None:
+    """Temporary download failures may recover within the collection loader's retry budget."""
+
+    runner = Mock(side_effect=[(1, b"private partial output", b"private error")] * failures + [(0, b"fresh", b"")])
+    sleep = Mock()
+    monkeypatch.setattr(sync.time, "sleep", sleep)
+    vault = sync.BrowserVault("fixture-session", "fixture-collection", runner)
+
+    assert vault.run("sync") == b"fresh"
+    assert runner.call_count == failures + 1
+    assert all(call == runner.call_args_list[0] for call in runner.call_args_list)
+    assert runner.call_args.args == (["bw", "sync"],)
+    assert runner.call_args.kwargs["environ_update"]["BW_SESSION"] == "fixture-session"
+    assert [call.args for call in sleep.call_args_list] == [(5,)] * failures
+
+
+def test_vault_sync_exhaustion_reports_operation_without_private_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Failed refreshes must stop recovery instead of returning stale or partial vault data."""
+
+    runner = Mock(return_value=(1, b"private stdout", b"private stderr"))
+    sleep = Mock()
+    monkeypatch.setattr(sync.time, "sleep", sleep)
+    vault = sync.BrowserVault("fixture-session", "fixture-collection", runner)
+
+    with pytest.raises(ValueError, match="sync browser vault failed .* after 4 attempts") as caught:
+        vault.run("sync")
+
+    assert runner.call_count == 4
+    assert sleep.call_count == 3
+    assert all(value not in str(caught.value) for value in ("private", "fixture-session", "fixture-collection"))
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("edit", "item", ITEM_ID),
+        ("create", "attachment", "--itemid", ITEM_ID),
+        ("delete", "attachment", "private-attachment-id", "--itemid", ITEM_ID),
+    ],
+)
+def test_vault_write_failures_are_not_replayed(arguments: tuple[str, ...], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed write may have reached Bitwarden and cannot be retried as a download."""
+
+    runner = Mock(return_value=(1, b"private stdout", b"private stderr"))
+    sleep = Mock()
+    monkeypatch.setattr(sync.time, "sleep", sleep)
+    vault = sync.BrowserVault("fixture-session", "fixture-collection", runner)
+
+    with pytest.raises(ValueError) as caught:
+        vault.run(*arguments, data=b"private payload")
+
+    runner.assert_called_once()
+    sleep.assert_not_called()
+    assert "private" not in str(caught.value)
+    assert ITEM_ID not in str(caught.value)

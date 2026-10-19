@@ -27,6 +27,17 @@
     },
     {
       customType: "regex",
+      description: "Propose reviewed Vitals system monitor releases; refresh the archive digest during review",
+      managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
+      matchStrings: [
+        'system_monitor:\\n(?:[^\\n]*\\n){0,4}?\\s+version: "(?<currentValue>[0-9]+)"',
+      ],
+      depNameTemplate: "vitals",
+      datasourceTemplate: "custom.gnome-vitals",
+      versioningTemplate: "regex:^(?<major>[0-9]+)$",
+    },
+    {
+      customType: "regex",
       description: "Keep the complete system Node distribution on the latest LTS release",
       managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: ['node:\\n\\s+version: "(?<currentValue>[^"]+)"'],
@@ -117,6 +128,13 @@
   customDatasources: {
     "gnome-clipboard": {
       defaultRegistryUrlTemplate: "https://extensions.gnome.org/extension-info/?uuid=clipboard-indicator%40tudmotu.com",
+      format: "json",
+      transformTemplates: [
+        '{"releases": $distinct($each(shell_version_map, function($value) { {"version": $string($value.version)} }))}',
+      ],
+    },
+    "gnome-vitals": {
+      defaultRegistryUrlTemplate: "https://extensions.gnome.org/extension-info/?uuid=Vitals%40CoreCoding.com",
       format: "json",
       transformTemplates: [
         '{"releases": $distinct($each(shell_version_map, function($value) { {"version": $string($value.version)} }))}',

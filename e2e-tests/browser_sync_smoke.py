@@ -39,6 +39,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (  # noqa: E402
     _REMOVAL_BINDING,
+    _REMOVAL_CHECKS,
     _WATCH_REMOVAL,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
@@ -77,6 +78,7 @@ def diagnostic_fixture() -> dict:
         "about": {
             "details": [{"data": [{"stat_name": key, "stat_value": value} for key, value in stats.items()]}],
             "actionable_error_detected": False,
+            "actionable_error": [],
             "unrecoverable_error_detected": False,
             "type_status": [
                 {"name": name, "state": "Running", "status": "ok", "num_entries": 1, "num_live": 1} for name in types
@@ -116,6 +118,48 @@ def requested_page(pipe: BrowserPipe) -> None:
     print("Native page readiness waited for the requested navigation.", flush=True)
 
 
+def delayed_profile_identity(pipe: BrowserPipe, profile_path: str) -> NativeSync:
+    """Verify native identity even while the version page's displayed path is empty."""
+
+    version = pipe.page("brave://version")
+    assert (
+        pipe.evaluate(
+            version,
+            """(() => {
+      const path = document.querySelector('#profile_path');
+      if (!path) return false;
+      Object.defineProperty(path, 'textContent', {configurable: true, get: () => '', set: () => {}});
+      window.fixtureProfileRequests = 0;
+      window.fixtureSend = chrome.send;
+      chrome.send = (method, args) => {
+        if (method === 'requestPathInfo') {
+          window.fixtureProfileRequests++;
+          setTimeout(() => window.fixtureSend(method, args), 100);
+        } else {
+          window.fixtureSend(method, args);
+        }
+      };
+      return true;
+    })()""",
+        )
+        is True
+    )
+    original_page = pipe.page
+    try:
+        with patch.object(
+            pipe, "page", side_effect=lambda url: version if url == "brave://version" else original_page(url)
+        ):
+            native = NativeSync(pipe, profile_path)
+        assert pipe.evaluate(version, "window.fixtureProfileRequests === 1") is True
+    finally:
+        pipe.evaluate(
+            version,
+            "delete document.querySelector('#profile_path').textContent; chrome.send = window.fixtureSend; true",
+        )
+    print("Native profile identity verified despite delayed path delivery and an empty displayed path.", flush=True)
+    return native
+
+
 def snapshot(pipe: BrowserPipe, page: str, timeout_ms: int = 30000) -> dict:
     """Assert that diagnostic reduction returns structured, non-secret status."""
 
@@ -129,8 +173,8 @@ def retry_failed_download(pipe: BrowserPipe, page: str) -> None:
 
     pipe.evaluate(
         page,
-        """(async () => {
-      const {aboutInfo} = await import('chrome://sync-internals/about.js');
+        """(() => {
+      const aboutInfo = window.fixtureAbout;
       aboutInfo.type_status[0].status = 'ok';
       const download = aboutInfo.details.flatMap(section => section.data)
         .find(item => item.stat_name === 'Download Step Result');
@@ -169,10 +213,7 @@ def retry_pending_changes(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, "window.workstationSync.checks['Entity Metadata']") is False
     assert pipe.evaluate(page, "window.fixtureRefreshes") == 1
     pipe.evaluate(page, "window.fixtureNodes[0].nodes[0].metadata.acked_sequence_number = '2'; true")
-    tombstone = (
-        "(async()=>{const {aboutInfo} = await import('chrome://sync-internals/about.js'); "
-        "aboutInfo.type_status[0].num_entries = 2; return true;})()"
-    )
+    tombstone = "window.fixtureAbout.type_status[0].num_entries = 2; true"
     pipe.evaluate(page, tombstone)
     assert snapshot(pipe, page)["pending"] is True
     assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
@@ -236,6 +277,114 @@ def retry_missing_nodes(pipe: BrowserPipe, page: str) -> None:
         pipe.evaluate(page, "chrome.send = window.fixtureNodeSend; true")
 
 
+def prepare_diagnostics(pipe: BrowserPipe, page: str) -> None:
+    """Publish native status replacements before asynchronous per-type entity counts."""
+
+    prepare = """(async () => {
+      const {webUIListenerCallback, webUIResponse} = await import('chrome://resources/js/cr.js');
+      const fixture = FIXTURE;
+      window.fixtureAbout = fixture.about;
+      window.fixtureNodes = fixture.nodes;
+      window.fixturePublishAbout = source => {
+        const about = structuredClone(source);
+        for (const row of about.type_status) {
+          delete row.num_entries;
+          delete row.num_live;
+        }
+        webUIListenerCallback('onAboutInfoUpdated', about);
+      };
+      window.fixturePublishCounts = source => {
+        for (const row of source.type_status) {
+          webUIListenerCallback('onEntityCountsUpdated', {entityCounts: {
+            dataType: row.name, entities: row.num_entries, nonTombstoneEntities: row.num_live
+          }});
+        }
+      };
+      chrome.send = (method, args) => {
+        if (method === 'getAllNodes') webUIResponse(args[0], true, window.fixtureNodes);
+        if (method === 'requestDataAndRegisterForUpdates') {
+          const about = structuredClone(window.fixtureAbout);
+          window.fixturePublishAbout(about);
+          setTimeout(() => window.fixturePublishCounts(about), 0);
+        }
+      };
+      return true;
+    })()""".replace("FIXTURE", json.dumps(diagnostic_fixture()))
+    assert pipe.evaluate(page, prepare) is True
+
+
+def fresh_diagnostics(pipe: BrowserPipe, page: str) -> None:
+    """Current native replies supersede cached busy and idle cycle states."""
+
+    for current_busy in (False, True):
+        pipe.evaluate(
+            page,
+            """(() => {
+          const current = window.fixtureAbout.details.flatMap(section => section.data)
+            .find(item => item.stat_name === 'Sync Cycle Ongoing');
+          current.stat_value = CURRENT;
+          const cached = structuredClone(window.fixtureAbout);
+          cached.details.flatMap(section => section.data)
+            .find(item => item.stat_name === 'Sync Cycle Ongoing').stat_value = !CURRENT;
+          window.fixturePublishAbout(cached);
+          window.fixturePublishCounts(cached);
+          return true;
+        })()""".replace("CURRENT", json.dumps(current_busy)),
+        )
+        assert snapshot(pipe, page) == {"healthy": not current_busy, "pending": current_busy, "fresh": True}
+    pipe.evaluate(
+        page,
+        "window.fixtureAbout.details.flatMap(section => section.data)"
+        ".find(item => item.stat_name === 'Sync Cycle Ongoing').stat_value = false; true",
+    )
+    assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
+
+
+def retry_missing_diagnostics(pipe: BrowserPipe, page: str) -> None:
+    """Missing status or counts cannot reuse cached success or accept a timed-out callback."""
+
+    for callback in ("About", "Counts"):
+        pipe.evaluate(
+            page,
+            "window.fixturePublishHeld = window.fixturePublishCALLBACK; "
+            "window.fixturePublishCALLBACK = () => {}; true".replace("CALLBACK", callback),
+        )
+        for _ in range(2):
+            result = snapshot(pipe, page, timeout_ms=50)
+            assert result == {"healthy": False, "pending": True, "fresh": True}
+            assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
+            pipe.evaluate(page, "window.fixturePublishHeld(window.fixtureAbout); true")
+            assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
+        pipe.evaluate(page, f"window.fixturePublish{callback} = window.fixturePublishHeld; true")
+        assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
+
+
+def reject_replaced_diagnostics(pipe: BrowserPipe, page: str) -> None:
+    """A new status during node aggregation invalidates the in-flight observation."""
+
+    pipe.evaluate(
+        page,
+        """(() => {
+      window.fixtureBeforeReplacement = chrome.send;
+      chrome.send = (method, args) => {
+        if (method === 'getAllNodes') {
+          window.fixturePublishAbout(window.fixtureAbout);
+          window.fixturePublishCounts(window.fixtureAbout);
+        }
+        window.fixtureBeforeReplacement(method, args);
+      };
+      return true;
+    })()""",
+    )
+    try:
+        result = snapshot(pipe, page)
+        assert result == {"healthy": False, "pending": True, "fresh": True}
+        assert pipe.evaluate(page, "window.workstationSync.checks['Status Response']") is False
+    finally:
+        pipe.evaluate(page, "chrome.send = window.fixtureBeforeReplacement; true")
+    assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
+
+
 def diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Run production JavaScript against stale, pending, errored, and complete native-shaped responses."""
 
@@ -257,19 +406,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     )
     pipe.evaluate(page, _START)
     assert snapshot(pipe, page) == {"healthy": False, "pending": True, "fresh": False}
-    fixture = diagnostic_fixture()
-    prepare = """(async () => {
-      const {aboutInfo} = await import('chrome://sync-internals/about.js');
-      const {webUIResponse} = await import('chrome://resources/js/cr.js');
-      const fixture = FIXTURE;
-      Object.assign(aboutInfo, fixture.about);
-      window.fixtureNodes = fixture.nodes;
-      chrome.send = (method, args) => {
-        if (method === 'getAllNodes') webUIResponse(args[0], true, window.fixtureNodes);
-      };
-      return true;
-    })()""".replace("FIXTURE", json.dumps(fixture))
-    assert pipe.evaluate(page, prepare) is True
+    prepare_diagnostics(pipe, page)
     stale = snapshot(pipe, page)
     assert stale == {"healthy": True, "pending": False, "fresh": False}, stale
     assert pipe.evaluate(page, "window.workstationSync.checks['Fresh Download']") is False
@@ -300,19 +437,18 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
       return window.workstationSync.commitErrors;
     })()""",
     ) == ["TRANSIENT_ERROR"]
+    fresh_diagnostics(pipe, page)
+    retry_missing_diagnostics(pipe, page)
+    reject_replaced_diagnostics(pipe, page)
     retry_pending_changes(pipe, page)
     retry_missing_nodes(pipe, page)
-    pipe.evaluate(
-        page,
-        "(async()=>{const {aboutInfo} = await import('chrome://sync-internals/about.js'); "
-        "aboutInfo.type_status[0].status = 'severity_error'; return true;})()",
-    )
+    pipe.evaluate(page, "window.fixtureAbout.type_status[0].status = 'severity_error'; true")
     assert snapshot(pipe, page)["healthy"] is False
     assert pipe.evaluate(page, "window.workstationSync.checks['Data Type Status']") is False
     retry_failed_download(pipe, page)
     print(
-        "Native diagnostics: canonical imports, stale success, pending upload/deletion, "
-        "missing/late/rejected replies, "
+        "Native diagnostics: canonical imports, fresh status/counts, stale busy/idle caches, "
+        "pending upload/deletion, missing/late/rejected replies, status replacement, "
         "lost page state, redacted commit errors, failure, retry, and success passed.",
         flush=True,
     )
@@ -337,6 +473,7 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[],
     )
     assert pipe.evaluate(page, f"{_WATCH_REMOVAL}([])") is False
     assert pipe.evaluate(page, f"{_WATCH_REMOVAL}(['captured-device', 'second-device'])") is True
+    assert pipe.evaluate(page, "window.workstationDeviceRemoval.checks") == dict.fromkeys(_REMOVAL_CHECKS, False)
     # Exercise the actual interval which prompts uploads during native leave.
     assert (
         pipe.evaluate(
@@ -395,6 +532,7 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[],
         if expected:
             assert pipe.wait_for_acknowledgement(page, _REMOVAL_BINDING, timeout=5) is True
         assert acknowledged() is expected
+    assert pipe.evaluate(page, "window.workstationDeviceRemoval.checks") == dict.fromkeys(_REMOVAL_CHECKS, True)
     pipe.evaluate(page, "clearInterval(window.workstationDeviceRemoval.timer); true")
     print("Device removal requires a fresh successful server commit for its captured identity.", flush=True)
     return acknowledged
@@ -410,13 +548,29 @@ def navigate_teardown_page(pipe: BrowserPipe, page: str, url: str) -> None:
         time.sleep(0.1)
 
 
+def fresh_teardown_diagnostics(pipe: BrowserPipe, page: str, readiness_snapshot: Callable[[], dict]) -> None:
+    """Only fresh idle status with complete counts can authorize native leave."""
+
+    for busy in (True, False):
+        pipe.evaluate(
+            page,
+            "window.fixtureAbout.details[0].data.find(item => item.stat_name === 'Sync Cycle Ongoing')"
+            f".stat_value = {json.dumps(busy)}; true",
+        )
+        assert readiness_snapshot()["ready"] is not busy
+    pipe.evaluate(page, "window.fixtureHeldCounts = window.fixtureCounts; window.fixtureCounts = null; true")
+    assert readiness_snapshot()["ready"] is False
+    pipe.evaluate(page, "window.fixtureCounts = window.fixtureHeldCounts; true")
+    assert readiness_snapshot()["ready"] is True
+
+
 def teardown_readiness(pipe: BrowserPipe) -> None:
     """Native callbacks verify teardown, and lost pages request context recovery."""
 
     page = pipe.page("brave://version")
 
     def teardown_snapshot(identity: str = "captured-device") -> dict:
-        result = pipe.evaluate(page, f"{_TEARDOWN_STATE}({json.dumps(identity)})")
+        result = pipe.evaluate(page, f"{_TEARDOWN_STATE}({json.dumps(identity)}, 50)")
         assert isinstance(result, dict)
         checks = result.pop("checks")
         assert set(checks) == set(_TEARDOWN_CHECKS)
@@ -451,9 +605,16 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         """(() => {
           window.cr = {webUIResponse: () => {}, webUIListenerCallback: () => {}};
           window.fixtureRefreshes = 0;
+          window.fixtureAbout = null;
+          window.fixtureCounts = null;
           chrome.send = method => {
             if (method === 'getAllNodes') throw Error('Unexpected query');
             if (method === 'triggerRefresh') window.fixtureRefreshes++;
+            if (method === 'requestDataAndRegisterForUpdates' && window.fixtureAbout) {
+              cr.webUIListenerCallback('onAboutInfoUpdated', structuredClone(window.fixtureAbout));
+              if (window.fixtureCounts) setTimeout(() =>
+                cr.webUIListenerCallback('onEntityCountsUpdated', {entityCounts: window.fixtureCounts}), 0);
+            }
           };
           return true;
         })()""",
@@ -469,8 +630,7 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
     about["type_status"] = [{"name": "Device Info", "state": "Running", "status": "ok"}]
     pipe.evaluate(
         page,
-        "(() => { const {webUIListenerCallback} = window.cr; "
-        f"webUIListenerCallback('onAboutInfoUpdated', {json.dumps(about)}); return true; }})()",
+        f"window.fixtureAbout = {json.dumps(about)}; true",
     )
     # Unrelated counts and stale downloads cannot certify the captured device.
     for data_type, entries, live, offset, ready in (
@@ -482,18 +642,25 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         pipe.evaluate(
             page,
             "(() => { const {webUIListenerCallback} = window.cr; "
-            f"webUIListenerCallback('onEntityCountsUpdated', {{entityCounts: {{dataType: {json.dumps(data_type)}, "
-            f"entities: {entries}, nonTombstoneEntities: {live}}}}}); "
+            f"window.fixtureCounts = {{dataType: {json.dumps(data_type)}, "
+            f"entities: {entries}, nonTombstoneEntities: {live}}}; "
             f"webUIListenerCallback('onProtocolEvent', {{time: Date.now() + {offset}, "
             "type: 'GetUpdates Response', details: 'Received 0 update(s).'}); return true; })()",
         )
-        assert teardown_snapshot() == {"active": True, "ready": ready, "matches": True, "needsNavigation": False}
+        responding = data_type == "Device Info"
+        assert teardown_snapshot() == {
+            "active": responding,
+            "ready": ready,
+            "matches": responding,
+            "needsNavigation": False,
+        }
     assert teardown_snapshot("another-device") == {
         "active": True,
         "ready": True,
         "matches": False,
         "needsNavigation": False,
     }
+    fresh_teardown_diagnostics(pipe, page, teardown_snapshot)
     acknowledged = device_removal_acknowledgement(pipe, page)
     # A navigation discards all observer state. Recover the owned page and require
     # fresh evidence; a previously ready context must not authorize device removal.
@@ -710,7 +877,7 @@ def main() -> None:
         environment = DesktopSession.environment()
         with BrowserPipe(arguments, environment) as pipe:
             requested_page(pipe)
-            native = NativeSync(pipe, directory + "/Default")
+            native = delayed_profile_identity(pipe, directory + "/Default")
             assert len(native.code().split()) == 24
             settings_callbacks(pipe)
             pipe.call("Target.createTarget", {"url": "data:text/plain,workstation-session-fixture"})

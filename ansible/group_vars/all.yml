@@ -34,6 +34,10 @@ workstation_manager:
       # The managed GNOME clipboard extension; inherit these pins in private overrides.
       version: "71"
       sha256: "687cb404f9540958ddb0c1de638970572cef73f22f016e5d6c6d6f5d4cd55f97"
+    system_monitor:
+      # The managed GNOME top-bar system monitor (Vitals); inherit these pins in private overrides.
+      version: "86"
+      sha256: "0c7df95d7ad2ab509d9bd892622e8df501f9f719cc079af28b29c936d1d8b97a"
     flatpak:
       # Default remote for managed Flatpak applications.
       remote: flathub

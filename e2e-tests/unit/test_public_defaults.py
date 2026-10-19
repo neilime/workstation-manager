@@ -19,6 +19,7 @@ def test_public_defaults_preserve_configured_versions_and_desktop_preferences(
         ("development", "mise"),
         ("home_environment", "chezmoi"),
         ("desktop", "clipboard_indicator"),
+        ("desktop", "system_monitor"),
     ):
         assert resolved[section][tool]["version"] == public_defaults[section][tool]["version"]
     assert resolved["development"]["mise"]["tools"] == public_defaults["development"]["mise"]["tools"]

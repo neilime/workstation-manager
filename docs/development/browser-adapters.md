@@ -78,6 +78,13 @@ attachment contents and CLI output.
 Cleanup loads `tasks_from: metadata` before calling the inspection entrypoint;
 profile-directory drift does not require avatar images.
 
+Live recovery refreshes the Bitwarden vault before reading records and again
+before accepting recovery-code verification. Failed `bw sync` downloads receive
+up to three retries with a five-second delay, matching collection loading.
+Exhausted retries stop recovery; cached records cannot certify it. Vault writes
+are not retried, and failures report only the operation, exit status, and attempt
+count without CLI output or record identifiers.
+
 The loader reads `secrets.bitwarden.browser_profiles_collection_id`. An empty
 selector produces `[]`; a configured collection must be accessible and nonempty.
 See the [user record schema](../usage/browser.md#configure-recovery).
@@ -139,7 +146,10 @@ DevTools pipes. It opens no debugging port and does not copy profiles, bypass
 browser policies, disable the sandbox, or change password-storage backends.
 Only the selected profile's native code reaches the vault helper, in memory.
 Automation waits for the requested internal URL and a fully loaded document
-before calling that page's APIs. Native module imports use canonical `chrome://`
+before calling that page's APIs. Profile identity awaits the version page's native
+`requestPathInfo` response; the displayed path can still be empty after document
+loading completes. Only an exact profile match permits access to Sync settings.
+Native module imports use canonical `chrome://`
 resource URLs independently of the page's `brave://` base URL.
 Settings requests use the page's existing native callbacks, preserving its own
 responses and listeners. Importing a separate `cr.js` into the bundled settings
@@ -186,10 +196,12 @@ stays enabled so bindings survive diagnostic-page navigation; only the fixed
 acknowledgement signal is retained from runtime events.
 The observer remains installed during a bounded wait for that signal, including
 events delivered after the native operation's callback.
-Each native node query is bounded within the overall verification deadline.
-Missing replies remain unverified and are retried; late replies do not count as
-fresh observations. Explicit native rejections and broken automation connections
-still stop recovery.
+Each observation requests fresh native status and waits for asynchronous counts
+for every running data type. Status and node queries share one bounded deadline;
+a status replacement during node aggregation invalidates the observation.
+Missing replies remain unverified and are retried; replies arriving after an
+observation times out cannot complete that observation. Explicit native
+rejections and broken automation connections still stop recovery.
 Loss of diagnostic page state starts a new fresh-download check.
 Timeout errors list incomplete checks and allowlisted commit error categories
 from the same browser process. Only fixed categories, boolean results, and numeric

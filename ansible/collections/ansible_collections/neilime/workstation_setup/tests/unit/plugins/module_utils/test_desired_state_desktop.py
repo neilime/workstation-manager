@@ -91,26 +91,23 @@ def test_browser_selector_accepts_future_adapter_identifiers(with_tool_versions)
     assert normalized["desktop"]["browser"] == "example_browser2"
 
 
+@pytest.mark.parametrize("extension", ["clipboard_indicator", "system_monitor"])
 @pytest.mark.parametrize("field", ["version", "sha256"])
-def test_clipboard_indicator_requires_pins(with_tool_versions, field):
-    """The default clipboard manager cannot install an unpinned artifact."""
+def test_managed_gnome_extension_requires_pins(with_tool_versions, extension, field):
+    """A managed GNOME extension cannot install an unpinned artifact."""
     config = with_tool_versions({})
-    del config["desktop"]["clipboard_indicator"][field]
+    del config["desktop"][extension][field]
     normalizer = DesiredStateConfigNormalizer()
     with pytest.raises(ValueError, match="explicit valid pin"):
         normalizer.normalize(config)
 
 
-def test_conflicting_clipboard_package_is_rejected(with_tool_versions):
-    """Only the managed GNOME extension may provide clipboard history."""
-    with pytest.raises(ValueError, match="CopyQ"):
-        DesiredStateConfigNormalizer().normalize(
-            with_tool_versions(
-                {
-                    "desktop": {"flatpak": {"packages": ["com.github.hluk.copyq"]}},
-                }
-            )
-        )
+@pytest.mark.parametrize("extension", ["clipboard_indicator", "system_monitor"])
+def test_managed_gnome_extension_rejects_placeholder_digest(with_tool_versions, extension):
+    """An all-zero digest must fail during configuration validation before any workstation changes."""
+    config = with_tool_versions({"desktop": {extension: {"sha256": "0" * 64}}})
+    with pytest.raises(ValueError, match=rf"desktop\.{extension}\.sha256.*all-zero placeholder"):
+        DesiredStateConfigNormalizer().normalize(config)
 
 
 def test_duplicate_flatpak_scanner_is_rejected(with_tool_versions):

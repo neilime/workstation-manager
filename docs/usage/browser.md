@@ -85,6 +85,10 @@ unrelated browser data and does not update Bitwarden recovery words. Brave close
 safely for recovery and reopens if it was running. Dry runs preview recovery
 without launching Brave or joining chains.
 
+Recovery retries failed Bitwarden vault downloads automatically. If they still
+fail, setup or backup stops without marking browser recovery verified. Check
+network and vault access before rerunning the command.
+
 If enrollment reports server throttling, check **Settings → Sync → Manage your
 synced devices** from a profile already connected to that chain. Brave limits the
 number of connected devices. Remove only devices you no longer use, then rerun

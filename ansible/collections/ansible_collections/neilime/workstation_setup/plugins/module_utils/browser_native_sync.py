@@ -22,6 +22,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 
 _DIAGNOSTIC_CHECKS = (
+    "Status Response",
     "Transport State",
     "User Actionable Error",
     "Sync Feature Enabled",
@@ -80,76 +81,131 @@ _GET_NODES = r"""(async timeoutMs => {
   } finally { clearTimeout(timer); }
 })"""
 
-_SNAPSHOT = r"""(async (timeoutMs) => {
-  if (!window.workstationSync) await START_SYNC;
-  const {aboutInfo} = await import('chrome://sync-internals/about.js');
-  const stats = Object.fromEntries((aboutInfo?.details || []).flatMap(
-    section => section.data.map(item => [item.stat_name, item.stat_value])));
-  const rows = (aboutInfo?.type_status || []).filter(row => row.status !== 'header');
-  const active = rows.filter(row => row.state === 'Running');
-  const good = {
-    'Transport State': 'Active', 'User Actionable Error': 'None',
-    'Sync Feature Enabled': true, 'Setup In Progress': false,
-    'Sync First-Time Setup Complete': true, 'Sync Cycle Ongoing': false,
-    'Throttled or Backoff': false, 'Cryptographer Ready To Encrypt': true,
-    'Cryptographer Has Pending Keys': false, 'GetKey Step Failed': false,
-    'Download Step Result': 'Success', 'Commit Step Result': 'Success'
-  };
-  const checks = Object.fromEntries(Object.entries(good).map(([key, value]) => [key, stats[key] === value]));
-  checks['Server Connection'] = typeof stats['Server Connection'] === 'string'
-    && stats['Server Connection'].startsWith('OK');
-  checks['Auth Error'] = typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK');
-  checks['Actionable Error'] = aboutInfo?.actionable_error_detected === false;
-  checks['Unrecoverable Error'] = aboutInfo?.unrecoverable_error_detected === false;
-  const required = ['Bookmarks', 'Passwords', 'Preferences', 'Extensions', 'Sessions', 'Device Info'];
-  checks['Required Data Types'] = required.every(
-    name => active.some(row => row.name === name));
-  checks['Data Type Status'] = rows.every(
-    row => row.status === 'ok' || (row.status === 'severity_info' && row.state === 'Not Running'));
-  const healthy = Object.values(checks).every(value => value);
-  checks['Entity Response'] = false;
-  checks['Entity Counts'] = false;
-  checks['Entity Coverage'] = false;
-  checks['Entity Metadata'] = false;
-  let pending = true;
-  if (healthy) {
-    // Native node aggregation waits for every data type and may lose a callback
-    // during reconfiguration. A missing reply is incomplete evidence, not a
-    // failed DevTools connection. Bound this request so the next poll can retry.
-    const groups = await BOUNDED_NODES(timeoutMs);
-    checks['Entity Response'] = Array.isArray(groups);
-    // Counts also cover tombstones omitted by getAllNodes. A deletion must have
-    // been acknowledged and removed from the native tracker before we succeed.
-    const countsReady = active.every(row => Number.isInteger(row.num_entries)
-      && Number.isInteger(row.num_live) && row.num_entries === row.num_live);
-    const coverageReady = Array.isArray(groups) && active.every(row => groups.some(group =>
-      group.type === row.name && Array.isArray(group.nodes)
-        && group.nodes.filter(node => node.metadata).length === row.num_live));
-    const nodesReady = Array.isArray(groups) && groups.every(group =>
-      Array.isArray(group.nodes) && group.nodes.every(node => {
-        if (!node.metadata && node.PARENT_ID === 'r' && node.IS_DIR === true && group.type !== 'Nigori') return true;
-        const metadata = node.metadata;
-        if (!metadata) return false;
-        const sequence = metadata.sequence_number;
-        const acknowledged = metadata.acked_sequence_number;
-        return /^\d+$/.test(String(sequence)) && /^\d+$/.test(String(acknowledged))
-          && BigInt(sequence) === BigInt(acknowledged);
+_GET_ABOUT = r"""(async (timeoutMs, callbacks) => {
+  const {addWebUiListener, removeWebUiListener} = callbacks;
+  const listeners = [];
+  let timer;
+  try {
+    return await new Promise(resolve => {
+      let current;
+      const counts = new Map();
+      const complete = () => {
+        if (!current) return;
+        const rows = current.type_status || [];
+        if (!rows.filter(row => row.state === 'Running').every(row => counts.has(row.name))) return;
+        resolve({info: current, rows: rows.map(row => ({...row, ...counts.get(row.name)}))});
+      };
+      listeners.push(addWebUiListener('onAboutInfoUpdated', info => {
+        current = info;
+        counts.clear();
+        complete();
       }));
-    checks['Entity Counts'] = countsReady;
-    checks['Entity Coverage'] = coverageReady;
-    checks['Entity Metadata'] = nodesReady;
-    pending = !countsReady || !coverageReady || !nodesReady;
+      listeners.push(addWebUiListener('onEntityCountsUpdated', update => {
+        const count = update?.entityCounts;
+        if (!current || typeof count?.dataType !== 'string'
+            || !Number.isInteger(count.entities) || !Number.isInteger(count.nonTombstoneEntities)) return;
+        counts.set(count.dataType, {num_entries: count.entities, num_live: count.nonTombstoneEntities});
+        complete();
+      }));
+      timer = setTimeout(() => resolve(null), timeoutMs);
+      chrome.send('requestDataAndRegisterForUpdates');
+    });
+  } finally {
+    clearTimeout(timer);
+    listeners.forEach(removeWebUiListener);
   }
-  // Initialization can discard a refresh. An idle active engine also needs retries
-  // after failed downloads or while uploads and deletions await acknowledgement.
-  // Native refresh schedules both download and commit work; verification stays strict.
-  if (stats['Transport State'] === 'Active' && stats['Sync Cycle Ongoing'] === false
-      && (pending || !window.workstationSync.downloaded)) chrome.send('triggerRefresh');
-  chrome.send('requestDataAndRegisterForUpdates');
-  checks['Fresh Download'] = window.workstationSync.downloaded === true;
-  window.workstationSync.checks = checks;
-  return {healthy, pending, fresh: window.workstationSync.downloaded === true};
-})""".replace("BOUNDED_NODES", _GET_NODES).replace("START_SYNC", _START)
+})"""
+
+_SNAPSHOT = (
+    r"""(async (timeoutMs) => {
+  if (!window.workstationSync) await START_SYNC;
+  const deadline = performance.now() + timeoutMs;
+  const {addWebUiListener, removeWebUiListener} = await import('chrome://resources/js/cr.js');
+  let latest;
+  const listener = addWebUiListener('onAboutInfoUpdated', info => { latest = info; });
+  try {
+    // Cycle-completion notifications can precede the native idle-state update.
+    // Request current status and its asynchronous counts instead of trusting the
+    // page's cached object, which is replaced on every status notification.
+    const response = await BOUNDED_ABOUT(
+      Math.max(1, deadline - performance.now()), {addWebUiListener, removeWebUiListener});
+    const aboutInfo = response?.info;
+    const stats = Object.fromEntries((aboutInfo?.details || []).flatMap(
+      section => section.data.map(item => [item.stat_name, item.stat_value])));
+    const rows = (response?.rows || []).filter(row => row.status !== 'header');
+    const active = rows.filter(row => row.state === 'Running');
+    const good = {
+      'Transport State': 'Active', 'User Actionable Error': 'None',
+      'Sync Feature Enabled': true, 'Setup In Progress': false,
+      'Sync First-Time Setup Complete': true, 'Sync Cycle Ongoing': false,
+      'Throttled or Backoff': false, 'Cryptographer Ready To Encrypt': true,
+      'Cryptographer Has Pending Keys': false, 'GetKey Step Failed': false,
+      'Download Step Result': 'Success', 'Commit Step Result': 'Success'
+    };
+    const checks = Object.fromEntries(Object.entries(good).map(([key, value]) => [key, stats[key] === value]));
+    checks['Status Response'] = aboutInfo !== undefined && aboutInfo === latest;
+    checks['Server Connection'] = typeof stats['Server Connection'] === 'string'
+      && stats['Server Connection'].startsWith('OK');
+    checks['Auth Error'] = typeof stats['Auth Error'] === 'string' && stats['Auth Error'].startsWith('OK');
+    checks['Actionable Error'] = aboutInfo?.actionable_error_detected === false;
+    checks['Unrecoverable Error'] = aboutInfo?.unrecoverable_error_detected === false;
+    const required = ['Bookmarks', 'Passwords', 'Preferences', 'Extensions', 'Sessions', 'Device Info'];
+    checks['Required Data Types'] = required.every(
+      name => active.some(row => row.name === name));
+    checks['Data Type Status'] = rows.every(
+      row => row.status === 'ok' || (row.status === 'severity_info' && row.state === 'Not Running'));
+    let healthy = Object.values(checks).every(value => value);
+    checks['Entity Response'] = false;
+    checks['Entity Counts'] = false;
+    checks['Entity Coverage'] = false;
+    checks['Entity Metadata'] = false;
+    let pending = true;
+    if (healthy) {
+      // Native node aggregation waits for every data type and may lose a callback
+      // during reconfiguration. A missing reply is incomplete evidence, not a
+      // failed DevTools connection. Bound this request so the next poll can retry.
+      const groups = await BOUNDED_NODES(Math.max(1, deadline - performance.now()));
+      checks['Entity Response'] = Array.isArray(groups);
+      // Counts also cover tombstones omitted by getAllNodes. A deletion must have
+      // been acknowledged and removed from the native tracker before we succeed.
+      const countsReady = active.every(row => Number.isInteger(row.num_entries)
+        && Number.isInteger(row.num_live) && row.num_entries === row.num_live);
+      const coverageReady = Array.isArray(groups) && active.every(row => groups.some(group =>
+        group.type === row.name && Array.isArray(group.nodes)
+          && group.nodes.filter(node => node.metadata).length === row.num_live));
+      const nodesReady = Array.isArray(groups) && groups.every(group =>
+        Array.isArray(group.nodes) && group.nodes.every(node => {
+          if (!node.metadata && node.PARENT_ID === 'r' && node.IS_DIR === true && group.type !== 'Nigori') return true;
+          const metadata = node.metadata;
+          if (!metadata) return false;
+          const sequence = metadata.sequence_number;
+          const acknowledged = metadata.acked_sequence_number;
+          return /^\d+$/.test(String(sequence)) && /^\d+$/.test(String(acknowledged))
+            && BigInt(sequence) === BigInt(acknowledged);
+        }));
+      checks['Entity Counts'] = countsReady;
+      checks['Entity Coverage'] = coverageReady;
+      checks['Entity Metadata'] = nodesReady;
+      pending = !countsReady || !coverageReady || !nodesReady;
+    }
+    if (aboutInfo !== latest) {
+      checks['Status Response'] = false;
+      healthy = false;
+      pending = true;
+    }
+    // Initialization can discard a refresh. An idle active engine also needs retries
+    // after failed downloads or while uploads and deletions await acknowledgement.
+    // Native refresh schedules both download and commit work; verification stays strict.
+    if (checks['Status Response'] && stats['Transport State'] === 'Active' && stats['Sync Cycle Ongoing'] === false
+        && (pending || !window.workstationSync.downloaded)) chrome.send('triggerRefresh');
+    checks['Fresh Download'] = window.workstationSync.downloaded === true;
+    window.workstationSync.checks = checks;
+    return {healthy, pending, fresh: window.workstationSync.downloaded === true};
+  } finally { removeWebUiListener(listener); }
+})""".replace("BOUNDED_NODES", _GET_NODES)
+    .replace("BOUNDED_ABOUT", _GET_ABOUT)
+    .replace("START_SYNC", _START)
+)
 
 
 # Settings bundles cr.js, whose standalone module rejects a second initialization.
@@ -274,7 +330,11 @@ class NativeSync:
         version = pipe.page("brave://version")
         matches = self._evaluate(
             version,
-            f"document.querySelector('#profile_path')?.textContent === {json.dumps(profile_path)}",
+            "(async () => {"
+            " const {sendWithPromise} = await import('chrome://resources/js/cr.js');"
+            " const paths = await sendWithPromise('requestPathInfo');"
+            f" return paths?.profilePath === {json.dumps(profile_path)};"
+            " })()",
             "checking the selected profile",
         )
         if matches is not True:

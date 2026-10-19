@@ -274,6 +274,16 @@ def test_native_profile_identity_must_match_before_accessing_recovery_words() ->
     assert pipe.page.call_count == 1
 
 
+def test_profile_identity_query_failure_stops_before_sync() -> None:
+    """A missing native profile response must fail before opening recovery settings."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = BrowserProtocolError("Brave's automation request timed out")
+    with pytest.raises(BrowserProtocolError, match="checking the selected profile.*timed out"):
+        native.NativeSync(pipe, "/fixture/Default")
+    pipe.page.assert_called_once_with("brave://version")
+
+
 def test_native_sync_requires_the_existing_page_callbacks() -> None:
     """Missing WebUI callbacks stop recovery before any code can be accessed."""
 

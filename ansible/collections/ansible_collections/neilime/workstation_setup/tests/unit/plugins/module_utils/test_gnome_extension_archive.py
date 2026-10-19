@@ -1,4 +1,4 @@
-"""Reject incompatible or unsafe extension artifacts before switching managers."""
+"""Reject incompatible or unsafe managed GNOME extension artifacts before installation."""
 
 from __future__ import annotations
 
@@ -11,6 +11,14 @@ import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.clipboard_archive import (
     ClipboardArchive,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.gnome_extension_archive import (
+    GnomeExtensionArchive,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.system_monitor_archive import (
+    SystemMonitorArchive,
+)
+
+IDENTITY = ("synthetic@example.test", "Synthetic Extension")
 
 
 def archive_fixture(tmp_path, **metadata):
@@ -19,25 +27,26 @@ def archive_fixture(tmp_path, **metadata):
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             "metadata.json",
-            json.dumps(
-                {"uuid": "clipboard-indicator@tudmotu.com", "version": 123, "shell-version": ["999"], **metadata}
-            ),
+            json.dumps({"uuid": IDENTITY[0], "version": 123, "shell-version": ["999"], **metadata}),
         )
         archive.writestr("extension.js", "// synthetic extension")
     return path
 
 
+def archive_arguments(path, **overrides):
+    """Build synthetic pins independent of maintained releases and the installed Shell."""
+    return {
+        "path": str(path),
+        "checksum": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "version": "123",
+        "shell_version": "GNOME Shell 999.2",
+        **overrides,
+    }
+
+
 def validate(path, **overrides):
-    """Validate against synthetic pins and a synthetic future Shell release."""
-    return ClipboardArchive.validate(
-        **{
-            "path": str(path),
-            "checksum": hashlib.sha256(path.read_bytes()).hexdigest(),
-            "version": "123",
-            "shell_version": "GNOME Shell 999.2",
-            **overrides,
-        }
-    )
+    """Exercise the common archive safety contract with a synthetic extension."""
+    return GnomeExtensionArchive.validate(**archive_arguments(path, **overrides), identity=IDENTITY)
 
 
 def test_compatible_pinned_archive_is_read_only(tmp_path):
@@ -77,6 +86,21 @@ def test_unsafe_archive_members_fail(tmp_path, name):
 
 
 def test_other_extension_identity_fails(tmp_path):
-    """A different extension cannot satisfy the clipboard contract."""
+    """An artifact must belong to the configured extension."""
     with pytest.raises(ValueError, match="identity"):
         validate(archive_fixture(tmp_path, uuid="other@example.test"))
+
+
+@pytest.mark.parametrize(
+    ("validator", "uuid"),
+    [
+        pytest.param(ClipboardArchive, "clipboard-indicator@tudmotu.com", id="clipboard"),
+        pytest.param(SystemMonitorArchive, "Vitals@CoreCoding.com", id="system-monitor"),
+    ],
+)
+def test_managed_extension_adapter_requires_its_identity(tmp_path, validator, uuid):
+    """Each managed adapter accepts its own extension and rejects other artifacts."""
+    path = archive_fixture(tmp_path, uuid=uuid)
+    assert validator.validate(**archive_arguments(path))["uuid"] == uuid
+    with pytest.raises(ValueError, match="identity"):
+        validator.validate(**archive_arguments(archive_fixture(tmp_path)))
