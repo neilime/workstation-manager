@@ -113,6 +113,34 @@ def test_identical_personal_entry_is_not_silently_adopted(tmp_path, servers):
     assert not state.exists()
 
 
+@pytest.mark.parametrize(
+    "personal",
+    [
+        '[projects."/home/test/projects/example"]\ntrust_level = "trusted"\n',
+        '[profiles.personal]\nmodel = "personal-model"\n',
+        '[mcp_servers.personal]\ncommand = "/personal"\n',
+    ],
+)
+def test_toml_user_tables_inside_managed_block_are_never_deleted(tmp_path, servers, personal):
+    """Client-inserted personal tables must stop a destructive MCP update or removal."""
+    path, state = tmp_path / "config", tmp_path / "state"
+    manager = AiProviderConfiguration()
+    manager.reconcile(path, state, "toml", "mcp_servers", servers)
+    path.write_text(path.read_text().replace(manager.END, personal + manager.END))
+    before, ownership = path.read_bytes(), state.read_bytes()
+
+    for desired, check in [(servers, True), (servers, False), ({}, False)]:
+        with pytest.raises(ValueError, match="user entries"):
+            manager.reconcile(path, state, "toml", "mcp_servers", desired, check=check)
+        assert path.read_bytes() == before
+        assert state.read_bytes() == ownership
+
+    # Moving the same personal table outside the marker permits safe reconciliation.
+    path.write_text(path.read_text().replace(personal + manager.END, manager.END + personal))
+    manager.reconcile(path, state, "toml", "mcp_servers", {})
+    assert personal in path.read_text()
+
+
 def test_duplicate_jsonc_properties_are_rejected_without_exposing_values():
     """Ambiguous properties must not bypass ownership or leak source data."""
     with pytest.raises(ValueError, match="duplicate") as error:

@@ -325,7 +325,10 @@ Docker's saved credential when the GitHub token changes. Rerun setup after
 changing GitHub accounts or credentials. Dry runs inspect configuration and saved
 credentials without authorizing permissions or logging into the registry.
 
-Unattended setup requires a saved login with `write:packages` already granted.
+Unattended setup requires a saved login with `write:packages` already granted,
+or a separate `WORKSTATION_MANAGER_GHCR_TOKEN` with pull/push permission. A separate
+registry token leaves the GitHub CLI login intact; see
+[automation credentials](../development/README.md#automated-runs).
 To grant it interactively as the managed user, run
 `gh auth refresh --hostname github.com --scopes write:packages`, then rerun setup.
 Keep the desktop keyring unlocked. Setup does not publish or delete any images.
@@ -341,9 +344,15 @@ fixed default directory and any explicitly added paths.
 
 Setup also installs `workstation-manager-git-project-report`. Run it manually to
 print the Git repositories under `user.projects_directory` that still have local
-work in progress. Setup always enables daily desktop notifications and installs
-`libnotify-bin`. The timer starts in the active user session, or at the next
-graphical login when no session is available.
+work in progress. Setup always enables daily desktop notifications. Click the
+notification or **Open full report** to open the latest complete report in your
+default text viewer, even after the scheduled job has finished. Run
+`workstation-manager-git-project-report --notify` to refresh it on demand.
+The report is saved privately in
+`~/.local/state/workstation-manager/git-project-report/latest.txt`, or under
+`$XDG_STATE_HOME` when set.
+The timer starts in the active user session, or at the next graphical login when
+no session is available.
 
 Setup always enables dark mode and shows Trash in Ubuntu Dock. The
 [public defaults](../../ansible/group_vars/all.yml) select Brave and define the

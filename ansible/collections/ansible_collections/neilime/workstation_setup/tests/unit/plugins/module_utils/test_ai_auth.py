@@ -15,6 +15,7 @@ def provider_authentication(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-inherited-secret")
     monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "synthetic-inherited-secret")
     monkeypatch.setenv("GH_TOKEN", "synthetic-inherited-secret")
+    monkeypatch.setenv("WORKSTATION_MANAGER_GHCR_TOKEN", "synthetic-registry-secret")
     monkeypatch.setenv("CODEX_HOME", "/other/user")
     monkeypatch.setenv("COPILOT_HOME", "/other/user")
     state = {"authenticated": True, "calls": [], "login": "fixture", "host": "https://github.com"}
@@ -25,7 +26,10 @@ def provider_authentication(tmp_path, monkeypatch):
         assert environment["HOME"] == str(tmp_path)
         assert environment["CODEX_HOME"] == str(tmp_path / ".codex")
         assert environment["COPILOT_HOME"] == str(tmp_path / ".copilot")
-        assert not {"OPENAI_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN"} & environment.keys()
+        assert (
+            not {"OPENAI_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "WORKSTATION_MANAGER_GHCR_TOKEN"}
+            & environment.keys()
+        )
         assert options["cwd"] == tmp_path
         if argv[1:] == ["login", "status"]:
             return subprocess.CompletedProcess(

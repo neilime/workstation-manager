@@ -17,6 +17,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     bash \
+    dbus-daemon \
     git \
     libglib2.0-bin \
     locales \
@@ -24,6 +25,7 @@ RUN apt-get update && \
     openssh-client \
     procps \
     python3 \
+    python3-gi \
     python3-venv \
     sudo-rs && \
     sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \

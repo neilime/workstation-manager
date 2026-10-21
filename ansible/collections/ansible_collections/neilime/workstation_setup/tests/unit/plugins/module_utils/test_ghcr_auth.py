@@ -19,6 +19,7 @@ def registry_fixture(tmp_path, monkeypatch):
     """Model Docker and Secret Service without contacting a registry or the real keyring."""
     monkeypatch.setenv("DOCKER_CONFIG", "/other/docker")
     monkeypatch.setenv("DOCKER_AUTH_CONFIG", "inherited-secret")
+    monkeypatch.setenv("WORKSTATION_MANAGER_GHCR_TOKEN", TOKEN)
     auth = GhcrAuthentication(tmp_path, "fixture")
     auth.github = Mock()
     auth.github.ensure.return_value = {"changed": False, "authenticated": True}
@@ -28,6 +29,7 @@ def registry_fixture(tmp_path, monkeypatch):
     def run(command, **options):
         assert not any(key.startswith("DOCKER_") for key in options["env"])
         assert "GH_TOKEN" not in options["env"]
+        assert "WORKSTATION_MANAGER_GHCR_TOKEN" not in options["env"]
         assert TOKEN not in command
         state["calls"].append(command)
         if command[0] == "/usr/bin/docker":
@@ -83,6 +85,17 @@ def test_rotated_github_token_replaces_stale_docker_credential(registry):
     state["credential"]["Secret"] = "stale-token"
     assert auth.ensure()["changed"]
     assert state["credential"]["Secret"] == TOKEN
+
+
+def test_explicit_registry_token_preserves_the_separate_github_login(registry):
+    """Automation can use a package-scoped job token without replacing its GitHub user credential."""
+    auth, state = registry
+    auth.github.read_token.side_effect = AssertionError("The user's GitHub token must not be used for this login")
+    assert auth.ensure(token=TOKEN)["authenticated"]
+    auth.github.ensure.assert_called_once_with(terminal="", check_mode=False, scopes=())
+    assert state["credential"] == {"Username": "fixture", "Secret": TOKEN}
+    assert TOKEN not in auth.path.read_text()
+    assert not auth.ensure(token=TOKEN)["changed"]
 
 
 @pytest.mark.parametrize("failure", ["registry", "storage"])

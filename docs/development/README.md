@@ -296,6 +296,7 @@ and `GITHUB_ACTIONS` environment flags do not change execution.
 | Environment variable               | Purpose                                                                |
 | ---------------------------------- | ---------------------------------------------------------------------- |
 | `WORKSTATION_MANAGER_GITHUB_TOKEN` | Token for GitHub CLI sign-in when no valid saved keyring login exists. |
+| `WORKSTATION_MANAGER_GHCR_TOKEN`   | Optional separate GHCR credential, such as a GitHub Actions job token. |
 | `BW_SESSION`                       | Reuse an already-unlocked Bitwarden CLI session instead of prompting.  |
 | `BITWARDEN_CLIENT_ID`              | Bitwarden API client ID.                                               |
 | `BITWARDEN_CLIENT_SECRET`          | Bitwarden API client secret.                                           |
@@ -304,8 +305,13 @@ and `GITHUB_ACTIONS` environment flags do not change execution.
 Unattended runs require an unlocked desktop keyring and either a valid saved
 GitHub CLI login or a token accepted by `gh auth login --with-token`. They run
 the same GitHub authentication and Git integration steps as interactive use.
-For github.com, that login also requires `write:packages` for Docker's GHCR
-authentication; unattended runs cannot grant missing permissions.
+For github.com, Docker uses that login with `write:packages` by default;
+unattended runs cannot grant missing permissions. Set
+`WORKSTATION_MANAGER_GHCR_TOKEN` to supply a separate registry credential without
+changing the GitHub CLI login. Its issuer must grant pull and push permissions
+for the intended images. GitHub Actions uses its job token with `packages: write`;
+this token expires when the job ends. Setup verifies registry authentication and
+keyring storage; image access also depends on package and organization permissions.
 Bootstrap and installation downloads reuse the verified saved login.
 
 Setup passes the GitHub token to mise and GitHub CLI extension commands through
@@ -438,8 +444,11 @@ Provide these credentials through the environment without committing them:
 
 - `BITWARDEN_CLIENT_ID`, `BITWARDEN_CLIENT_SECRET`, and `BITWARDEN_PASSWORD` for
   the configured vault.
-- `WORKSTATION_MANAGER_GITHUB_TOKEN` for private configuration repository access
-  and GHCR pull/push authentication, including `write:packages`.
+- `WORKSTATION_MANAGER_GITHUB_TOKEN` for private configuration repository access.
+- For GHCR, either that saved login must have `write:packages`, or supply
+  `WORKSTATION_MANAGER_GHCR_TOKEN` with pull/push permission. The CI workflow passes
+  its short-lived job token with `packages: write` separately from the private
+  configuration credential.
 
 Tests download the public entrypoint from GitHub and exercise the remote
 bootstrap workflow. The default source is the checkout's `origin` and current

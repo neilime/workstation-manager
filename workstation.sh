@@ -9,6 +9,7 @@ RESTORE_ARCHIVE_PATH="${WORKSTATION_MANAGER_RESTORE_ARCHIVE:-}"
 # Automation / CI credentials. Leave unset for normal interactive account sign-in.
 # All three Bitwarden values are needed to replace the email/password prompts.
 GITHUB_TOKEN_VALUE="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}"
+GHCR_TOKEN_VALUE="${WORKSTATION_MANAGER_GHCR_TOKEN:-}"
 BITWARDEN_CLIENT_ID_VALUE="${BITWARDEN_CLIENT_ID:-}"
 BITWARDEN_CLIENT_SECRET_VALUE="${BITWARDEN_CLIENT_SECRET:-}"
 BITWARDEN_PASSWORD_VALUE="${BITWARDEN_PASSWORD:-}"
@@ -327,6 +328,7 @@ run_ansible_pull_captured_with_script() (
 		printf 'COLLECTIONS_INSTALL_DIR=%s\n' "$(shell_quote "$COLLECTIONS_INSTALL_DIR")"
 		printf 'PRIVATE_OVERRIDE_LOCAL_FILE=%s\n' "$(shell_quote "$PRIVATE_OVERRIDE_LOCAL_FILE")"
 		printf 'GITHUB_TOKEN_VALUE=%s\n' "$(shell_quote "$GITHUB_TOKEN_VALUE")"
+		printf 'GHCR_TOKEN_VALUE=%s\n' "$(shell_quote "$GHCR_TOKEN_VALUE")"
 		printf 'REPOSITORY_URL=%s\n' "$(shell_quote "$REPOSITORY_URL")"
 		printf 'REPOSITORY_BRANCH=%s\n' "$(shell_quote "$REPOSITORY_BRANCH")"
 		printf 'ANSIBLE_CHECKOUT_DIR=%s\n' "$(shell_quote "$ANSIBLE_CHECKOUT_DIR")"
@@ -785,6 +787,9 @@ run_ansible_pull() {
 			GIT_CONFIG_COUNT=1 \
 			GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
 			"GIT_CONFIG_VALUE_0=$(github_git_authorization)" "$@"
+	fi
+	if [ -n "$GHCR_TOKEN_VALUE" ]; then
+		set -- "WORKSTATION_MANAGER_GHCR_TOKEN=$GHCR_TOKEN_VALUE" "$@"
 	fi
 
 	interactive_tty_path="$(interactive_terminal_path || true)"

@@ -1,9 +1,50 @@
 ---
-- name: Install the Git project notification dependency
+- name: Install the native GNOME notification dependencies
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
-    name: libnotify-bin
+    name:
+      - python3-gi
+      - gir1.2-glib-2.0
     state: present
+
+- name: Ensure Git report desktop activation directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.local/share/{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  loop:
+    - applications
+    - dbus-1/services
+
+- name: Install the persistent Git report notification handler
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: git_project_report/git_project_notification.py
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/git_project_notification.py"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install the Git report desktop application
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: git_project_report/git-project-report.desktop.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/applications/io.github.neilime.WorkstationGitReport.desktop"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install Git report D-Bus activation
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: git_project_report/git-project-report-dbus.service.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/dbus-1/services/io.github.neilime.WorkstationGitReport.service"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
 
 - name: Install Git project report timer activator
   become: "{{ workstation_manager_use_become }}"
