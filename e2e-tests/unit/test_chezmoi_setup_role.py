@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -26,11 +27,41 @@ TASK_DIRECTORY = (
 )
 
 
+def git(repository: pathlib.Path, *arguments: str) -> str:
+    """Run isolated Git operations without reading host identities or credential helpers."""
+    result = subprocess.run(
+        ["git", "-C", str(repository), *arguments],
+        env={
+            **os.environ,
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_COUNT": "0",
+            "GIT_AUTHOR_NAME": "Fixture",
+            "GIT_AUTHOR_EMAIL": "fixture@example.test",
+            "GIT_COMMITTER_NAME": "Fixture",
+            "GIT_COMMITTER_EMAIL": "fixture@example.test",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    return result.stdout.strip()
+
+
 @pytest.fixture(name="chezmoi_setup")
 def fixture_chezmoi_setup(
     tmp_path: pathlib.Path,
 ) -> tuple[pathlib.Path, dict[str, str]]:
     """Model Chezmoi path selection and failures without modifying real dotfiles."""
+    published = tmp_path / "published"
+    published.mkdir()
+    git(published, "init", "--initial-branch=fixture")
+    (published / "dot_zshrc").write_text("# fixture configuration\n")
+    git(published, "add", ".")
+    git(published, "commit", "-m", "Fixture dotfiles")
+    git(tmp_path, "clone", "--bare", str(published), str(tmp_path / "remote.git"))
+    git(published, "remote", "add", "origin", str(tmp_path / "remote.git"))
     home = tmp_path / "home"
     home.mkdir()
     (home / ".config").mkdir(mode=0o700)
@@ -41,7 +72,7 @@ def fixture_chezmoi_setup(
     binary = tmp_path / "chezmoi"
     binary.write_text(
         f"#!{sys.executable}\n"
-        "import json, os, pathlib, sys\n"
+        "import json, os, pathlib, subprocess, sys\n"
         "args = sys.argv[1:]\n"
         "root = pathlib.Path(os.environ['FIXTURE_ROOT'])\n"
         "with (root / 'calls.jsonl').open('a') as calls:\n"
@@ -55,8 +86,10 @@ def fixture_chezmoi_setup(
         "if not config.is_file():\n"
         "    sys.exit(3)\n"
         "if 'init' in args:\n"
-        "    source.mkdir(parents=True, exist_ok=True)\n"
-        "    (source / 'dot_zshrc').write_text('# fixture configuration\\n')\n"
+        "    if (root / 'fail-init').exists():\n"
+        "        sys.exit('private-initialization-diagnostic')\n"
+        "    subprocess.run(['git', 'clone', str(root / 'remote.git'), str(source)], "
+        "capture_output=True, check=True)\n"
         "    sys.exit(0)\n"
         "if not source.is_dir():\n"
         "    sys.exit(4)\n"
@@ -75,7 +108,8 @@ def fixture_chezmoi_setup(
         "    if (root / 'new-conflict').exists():\n"
         "        print('MM .gitconfig')\n"
         "        sys.exit(0)\n"
-        "    if not (destination / '.zshrc').exists():\n"
+        "    if not (destination / '.zshrc').exists() or "
+        "(destination / '.zshrc').read_text() != (source / 'dot_zshrc').read_text():\n"
         "        print(' A .zshrc')\n"
         "    if not (root / 'applied').exists():\n"
         "        print(' R run_fixture')\n"
@@ -110,8 +144,10 @@ def fixture_chezmoi_setup(
             "Inspect existing baseline user directory permissions",
             "Ensure baseline user directories exist without resetting their permissions",
             "Render the managed Chezmoi machine-data config",
-            "Initialize the managed Chezmoi source repository",
         }:
+            tasks.append(task)
+        elif task["name"] == "Initialize and refresh the managed Chezmoi source":
+            task["ansible.builtin.import_tasks"] = str(TASK_DIRECTORY / "chezmoi_source.yml")
             tasks.append(task)
         elif task["name"] == "Inspect and apply the managed Chezmoi dotfiles":
             task["ansible.builtin.import_tasks"] = str(TASK_DIRECTORY / "chezmoi_apply.yml")
@@ -133,7 +169,12 @@ def fixture_chezmoi_setup(
         },
     )
     env = ansible_environment(
-        tmp_path, HOME=str(home), XDG_DATA_HOME=str(tmp_path / "ide-data"), FIXTURE_ROOT=str(tmp_path)
+        tmp_path,
+        HOME=str(home),
+        XDG_DATA_HOME=str(tmp_path / "ide-data"),
+        FIXTURE_ROOT=str(tmp_path),
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_NOSYSTEM="1",
     )
     return tmp_path, env
 
@@ -178,6 +219,82 @@ def test_preview_does_not_apply_dotfiles(chezmoi_setup) -> None:
     if calls_file.exists():
         calls = [json.loads(line) for line in calls_file.read_text().splitlines()]
         assert not any("apply" in call or "status" in call for call in calls)
+
+
+def test_initial_clone_failure_reports_safe_actionable_diagnostics(chezmoi_setup) -> None:
+    """Private clone failures stop setup before inspecting or applying dotfiles."""
+    root, _environment = chezmoi_setup
+    (root / "fail-init").touch()
+    failed = run_setup(chezmoi_setup)
+    output = failed.stdout + failed.stderr
+    assert failed.returncode != 0
+    assert "Cannot initialize the Chezmoi source" in output
+    assert "private-initialization-diagnostic" not in output
+    assert not (root / "home/.zshrc").exists()
+
+
+def test_repeated_setup_fetches_and_applies_the_latest_published_dotfiles(chezmoi_setup) -> None:
+    """A new remote commit reaches the existing source and target before setup can report success."""
+    root, env = chezmoi_setup
+    env["WORKSTATION_MANAGER_GITHUB_TOKEN"] = "synthetic-source-token"
+    initial = run_setup(chezmoi_setup)
+    assert initial.returncode == 0, initial.stdout + initial.stderr
+    published = root / "published"
+    (published / "dot_zshrc").write_text("# latest published configuration\n")
+    git(published, "commit", "-am", "Publish updated dotfiles")
+    git(published, "push", "origin", "fixture")
+    source = root / "home/.local/share/chezmoi"
+    before = git(source, "rev-parse", "HEAD")
+    preview = run_setup(chezmoi_setup, "--check")
+    assert preview.returncode == 0, preview.stdout + preview.stderr
+    assert git(source, "rev-parse", "HEAD") == before
+    assert (root / "home/.zshrc").read_text() == "# fixture configuration\n"
+    updated = run_setup(chezmoi_setup)
+    assert updated.returncode == 0, updated.stdout + updated.stderr
+    assert git(source, "rev-parse", "HEAD") == git(published, "rev-parse", "HEAD")
+    assert (root / "home/.zshrc").read_text() == "# latest published configuration\n"
+    repeated = run_setup(chezmoi_setup)
+    assert repeated.returncode == 0, repeated.stdout + repeated.stderr
+    assert "changed=0" in repeated.stdout
+    assert "synthetic-source-token" not in updated.stdout + updated.stderr + (source / ".git/config").read_text()
+
+
+@pytest.mark.parametrize("problem", ["edited", "untracked", "ahead", "diverged", "unavailable", "detached"])
+def test_source_update_failures_preserve_source_and_target_without_applying_dotfiles(chezmoi_setup, problem) -> None:
+    """Stale or unpublished source state cannot be silently reused, discarded, or applied."""
+    root, _env = chezmoi_setup
+    initial = run_setup(chezmoi_setup)
+    assert initial.returncode == 0, initial.stdout + initial.stderr
+    source = root / "home/.local/share/chezmoi"
+    published = root / "published"
+    if problem in {"edited", "ahead", "diverged"}:
+        (source / "dot_zshrc").write_text("# preserve unpublished source\n")
+        if problem != "edited":
+            git(source, "commit", "-am", "Unpublished dotfiles")
+    elif problem == "untracked":
+        (source / "untracked-user-file").write_text("private synthetic data\n")
+    elif problem == "unavailable":
+        git(source, "remote", "set-url", "origin", str(root / "missing-private-remote"))
+    else:
+        git(source, "checkout", "--detach")
+    if problem == "diverged":
+        (published / "dot_zshrc").write_text("# different published configuration\n")
+        git(published, "commit", "-am", "Remote changes")
+        git(published, "push", "origin", "fixture")
+    before = git(source, "rev-parse", "HEAD")
+    contents = (source / "dot_zshrc").read_bytes()
+    calls_before = (root / "calls.jsonl").read_bytes()
+    failed = run_setup(chezmoi_setup)
+    output = failed.stdout + failed.stderr
+    assert failed.returncode != 0, output
+    assert "Chezmoi source" in output
+    assert "missing-private-remote" not in output
+    assert git(source, "rev-parse", "HEAD") == before
+    assert (source / "dot_zshrc").read_bytes() == contents
+    assert (root / "home/.zshrc").read_text() == "# fixture configuration\n"
+    assert (root / "calls.jsonl").read_bytes() == calls_before
+    if problem == "untracked":
+        assert (source / "untracked-user-file").read_text() == "private synthetic data\n"
 
 
 @pytest.mark.parametrize("operation", ["status", "apply"])

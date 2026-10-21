@@ -20,7 +20,7 @@ def test_user_state_file(host) -> None:
 
 
 def test_chezmoi_bootstrap_from_tracked_repository(host) -> None:
-    """The setup should clone the tracked Chezmoi repository and render machine data."""
+    """Setup must apply the published tracking revision and render managed machine data."""
 
     # Arrange
     user_name = host.check_output("whoami")
@@ -42,6 +42,11 @@ def test_chezmoi_bootstrap_from_tracked_repository(host) -> None:
     assert chezmoi_git_config.exists
     assert chezmoi_git_config.contains('[remote "origin"]')
     assert chezmoi_git_config.contains("workstation-config")
+    source_path = f"{user_home}/.local/share/chezmoi"
+    assert host.check_output("git -C %s rev-parse HEAD", source_path) == host.check_output(
+        "git -C %s rev-parse '@{upstream}'", source_path
+    )
+    assert not host.check_output("git -C %s status --porcelain --untracked-files=all", source_path)
     shell_config = host.run(
         "chezmoi --config %s --source %s --destination %s verify %s",
         f"{user_home}/.config/chezmoi/chezmoi.yaml",

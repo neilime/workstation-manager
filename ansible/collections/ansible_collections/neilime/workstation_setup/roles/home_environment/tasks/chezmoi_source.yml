@@ -1,0 +1,55 @@
+---
+- name: Initialize the managed Chezmoi source repository
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  vars:
+    workstation_manager_home_environment_chezmoi_token: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}
+  ansible.builtin.command:
+    argv: >-
+      {{ workstation_manager_home_environment_chezmoi_command
+         + ['init', workstation_manager_home_environment_chezmoi_source_url] }}
+    creates: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
+  register: workstation_manager_home_environment_chezmoi_init
+  failed_when: false
+  environment: >-
+    {{
+      {
+        'HOME': workstation_manager_resolved.user.home,
+        'XDG_CONFIG_HOME': workstation_manager_resolved.user.home ~ '/.config',
+        'GIT_TERMINAL_PROMPT': '0',
+      } | combine(
+        {
+          'GIT_CONFIG_COUNT': '1',
+          'GIT_CONFIG_KEY_0': 'http.https://github.com/.extraheader',
+          'GIT_CONFIG_VALUE_0': 'Authorization: Basic '
+            ~ (('x-access-token:' ~ workstation_manager_home_environment_chezmoi_token) | b64encode),
+        }
+        if workstation_manager_home_environment_chezmoi_token | length > 0
+           and workstation_manager_home_environment_chezmoi_source_url.startswith('https://github.com/')
+        else {}
+      )
+    }}
+  no_log: true
+  when: not workstation_manager_home_environment_chezmoi_source_dir_stat.stat.exists
+
+- name: Require successful initialization of the managed Chezmoi source
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_init.rc | default(1) == 0
+    quiet: true
+    fail_msg: >-
+      Cannot initialize the Chezmoi source; check repository access and the managed
+      user's source directory permissions, then rerun setup. Git diagnostics are hidden
+      because they can contain credentials.
+  when: not workstation_manager_home_environment_chezmoi_source_dir_stat.stat.exists
+
+- name: Require the latest published Chezmoi source before dotfile inspection
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.chezmoi_source:
+    source: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
+    github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
