@@ -318,6 +318,9 @@ Docker group access grants root-level control; see
 For `development.github.host: github.com`, setup also logs Docker into `ghcr.io`
 with the configured GitHub account. It reuses the GitHub CLI token and requests
 `write:packages` through browser authorization when that permission is missing.
+The authorization code and prompts appear in your terminal. Browser diagnostic
+output is suppressed; GitHub CLI still reports a browser launch failure and the
+URL to open manually.
 This supports pulling and pushing images allowed by your account's package and
 organization permissions; organization SSO authorization may also be required.
 

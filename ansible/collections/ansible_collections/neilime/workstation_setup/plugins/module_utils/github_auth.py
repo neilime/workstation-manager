@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import uuid
 from pathlib import Path
@@ -91,7 +92,8 @@ class GitHubAuthentication:
         written = False
         try:
             stored = self._run(
-                ["secret-tool", "store", "--label=Workstation credential-store check", *attributes], data=identifier
+                ["secret-tool", "store", "--label=Workstation credential-store check", *attributes],
+                data=identifier,
             )
             written = stored.returncode == 0
             read = self._run(["secret-tool", "lookup", *attributes])
@@ -112,14 +114,33 @@ class GitHubAuthentication:
         if token:
             result = self._run([*command, "--with-token"], data=token)
         else:
-            result = DesktopSession.run_in_terminal(
+            result = self._authorize_in_terminal(
                 [*command, "--web", *(["--scopes", ",".join(scopes)] if scopes else [])],
-                terminal=terminal,
-                home=self.home,
-                environment={key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"},
+                terminal,
             )
         if result.returncode:
             raise ValueError("GitHub login failed; verify account access with gh auth status, then rerun setup")
+
+    def _authorize_in_terminal(self, command: list[str], terminal: str) -> subprocess.CompletedProcess[str]:
+        """Keep native prompts visible while suppressing browser startup output."""
+        browser = self.environment.get("GH_BROWSER", "")
+        if not browser:
+            configured = self._run(["/usr/bin/gh", "config", "get", "browser"])
+            if configured.returncode:
+                raise ValueError("Cannot read GitHub browser configuration; check gh config get browser privately")
+            browser = configured.stdout.strip() or self.environment.get("BROWSER") or "/usr/bin/xdg-open"
+        try:
+            launcher = shlex.split(browser)
+        except ValueError as error:
+            raise ValueError("GitHub browser command must have valid shell quoting") from error
+        if not launcher:
+            raise ValueError("GitHub browser command must contain an executable")
+        environment = {key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"}
+        # Redirect only the browser's inherited streams. gh still reports launch failures and the manual URL.
+        environment["GH_BROWSER"] = shlex.join(
+            ["/bin/sh", "-c", 'exec "$@" >/dev/null 2>&1', "workstation-browser", *launcher]
+        )
+        return DesktopSession.run_in_terminal(command, terminal=terminal, home=self.home, environment=environment)
 
     @staticmethod
     def _has_scopes(status: dict[str, Any], scopes: tuple[str, ...]) -> bool:
@@ -137,11 +158,9 @@ class GitHubAuthentication:
                 f"--scopes {','.join(scopes)} as the managed user, then rerun setup"
             )
         self._check_credential_store()
-        refreshed = DesktopSession.run_in_terminal(
+        refreshed = self._authorize_in_terminal(
             ["/usr/bin/gh", "auth", "refresh", "--hostname", self.host, "--scopes", ",".join(scopes)],
-            terminal=terminal,
-            home=self.home,
-            environment={key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"},
+            terminal,
         )
         status = self._status()
         expected_account = not self.account or status.get("login") == self.account

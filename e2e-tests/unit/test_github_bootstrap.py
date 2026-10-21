@@ -50,6 +50,8 @@ elif args[:2] == ['auth', 'setup-git']:
     helper = '!' + str(Path(sys.argv[0])) + ' auth git-credential'
     subprocess.run(['git', 'config', '--file', os.environ['GIT_CONFIG_GLOBAL'],
                     'credential.https://github.com.helper', helper], check=True)
+elif args == ['config', 'get', 'browser']:
+    print('')
 else:
     raise SystemExit('Unexpected GitHub command')
 """

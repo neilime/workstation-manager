@@ -1,6 +1,7 @@
 """Check persistent credentials, private failures, and read-only previews without network access."""
 
 import json
+import shlex
 import subprocess
 from unittest.mock import mock_open
 
@@ -55,6 +56,9 @@ def authentication_fixture(tmp_path, monkeypatch):
         elif command[1:3] == ["auth", "token"]:
             output = "stored-secret"
             status = state.get("token_status", 0)
+        elif command[1:4] == ["config", "get", "browser"]:
+            output = state.get("browser", "")
+            status = state.get("browser_status", 0)
         elif command[0] == "secret-tool":
             if command[1] == "store":
                 state["probe"] = options["input"]
@@ -222,9 +226,51 @@ def test_interactive_login_proceeds_when_the_desktop_session_is_unavailable(auth
     terminal.return_value.isatty.return_value = True
     monkeypatch.setattr("builtins.open", terminal)
     assert auth.ensure(terminal="/dev/fixture-terminal")["authenticated"]
-    assert state["login_environment"] == {
+    assert {key: state["login_environment"][key] for key in auth.environment if key != "GH_PROMPT_DISABLED"} == {
         key: value for key, value in auth.environment.items() if key != "GH_PROMPT_DISABLED"
     }
+
+
+@pytest.mark.parametrize(
+    "environment,configured,expected",
+    [
+        ({"GH_BROWSER": "custom --private", "BROWSER": "inherited"}, "configured", ["custom", "--private"]),
+        ({"BROWSER": "inherited"}, "configured --new-window", ["configured", "--new-window"]),
+        ({"BROWSER": "inherited --private"}, "", ["inherited", "--private"]),
+        ({}, "", ["/usr/bin/xdg-open"]),
+    ],
+)
+def test_authorization_preserves_browser_selection(authentication, monkeypatch, environment, configured, expected):
+    """Authorization honors GH_BROWSER, gh configuration, BROWSER, then the desktop default."""
+    auth, state = authentication
+    auth.environment.update(GH_BROWSER="", BROWSER="")
+    auth.environment.update(environment)
+    state.update(login={}, browser=configured)
+    terminal = mock_open()
+    terminal.return_value.isatty.return_value = True
+    monkeypatch.setattr("builtins.open", terminal)
+    monkeypatch.setattr(github_auth.DesktopSession, "environment", dict)
+    assert auth.ensure(terminal="/dev/fixture")["authenticated"]
+    assert shlex.split(state["login_environment"]["GH_BROWSER"])[4:] == expected
+    assert auth.environment["GH_BROWSER"] == environment.get("GH_BROWSER", "")
+
+
+@pytest.mark.parametrize("browser", ["'unclosed", "   "])
+def test_invalid_browser_configuration_stops_authorization(authentication, browser):
+    """Malformed browser commands fail clearly before starting an interactive client."""
+    auth, state = authentication
+    state["login"] = {}
+    auth.environment["GH_BROWSER"] = browser
+    with pytest.raises(ValueError, match="GitHub browser command"):
+        auth.ensure(terminal="/dev/fixture")
+
+
+def test_browser_configuration_read_failure_stops_authorization(authentication):
+    """A failed configuration read must not silently select a different browser."""
+    auth, state = authentication
+    state.update(login={}, browser_status=1)
+    with pytest.raises(ValueError, match="Cannot read GitHub browser configuration"):
+        auth.ensure(terminal="/dev/fixture")
 
 
 @pytest.mark.parametrize("failure", ["login", "plaintext"])
