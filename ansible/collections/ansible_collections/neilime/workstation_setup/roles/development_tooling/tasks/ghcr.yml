@@ -1,0 +1,25 @@
+---
+- name: Install the pinned Docker Secret Service credential helper
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/docker/docker-credential-helpers/releases/download/v{{ workstation_manager_resolved.development.docker.credential_helper_version
+      }}/docker-credential-secretservice-v{{ workstation_manager_resolved.development.docker.credential_helper_version
+      }}.linux-{{ workstation_manager_native_arch }}
+    checksum: >-
+      sha256:https://github.com/docker/docker-credential-helpers/releases/download/v{{ workstation_manager_resolved.development.docker.credential_helper_version
+      }}/checksums.txt
+    dest: /usr/local/bin/docker-credential-secretservice
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Verify Docker GHCR authentication with pull and push access
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.ghcr_auth:
+    home: "{{ workstation_manager_resolved.user.home }}"
+    account: "{{ workstation_manager_resolved.development.github.account }}"
+    terminal: >-
+      {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY')
+         if lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') == '1' else '' }}

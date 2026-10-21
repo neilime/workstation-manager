@@ -29,7 +29,7 @@ pytestmark = [
                     "configuration": "clipboard_indicator",
                     "uuid": "clipboard-indicator@tudmotu.com",
                     "profile": ("clipboard-indicator", "clipboard"),
-                    "preferences": {"history-size": "17", "paste-on-select": "true"},
+                    "preferences": {"history-size": "17", "paste-on-select": "false", "paste-button": "false"},
                 },
                 id="clipboard",
             ),
@@ -199,6 +199,10 @@ def test_extension_setup_applies_preferences_and_preserves_user_data(tmp_path, e
     assert state["dconf"]["/org/gnome/shell/disabled-extensions"] == "@as []"
     for key, value in extension["preferences"].items():
         assert state["dconf"][f"/org/gnome/shell/extensions/{extension['profile'][0]}/{key}"] == value
+    if extension["task"] == "clipboard":
+        assert {"<Control>v", "<Control><Shift>v", "<Shift>Insert"}.issubset(
+            state["dconf"]["/org/gnome/Ptyxis/Shortcuts/paste-clipboard"].strip("'").split("|")
+        )
     assert preserved.read_bytes() == b"synthetic personal data"
     assert_settings_schema_loads(directory, environment)
     compiled_schema = directory / "schemas/gschemas.compiled"

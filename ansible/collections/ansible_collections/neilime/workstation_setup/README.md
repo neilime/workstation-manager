@@ -22,6 +22,8 @@ retries rejected codes with a fresh login attempt. Developer tool installation u
 Chezmoi owns the wallpaper asset and desktop extension preferences. Setup
 installs and enables checksum-pinned Clipboard Indicator and Vitals extensions,
 compiles missing settings schemas, and applies available companion profiles.
+Ptyxis and native Visual Studio Code terminal paste shortcuts use the regular clipboard;
+see the [clipboard contract](../../../../../docs/usage/configuration.md#clipboard-and-personal-file-backup).
 Setup always enables GNOME dark mode, dock Trash, and GNOME Software updates.
 Browser automation discovers the managed user's live desktop environment,
 including when setup runs through SSH. It reuses matching Sync chains and verifies
@@ -60,7 +62,8 @@ See [AI tool configuration](../../../../../docs/usage/ai-tools.md) and the
 PHP and Composer are mandatory mise tools with
 pinned releases. Setup installs PHP build prerequisites; mise downloads and
 verifies the official Composer release.
-The default providers install pinned Codex and GitHub Copilot CLIs. Setup also
+The default providers install pinned Codex and GitHub Copilot CLIs as the managed
+user so native updates can replace their executables. Setup also
 installs Orca, Helm, Dive, Skillshare, gh-act, and gh-stack.
 Setup provisions declared [project skills](../../../../../docs/development/README.md#project-skills)
 after restoring projects and establishing GitHub authentication. The default GitHub extensions use published binary release tags.
@@ -71,7 +74,9 @@ GitHub authentication runs before private-repository access through
 official APT repository. It reuses a saved login or performs native browser
 sign-in, with token input for automation. The login persists in the managed user's
 OS credential store and must match `development.github.account` once configuration
-is loaded. Context7 requires a Bitwarden API-key item selector. See the
+is loaded. For github.com accounts, setup also verifies Docker's GHCR login with
+`write:packages` and stores its credential using Docker's Secret Service helper.
+Context7 requires a Bitwarden API-key item selector. See the
 [developer-tool configuration](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
 for selections and sign-in steps.
 SSH restoration rejects private-key material in a Bitwarden `public_key` field

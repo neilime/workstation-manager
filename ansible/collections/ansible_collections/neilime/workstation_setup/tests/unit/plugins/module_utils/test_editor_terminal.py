@@ -6,7 +6,11 @@ import json
 
 import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.editor_terminal import (
+    EditorTerminalKeybindings,
     EditorTerminalSettings,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.jsonc_document import (
+    JsoncDocument,
 )
 
 
@@ -114,3 +118,44 @@ def test_invalid_settings_fail_without_exposing_their_contents(content: str) -> 
     with pytest.raises(ValueError) as failure:
         EditorTerminalSettings().configure(content)
     assert content not in str(failure.value)
+
+
+@pytest.mark.parametrize("content", ["", "// personal shortcuts\n", "[]", "[\n]\n"])
+def test_terminal_paste_shortcuts_use_the_regular_clipboard(content: str) -> None:
+    """Terminal paste uses the same action as the context menu and converges once."""
+    result = EditorTerminalKeybindings().configure(content)
+    bindings = JsoncDocument().loads('{"bindings":' + result + "\n}")["bindings"]
+    assert {binding["key"] for binding in bindings} == {"ctrl+v", "shift+insert"}
+    assert all(binding["command"] == "workbench.action.terminal.paste" for binding in bindings)
+    assert all(binding["when"] == "terminalFocus" for binding in bindings)
+    assert EditorTerminalKeybindings().configure(result) == result
+
+
+@pytest.mark.parametrize("trailing_comma", ["", ","])
+def test_paste_overrides_preserve_personal_bindings_and_jsonc(trailing_comma: str) -> None:
+    """Clipboard overrides follow conflicting bindings without reformatting personal entries."""
+    personal = (
+        '  {"key":"ctrl+k ctrl+v", "command":"personal.command", "args":{"text":"café,]"}},\r\n'
+        '  {"key":"shift+insert", "command":"workbench.action.terminal.pasteSelection",'
+        ' "when":"terminalFocus"}'
+    )
+    content = "\ufeff[\r\n  // keep this\r\n" + personal + trailing_comma + " // closing comment\r\n]\r\n"
+    result = EditorTerminalKeybindings().configure(content)
+    assert personal in result
+    assert "// closing comment\r\n" in result
+    assert result.startswith("\ufeff[\r\n")
+    assert "\n" not in result.replace("\r\n", "")
+    bindings = JsoncDocument().loads('{"bindings":' + result.lstrip("\ufeff") + "\n}")["bindings"]
+    assert bindings[-1]["command"] == "workbench.action.terminal.paste"
+    assert EditorTerminalKeybindings().configure(result) == result
+
+
+@pytest.mark.parametrize(
+    "content",
+    ['{"private":"synthetic"}', '["synthetic"]', '[{"key":null}]', '[{"broken":', '[], "extra": "synthetic"'],
+)
+def test_invalid_keybindings_fail_privately(content: str) -> None:
+    """Malformed shortcut documents must never be replaced or exposed in diagnostics."""
+    with pytest.raises(ValueError) as failure:
+        EditorTerminalKeybindings().configure(content)
+    assert "synthetic" not in str(failure.value)

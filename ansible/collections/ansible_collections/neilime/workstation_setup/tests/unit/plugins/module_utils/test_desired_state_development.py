@@ -42,6 +42,17 @@ def test_github_account_is_required_before_setup(with_tool_versions):
             DesiredStateConfigNormalizer().normalize(config)
 
 
+def test_docker_credential_helper_requires_a_configured_stable_release(with_tool_versions):
+    """Credential helper downloads consume an explicit supported release pin."""
+    config = with_tool_versions({"development": {"docker": {"credential_helper_version": "9.8.7"}}})
+    result = DesiredStateConfigNormalizer().normalize(config)["development"]
+    assert result["docker"]["credential_helper_version"] == "9.8.7"
+    for selection in ({}, {"credential_helper_version": "latest"}, {"credential_helper_version": "1.2.3-beta"}):
+        config["development"]["docker"] = selection
+        with pytest.raises(ValueError, match="credential_helper_version.*stable release"):
+            DesiredStateConfigNormalizer().normalize(config)
+
+
 @pytest.mark.parametrize("package", ["", " ", 42, {}])
 def test_invalid_apt_package_names_fail_before_installation(with_tool_versions, package):
     """Package declarations require valid nonempty names."""

@@ -5,3 +5,11 @@
   neilime.workstation_setup.editor_terminal:
     path: "{{ workstation_manager_resolved.user.home }}/.config/Code/User/settings.json"
   when: '"code" in workstation_manager_resolved.development.editor_packages'
+
+- name: Use the regular clipboard for VS Code terminal paste shortcuts
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.editor_terminal:
+    path: "{{ workstation_manager_resolved.user.home }}/.config/Code/User/keybindings.json"
+    kind: keybindings
+  when: '"code" in workstation_manager_resolved.development.editor_packages'

@@ -51,6 +51,40 @@ class JsoncDocument:
             previous_end = value_end
         return content
 
+    def append_keybindings(self, content: str, bindings: list[dict[str, str]]) -> str:
+        """Append effective shortcut overrides while preserving existing JSONC array text."""
+        if not self._without_comments(content).strip():
+            content += ("" if content.endswith("\n") else "\n") + "[]\n"
+        masked = self._parse(content, container_type=list)
+        existing = json.loads(masked)
+        if any(not isinstance(item, dict) for item in existing):
+            raise ValueError("VS Code keybindings must be a JSONC array of objects.")
+        if any(not isinstance(item.get("key", ""), str) for item in existing):
+            raise ValueError("VS Code keybinding keys must be strings.")
+        keys = {binding["key"] for binding in bindings}
+        relevant = [item for item in existing if item.get("key", "").lower() in keys]
+        if relevant[-len(bindings) :] == bindings:
+            return content
+        return self._append_array_items(content, masked, bindings, len(existing))
+
+    def _append_array_items(self, content: str, masked: str, items: list[dict], count: int) -> str:
+        """Insert after existing array entries without moving their comments or separators."""
+        closing = masked.rfind("]")
+        if count:
+            # Find the last value's end so a separator never lands inside a comment.
+            position = self._skip_space(masked, self._skip_space(masked, 0) + 1)
+            for _item in range(count):
+                _value, value_end = json.JSONDecoder().raw_decode(masked, position)
+                position = self._skip_space(masked, value_end)
+                if masked[position] == ",":
+                    position = self._skip_space(masked, position + 1)
+            if "," not in self._without_comments(content)[value_end:closing]:
+                content = content[:value_end] + "," + content[value_end:]
+                closing += 1
+        newline = "\r\n" if "\r\n" in content else "\n"
+        additions = json.dumps(items, ensure_ascii=False, indent=2)[2:-2].replace("\n", newline)
+        return content[:closing] + newline + additions + newline + content[closing:]
+
     def _members(self, masked: str, start: int):
         """Locate keys, values and separators in a validated object."""
         decoder = json.JSONDecoder()
@@ -74,7 +108,7 @@ class JsoncDocument:
         masked = _JSONC_TOKENS.sub(mask, content)
         return " " + masked[1:] if masked.startswith("\ufeff") else masked
 
-    def _parse(self, content: str) -> str:
+    def _parse(self, content: str, container_type: type = dict) -> str:
         """Validate settings privately and return a same-length JSON representation."""
 
         masked = _TRAILING_COMMAS.sub(
@@ -87,8 +121,9 @@ class JsoncDocument:
             raise ValueError(
                 f"Configuration contains invalid JSONC at line {error.lineno}, column {error.colno}."
             ) from error
-        if not isinstance(settings, dict):
-            raise ValueError("Configuration must be a JSONC object.")
+        if not isinstance(settings, container_type):
+            expected = "array" if container_type is list else "object"
+            raise ValueError(f"Configuration must be a JSONC {expected}.")
         return masked
 
     @staticmethod

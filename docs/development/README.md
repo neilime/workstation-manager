@@ -304,6 +304,8 @@ and `GITHUB_ACTIONS` environment flags do not change execution.
 Unattended runs require an unlocked desktop keyring and either a valid saved
 GitHub CLI login or a token accepted by `gh auth login --with-token`. They run
 the same GitHub authentication and Git integration steps as interactive use.
+For github.com, that login also requires `write:packages` for Docker's GHCR
+authentication; unattended runs cannot grant missing permissions.
 Bootstrap and installation downloads reuse the verified saved login.
 
 Setup passes the GitHub token to mise and GitHub CLI extension commands through
@@ -374,7 +376,7 @@ The [Renovate workflow](../../.github/workflows/renovate.yml) runs every Friday
 and supports manual dispatch. Its [configuration](../../.github/renovate/renovate-config.json5)
 updates Ansible dependencies, Node LTS, mise, Chezmoi, Oh My Zsh, and reviewed
 development-tool pins in one grouped pull request. Inline Renovate annotations
-cover Orca, Starship, Helm, Dive, gh-act, gh-stack, Composer, Codex,
+cover the Docker Secret Service helper, Orca, Starship, Helm, Dive, gh-act, gh-stack, Composer, Codex,
 Copilot, and MCP release versions. AI application and MCP pins live under
 `development.ai_tools`; the extraction check in
 `e2e-tests/unit/test_ai_tools_pins.py` verifies their Renovate coverage
@@ -384,6 +386,9 @@ commit digests embedded in Skillshare `source` URLs while keeping setup pinned t
 verify these pins in public workstation defaults, along with GitHub-backed mise
 tools such as Skillshare. Skillshare generates and updates project skill pins
 through its own lockfile commands; Renovate does not natively support that format.
+The Docker credential helper pin is
+`development.docker.credential_helper_version`; setup verifies the official
+release checksum for the selected architecture.
 PHP follows stable `php-*` tags from
 `php/php-src`; mise owns its runtime and Ubuntu owns its build prerequisites.
 Renovate's `ansible-galaxy` manager automatically discovers and updates
@@ -433,7 +438,8 @@ Provide these credentials through the environment without committing them:
 
 - `BITWARDEN_CLIENT_ID`, `BITWARDEN_CLIENT_SECRET`, and `BITWARDEN_PASSWORD` for
   the configured vault.
-- `WORKSTATION_MANAGER_GITHUB_TOKEN` for private configuration repository access.
+- `WORKSTATION_MANAGER_GITHUB_TOKEN` for private configuration repository access
+  and GHCR pull/push authentication, including `write:packages`.
 
 Tests download the public entrypoint from GitHub and exercise the remote
 bootstrap workflow. The default source is the checkout's `origin` and current

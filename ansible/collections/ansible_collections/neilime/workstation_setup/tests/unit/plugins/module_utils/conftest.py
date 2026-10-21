@@ -25,6 +25,7 @@ def with_tool_versions() -> Callable[[dict[str, Any]], dict[str, Any]]:
             "system_monitor": {"version": "456", "sha256": "b" * 64},
         },
         "development": {
+            "docker": {"credential_helper_version": "1.2.3"},
             "github": {"account": "fixture"},
             "node": {"version": "1.2.3"},
             "mise": {

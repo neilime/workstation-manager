@@ -320,7 +320,7 @@ extensions, shell selection, Composer, and project compatibility in the VM.
 
 **Clipboard Indicator** (`clipboard-indicator@tudmotu.com`) is the managed
 clipboard extension. It provides the required text and image history, search,
-pins, and quick paste through GNOME Shell. Direct desktop integration motivates
+pins, and clipboard selection through GNOME Shell. Direct desktop integration motivates
 the choice; lower CPU/RAM use has not been measured.
 [Upstream features and limitations](https://github.com/Tudmotu/gnome-shell-extension-clipboard-indicator).
 
@@ -333,8 +333,10 @@ GNOME version validation stays enabled; requalify whenever that version changes.
 [upstream metadata](https://github.com/Tudmotu/gnome-shell-extension-clipboard-indicator/blob/master/metadata.json).
 
 The managed profile sets a 200-entry history limit, enables image
-caching, search, visible pins, and paste-on-select, and uses one conflict-free
-global shortcut. Keep history across sessions and preserve code whitespace. Map
+caching, search, visible pins, and one conflict-free global shortcut. Selecting
+history sets the current clipboard; automatic paste and the paste button are
+disabled because they temporarily replace the clipboard and restore its previous
+value. Keep history across sessions and preserve code whitespace. Map
 these choices to the selected artifact's GSettings schema; keep preferences in
 the companion configuration and installation/version ownership in the manager.
 The cache-size setting bounds the history registry, not all image files; measure
@@ -346,12 +348,19 @@ version and digest. Check updates weekly and test before advancing. Avoid instal
 from a moving Git branch. Run one clipboard manager at a time. Setup installs
 and enables Clipboard Indicator.
 
-Upstream warns that large images can briefly freeze the shell and direct paste
-does not work in every application. Acceptance therefore requires typical and
-large screenshots, a populated history, and quick paste into Brave, Visual Studio
-Code, its terminal, and Ptyxis. A manual paste fallback is useful
-for diagnosis but does not satisfy the requested quick-paste behavior in those
-applications. Test capture while the menu is closed, search, pin retention,
+Setup routes Ctrl+V and Shift+Insert in Ptyxis and the native Visual Studio Code terminal to
+the regular clipboard, as used by their Paste menus. Ctrl+Shift+V remains available.
+It does not synchronize primary selection into the clipboard: highlighting text
+must not replace an explicit copy. Separate selection-paste actions and unmanaged
+application shortcuts remain application-specific.
+
+Upstream warns that large images can briefly freeze the shell. Acceptance requires
+typical and large screenshots, a populated history, and repeated paste into Brave,
+Visual Studio Code, its terminal, and Ptyxis. Copy a distinct value, highlight
+different text without copying, and compare Ctrl+V, Shift+Insert, and Paste from
+the context menu. Repeat with a selected history entry and verify the current
+value remains selected after multiple pastes. Verify Ctrl+Shift+V in both terminals.
+Test capture while the menu is closed, search, pin retention,
 logout/login, reboot, and lock/unlock on Wayland, including XWayland source apps.
 Measure shell responsiveness and reject the candidate if normal clipboard use
 introduces noticeable stalls. The Wayland VM can exercise software behavior; scanner hardware and interactive
@@ -463,7 +472,7 @@ Installing the app does not establish encrypted backup or restore coverage.
 | Spotify, `com.spotify.Client`                                  | Required personal app                        | Keep the Flatpak application; avoid automatic startup.                                                                                                                                                               |
 | VLC, `org.videolan.VLC`                                        | Required media app                           | Keep the Flatpak application for media playback.                                                                                                                                                                     |
 | JDownloader, `org.jdownloader.JDownloader`                     | Required download workflow                   | Keep the Flatpak application and account for its runtime and own updater.                                                                                                                                            |
-| Clipboard Indicator, `clipboard-indicator@tudmotu.com`         | Required GNOME clipboard extension           | Text/image history, search, pins, and quick paste. Validate GNOME compatibility and responsiveness with large images.                                                                                                |
+| Clipboard Indicator, `clipboard-indicator@tudmotu.com`         | Required GNOME clipboard extension           | Text/image history, search, pins, and persistent selection. Validate GNOME compatibility and responsiveness with large images.                                                                                       |
 | Vitals, `Vitals@CoreCoding.com`                                | Managed GNOME top-bar system monitor         | Live CPU, memory, temperature, network, and storage in the panel. Pinned reviewed archive; see [ADR 0003](adr-0003-desktop-system-monitor.md). Validate GNOME compatibility and panel rendering on Wayland.          |
 | Simple Scan/SANE through Ubuntu APT                            | Required native scanner application          | Keep one installation and test actual scanner access.                                                                                                                                                                |
 | Déjà Dup, `org.gnome.DejaDup`                                  | Keep with a configured, tested backup policy | Installing it does not configure backups. Complement manager archives with routine personal-file backup; define destination, encryption, retention, and a restore drill. [Purpose](https://apps.gnome.org/DejaDup/). |
@@ -628,7 +637,7 @@ passed:
   privilege, conflict, and recovery decisions should interrupt setup.
 - Run the Clipboard Indicator acceptance checks above on the real Wayland desktop.
   Verify all five required features and history recovery with a populated 200-item
-  history. Missing capture, broken quick paste in required apps, lost pins, or
+  history. Missing capture, inconsistent paste in required apps, lost pins, or
   shell stalls fail desktop acceptance; X11-only verification is insufficient.
 - Produce a version/update report with an owner for every managed tool. Allow no
   unsupported selected component without a concrete blocker and dated follow-up.

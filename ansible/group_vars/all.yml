@@ -68,6 +68,9 @@ workstation_manager:
         - orca-ide.desktop
         - org.gnome.Ptyxis.desktop
   development:
+    docker:
+      # renovate: datasource=github-releases depName=docker/docker-credential-helpers
+      credential_helper_version: "0.9.12"
     # Complete system runtime, available without shell or mise activation.
     node:
       version: "24.22.0"
