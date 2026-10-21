@@ -533,7 +533,7 @@ Repository workflows propose dependency updates; setup applies reviewed pins.
 APT and GNOME Software own their respective package updates. Failed updates must
 remain visible. Test restoration as well as version rollback: application data
 formats may not support downgrades. See the canonical
-[dependency update guide](../README.md#dependency-updates) for handler ownership.
+[dependency update guide](../dependencies.md) for handler ownership.
 
 ### Renovate owns proposals for the tested Ubuntu release
 

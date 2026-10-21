@@ -66,6 +66,9 @@ secrets. Setup verifies that the GitHub login matches `development.github.accoun
 after loading configuration and reuses it throughout installation. GitHub
 bootstrap authentication also runs when needed during `--dry-run`.
 
+Password and emailed verification-code input are hidden. If Bitwarden rejects
+the email, code, or password, the entrypoint asks again. Press Ctrl-C to cancel.
+
 ## Application delivery
 
 Setup supports one Ubuntu release, recorded in
@@ -190,8 +193,8 @@ The companion shell files select Oh My Zsh plugins, activate mise, and use
 Starship for the prompt. Docker plugins load only when Docker is available;
 Yarn, Composer, AWS, pre-commit, and thefuck integrations also require their
 commands. These shell hooks do not install software. When `batcat` is available,
-`bat` invokes it directly and `cat` invokes `batcat -pp`. Déjà is outside the
-default selection, and setup preserves existing shell history.
+`bat` invokes it directly and `cat` invokes `batcat -pp`.
+Setup preserves existing shell history.
 
 Setup owns the pinned framework updates; keep `zstyle ':omz:update' mode disabled`
 in `.zshrc`. Chezmoi owns shell preferences. Setup selects `/usr/bin/zsh` as the
@@ -251,7 +254,7 @@ in `development.ai_tools`; see [AI applications](ai-tools.md#applications).
 
 Setup installs Skillshare globally and applies each `.skillshare/config.yaml`
 under `user.projects_directory` after archive restoration and GitHub login.
-See [project skills](../development/README.md#project-skills) for the small
+See [project skills](../development/project-skills.md) for the small
 per-project config and update commands.
 
 Setup always installs PHP through mise's `vfox:jdx/vfox-php` backend. The exact PHP
@@ -328,7 +331,7 @@ credentials without authorizing permissions or logging into the registry.
 Unattended setup requires a saved login with `write:packages` already granted,
 or a separate `WORKSTATION_MANAGER_GHCR_TOKEN` with pull/push permission. A separate
 registry token leaves the GitHub CLI login intact; see
-[automation credentials](../development/README.md#automated-runs).
+[automation credentials](../development/automation.md#automated-runs).
 To grant it interactively as the managed user, run
 `gh auth refresh --hostname github.com --scopes write:packages`, then rerun setup.
 Keep the desktop keyring unlocked. Setup does not publish or delete any images.

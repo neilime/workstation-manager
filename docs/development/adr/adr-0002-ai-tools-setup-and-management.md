@@ -155,7 +155,7 @@ and `source` declaration:
   Setup discovers opted-in projects and runs Skillshare's native installation
   and synchronization. The `universal` target exposes `.agents/skills` to Codex
   and Copilot; the `claude` target exposes the same content through `.claude/skills`.
-  The [project guide](../README.md#project-skills) owns the
+  The [project guide](../project-skills.md) owns the
   configuration and setup workflow.
 
 Provider adapters validate selected skill directories and preserve user-managed

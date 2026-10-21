@@ -168,7 +168,7 @@ review its dependencies before adding it. Review upstream changes before
 accepting a new pin.
 
 For skills scoped to a repository, use its `.skillshare/config.yaml` as described
-in [project skills](../development/README.md#project-skills).
+in [project skills](../development/project-skills.md).
 
 ## Configuration ownership and reruns
 
