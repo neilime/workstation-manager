@@ -24,6 +24,13 @@ extension provisioning while keeping Orca managed. Extension tasks run as the re
 with explicit `HOME`, `XDG_CONFIG_HOME` and `PATH`. System application installation
 and Playwright's Ubuntu dependency installation use root.
 
+Provider npm packages install as the resolved user under
+`~/.local/share/workstation-manager/ai-tools/cli`, with an explicit home, prefix
+and cache. Root owns only their `/usr/local/bin/<command>` links, so clients can
+replace their own binaries while commands remain available without shell
+activation. Setup selects the configured npm package release; native client
+updates may change its executable independently of npm package metadata.
+
 An adapter consumes:
 
 - `workstation_ai_servers`: native common `command`, `args`, and string-valued
@@ -123,4 +130,5 @@ permissions, skill reconciliation, check mode and credential redaction.
 These tests require no provider accounts or live AI services. Live OAuth sessions,
 desktop client startup and browser operations are outside their scope. The shared
 Lima setup fixture defers provider sign-in with
-`development.ai_tools.authenticate: false`; it has no dedicated AI assertions.
+`development.ai_tools.authenticate: false`. Development-tool assertions verify
+provider command availability and user write access to installed package trees.

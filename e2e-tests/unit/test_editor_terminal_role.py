@@ -48,6 +48,11 @@ def test_fresh_installation_creates_a_private_idempotent_terminal_configuration(
     path = settings_path(tmp_path)
     assert json.loads(path.read_text())["terminal.integrated.defaultProfile.linux"] == "zsh"
     assert path.stat().st_mode & 0o777 == 0o600
+    keybindings = path.with_name("keybindings.json")
+    bindings = json.loads(keybindings.read_text())
+    assert {binding["key"] for binding in bindings} == {"ctrl+v", "shift+insert"}
+    assert all(binding["command"] == "workbench.action.terminal.paste" for binding in bindings)
+    assert keybindings.stat().st_mode & 0o777 == 0o600
     repeat = apply(tmp_path)
     assert repeat.returncode == 0, repeat.stdout + repeat.stderr
     assert "changed=0" in repeat.stdout
@@ -84,7 +89,8 @@ def test_check_mode_does_not_create_or_modify_settings(tmp_path, existing):
         path.write_text(original)
     result = apply(tmp_path, check=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "changed=1" in result.stdout
+    assert "changed=2" in result.stdout
+    assert not path.with_name("keybindings.json").exists()
     assert path.exists() == existing
     if existing:
         assert path.read_text() == original
@@ -107,6 +113,39 @@ def test_invalid_settings_stop_setup_without_overwriting_the_file(tmp_path):
     path = settings_path(tmp_path)
     path.parent.mkdir(parents=True)
     original = '{"synthetic-private-marker":'
+    path.write_text(original)
+    result = apply(tmp_path)
+    assert result.returncode != 0
+    assert "Cannot configure VS Code terminal" in result.stdout
+    assert "synthetic-private-marker" not in result.stdout + result.stderr
+    assert path.read_text() == original
+
+
+def test_keybinding_symlinks_comments_permissions_and_unmanaged_shortcuts_are_preserved(tmp_path):
+    """Adding paste overrides retains personal shortcuts and follows the configured symlink."""
+    path = settings_path(tmp_path).with_name("keybindings.json")
+    path.parent.mkdir(parents=True)
+    source = tmp_path / "personal-keybindings.json"
+    original = '[\n  // keep this binding\n  {"key":"f9", "command":"synthetic-private-marker"},\n]\n'
+    source.write_text(original)
+    source.chmod(0o640)
+    path.symlink_to(source)
+    preview = apply(tmp_path, check=True)
+    assert preview.returncode == 0, preview.stdout + preview.stderr
+    assert source.read_text() == original
+    result = apply(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert path.is_symlink()
+    assert '// keep this binding\n  {"key":"f9", "command":"synthetic-private-marker"},' in source.read_text()
+    assert path.stat().st_mode & 0o777 == 0o640
+    assert "synthetic-private-marker" not in result.stdout + result.stderr
+
+
+def test_invalid_keybindings_stop_setup_without_overwriting_shortcuts(tmp_path):
+    """Invalid user keybindings must fail without losing their contents."""
+    path = settings_path(tmp_path).with_name("keybindings.json")
+    path.parent.mkdir(parents=True)
+    original = '[{"key":"synthetic-private-marker",'
     path.write_text(original)
     result = apply(tmp_path)
     assert result.returncode != 0

@@ -195,3 +195,25 @@ def test_selected_gnome_extension_is_active(host, workstation_config, configurat
     )
     info = host.check_output(f"env {environment} LC_ALL=C gnome-extensions info %s", uuid)
     assert "State: ACTIVE" in info
+
+
+def test_clipboard_selection_persists_and_terminal_paste_uses_regular_clipboard(host) -> None:
+    """Installed preferences must retain a history selection and route the terminal shortcuts consistently."""
+    environment = (
+        f"XDG_RUNTIME_DIR=/run/user/{host.user().uid} "
+        f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{host.user().uid}/bus"
+    )
+    schemas = f"{host.user().home}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com/schemas"
+    for key in ("paste-on-select", "paste-button"):
+        assert (
+            host.check_output(
+                f"env {environment} gsettings --schemadir %s get org.gnome.shell.extensions.clipboard-indicator %s",
+                schemas,
+                key,
+            )
+            == "false"
+        )
+    shortcuts = ast.literal_eval(
+        host.check_output(f"env {environment} gsettings get org.gnome.Ptyxis.Shortcuts paste-clipboard")
+    )
+    assert {"<Control>v", "<Control><Shift>v", "<Shift>Insert"}.issubset(shortcuts.split("|"))

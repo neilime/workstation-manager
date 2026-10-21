@@ -28,6 +28,7 @@ class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSec
 
         return {
             **self._tools(development, defaults),
+            "docker": self._docker(development),
             "ai_tools": desired_state_ai_tools.AiToolsNormalizer().normalize(development, bitwarden=bitwarden),
             "packages": self._packages(development, defaults),
             "editor_packages": self._packages(development, defaults, "editor_packages"),
@@ -36,6 +37,17 @@ class DevelopmentSectionNormalizer(desired_state_support.DesiredStateDefaultsSec
                 default_settings,
                 "workstation_manager.development.settings",
             ),
+        }
+
+    def _docker(self, development: dict[str, object]) -> dict[str, str]:
+        """Require a controlled release of the native credential helper."""
+        docker = self._resolver.mapping(
+            development.get("docker"), "development.docker", allowed_keys={"credential_helper_version"}
+        )
+        return {
+            "credential_helper_version": self._resolver.release_version(
+                docker.get("credential_helper_version"), "development.docker.credential_helper_version"
+            )
         }
 
     def _tools(self, development: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:

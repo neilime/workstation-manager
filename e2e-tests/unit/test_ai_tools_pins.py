@@ -35,6 +35,11 @@ def test_every_public_ai_package_and_github_tool_pin_is_extracted(public_default
         "depName": "stablyai/orca",
         "currentValue": config["orca"]["version"],
     } in extracted
+    assert {
+        "datasource": "github-releases",
+        "depName": "docker/docker-credential-helpers",
+        "currentValue": public_defaults["development"]["docker"]["credential_helper_version"],
+    } in extracted
     for tool, version in public_defaults["development"]["mise"]["tools"].items():
         if tool.startswith("github:"):
             assert {

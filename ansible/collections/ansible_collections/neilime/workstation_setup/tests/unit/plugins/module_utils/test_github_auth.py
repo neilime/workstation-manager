@@ -34,11 +34,11 @@ def authentication_fixture(tmp_path, monkeypatch):
         output, status = "", 0
         if command[1:3] == ["auth", "status"]:
             output = json.dumps({"hosts": {"github.com": [state["login"]] if state["login"] else []}})
-        elif command[1:3] == ["auth", "login"]:
+        elif command[1:3] in (["auth", "login"], ["auth", "refresh"]):
             if "--with-token" in command:
                 assert options["input"] == "supplied-secret"
             else:
-                assert "--web" in command
+                assert "--web" in command or command[2] == "refresh"
                 assert options["stdin"].isatty()
                 assert options["stdin"] is options["stdout"] is options["stderr"]
                 assert "GH_PROMPT_DISABLED" not in environment
@@ -49,8 +49,12 @@ def authentication_fixture(tmp_path, monkeypatch):
                 "active": True,
                 "login": state.get("new_account", "fixture"),
                 "tokenSource": state.get("new_storage", "keyring"),
+                "scopes": state.get("new_scopes", "repo, write:packages"),
             }
             status = state.get("login_status", 0)
+        elif command[1:3] == ["auth", "token"]:
+            output = "stored-secret"
+            status = state.get("token_status", 0)
         elif command[0] == "secret-tool":
             if command[1] == "store":
                 state["probe"] = options["input"]
@@ -107,6 +111,60 @@ def test_preview_does_not_log_in_or_modify_credentials(authentication):
     result = auth.ensure(token="supplied-secret", check_mode=True)
     assert result["changed"] and not result["authenticated"]
     assert len(state["calls"]) == 1
+
+
+def test_package_permissions_are_added_to_the_existing_keyring_login(authentication, monkeypatch):
+    """Native refresh adds package access and subsequent runs reuse the authorized account."""
+    auth, state = authentication
+    state["login"]["scopes"] = "repo"
+    terminal = mock_open()
+    terminal.return_value.isatty.return_value = True
+    monkeypatch.setattr("builtins.open", terminal)
+    monkeypatch.setattr(github_auth.DesktopSession, "environment", dict)
+    assert auth.ensure(terminal="/dev/fixture", scopes=("write:packages",))["changed"]
+    assert not auth.ensure(scopes=("write:packages",))["changed"]
+    refresh = [command for command in state["calls"] if command[1:3] == ["auth", "refresh"]]
+    assert len(refresh) == 1 and refresh[0][-2:] == ["--scopes", "write:packages"]
+
+
+def test_missing_package_scope_is_read_only_in_preview_and_actionable_unattended(authentication):
+    """A preview cannot authorize new scopes and unattended setup explains the required authorization."""
+    auth, state = authentication
+    result = auth.ensure(check_mode=True, scopes=("write:packages",))
+    assert result["changed"] and not result["authenticated"]
+    with pytest.raises(ValueError, match="gh auth refresh.*write:packages"):
+        auth.ensure(scopes=("write:packages",))
+    assert not any(command[0] == "secret-tool" or command[1:3] == ["auth", "refresh"] for command in state["calls"])
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [{"new_scopes": "repo"}, {"new_account": "other"}, {"new_storage": "hosts.yml"}, {"login_status": 1}],
+)
+def test_scope_refresh_requires_the_expected_account_secure_storage_and_permission(
+    authentication, monkeypatch, updates
+):
+    """Unverified permission changes fail without leaking native client diagnostics."""
+    auth, state = authentication
+    state.update(updates)
+    terminal = mock_open()
+    terminal.return_value.isatty.return_value = True
+    monkeypatch.setattr("builtins.open", terminal)
+    monkeypatch.setattr(github_auth.DesktopSession, "environment", dict)
+    with pytest.raises(ValueError, match="permission refresh was not verified") as error:
+        auth.ensure(terminal="/dev/fixture", scopes=("write:packages",))
+    assert "private-failure-secret" not in str(error.value)
+
+
+def test_token_access_selects_the_account_and_redacts_failures(authentication):
+    """Registry clients receive only the explicit account's stored token."""
+    auth, state = authentication
+    assert auth.read_token() == "stored-secret"
+    assert state["calls"][-1][-2:] == ["--user", "fixture"]
+    state["token_status"] = 1
+    with pytest.raises(ValueError, match="Cannot read") as error:
+        auth.read_token()
+    assert "secret" not in str(error.value)
 
 
 @pytest.mark.parametrize("existing", [False, True])

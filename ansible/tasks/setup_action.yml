@@ -77,6 +77,12 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.ai_tools
 
+- name: Authenticate Docker to GHCR after restoration and provider sign-in
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.development_tooling
+    tasks_from: ghcr
+  when: workstation_manager_resolved.development.github.host == 'github.com'
+
 - name: Provision project skills after restoration and GitHub authentication
   ansible.builtin.import_role:
     name: neilime.workstation_setup.development_tooling

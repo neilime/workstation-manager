@@ -98,6 +98,14 @@
     key: /org/gnome/shell/disable-extension-version-validation
     value: "false"
 
+- name: Use the regular clipboard for Ptyxis paste shortcuts
+  become: "{{ workstation_manager_gnome_use_become_user }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  community.general.dconf:
+    key: /org/gnome/Ptyxis/Shortcuts/paste-clipboard
+    value: "'<Control>v|<Control><Shift>v|<Shift>Insert'"
+    state: present
+
 - name: Read enabled GNOME extensions
   become: "{{ workstation_manager_gnome_use_become_user }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"

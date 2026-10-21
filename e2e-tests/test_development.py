@@ -3,6 +3,10 @@
 import json
 import tomllib
 
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.jsonc_document import (
+    JsoncDocument,
+)
+
 
 def test_git_automatic_garbage_collection_is_enabled(host) -> None:
     """Git should use a positive automatic garbage collection threshold after setup."""
@@ -98,6 +102,33 @@ def test_native_docker_service_survives_restart(host) -> None:
     assert host.file("/etc/apt/sources.list.d/docker.sources").contains("Signed-By: /etc/apt/keyrings/docker.asc")
 
 
+def test_ghcr_credentials_use_the_keyring_for_the_configured_account(host, workstation_config) -> None:
+    """The installed Docker helper must retrieve the configured account without exposing its token."""
+    github = workstation_config["development"]["github"]
+    if github["host"] != "github.com":
+        return
+    assert host.file("/usr/local/bin/docker-credential-secretservice").mode == 0o755
+    script = """
+import json, os, stat, subprocess, sys
+from pathlib import Path
+from urllib.parse import urlsplit
+path = Path.home() / '.docker/config.json'
+config = json.loads(path.read_text())
+assert config['credHelpers']['ghcr.io'] == 'secretservice', 'GHCR helper is not configured'
+assert stat.S_IMODE(path.stat().st_mode) == 0o600, 'Docker configuration is not private'
+assert not any(urlsplit(key if '://' in key else '//' + key).hostname == 'ghcr.io'
+               for key in config.get('auths', {})), 'GHCR credentials remain inline'
+environment = {**os.environ, 'DBUS_SESSION_BUS_ADDRESS': f'unix:path=/run/user/{os.getuid()}/bus'}
+result = subprocess.run(['/usr/local/bin/docker-credential-secretservice', 'get'],
+                        input='ghcr.io\\n', text=True, capture_output=True, env=environment, check=False)
+assert result.returncode == 0, 'GHCR credential could not be read'
+credential = json.loads(result.stdout)
+assert credential.get('Username') == sys.argv[1] and credential.get('Secret'), 'GHCR account is not stored'
+"""
+    result = host.run("python3 -c %s %s", script, github["account"])
+    assert result.succeeded, "GHCR keyring configuration was not verified"
+
+
 def test_native_github_cli_uses_its_vendor_repository(host) -> None:
     """GitHub CLI is available without activating mise or changing user credentials."""
     assert host.package("gh").is_installed
@@ -135,6 +166,22 @@ def test_node_and_bundled_package_commands_work_with_a_clean_environment(host, w
     assert result.succeeded, result.stderr
 
 
+def test_ai_provider_commands_support_user_updates(host, workstation_config) -> None:
+    """Provider commands work without activation and their package trees are user writable."""
+    user = workstation_config["user"]
+    prefix = user["home"] + "/.local/share/workstation-manager/ai-tools/cli"
+    for provider in workstation_config["development"]["ai_tools"]["providers"].values():
+        command = "/usr/local/bin/" + provider["command"]
+        result = host.run("env -i HOME=%s PATH=/usr/local/bin:/usr/bin:/bin %s --version", user["home"], command)
+        assert result.succeeded, result.stderr
+        binary = host.check_output("readlink -f %s", command)
+        assert binary.startswith(prefix + "/")
+        assert host.file(binary).user == user["name"]
+        package = prefix + "/lib/node_modules/" + provider["npm"]
+        assert host.check_output("find %s -type d ! -writable -print", package) == ""
+        assert host.check_output("find %s -type f ! -writable -print", package) == ""
+
+
 def test_native_editor_and_terminal_are_available(host, workstation_config) -> None:
     """The vendor command and native Zsh profile expose the workstation tools."""
     if "code" not in workstation_config["development"]["editor_packages"]:
@@ -145,6 +192,12 @@ def test_native_editor_and_terminal_are_available(host, workstation_config) -> N
     settings = host.file(f"{host.user().home}/.config/Code/User/settings.json")
     assert '"terminal.integrated.defaultProfile.linux": "zsh"' in settings.content_string
     assert '"path": "/usr/bin/zsh"' in settings.content_string
+    keybindings = host.file(f"{host.user().home}/.config/Code/User/keybindings.json").content_string
+    bindings = JsoncDocument().loads('{"bindings":' + keybindings.lstrip("\ufeff") + "\n}")["bindings"]
+    for key in ("ctrl+v", "shift+insert"):
+        binding = next(binding for binding in reversed(bindings) if binding.get("key") == key)
+        assert binding["command"] == "workbench.action.terminal.paste"
+        assert binding["when"] == "terminalFocus"
     assert host.run("/usr/bin/zsh -lc 'node --version && npm --version && gh --version'").succeeded
 
 
@@ -165,6 +218,8 @@ def test_persistent_github_login_is_independent_of_token_overrides(host, worksta
     assert active["state"] == "success"
     assert active["tokenSource"] == "keyring"
     assert active["login"] == workstation_config["development"]["github"]["account"]
+    if hostname == "github.com":
+        assert "write:packages" in {scope.strip() for scope in active["scopes"].split(",")}
 
 
 def test_development_sysctl_configuration(host, workstation_config) -> None:

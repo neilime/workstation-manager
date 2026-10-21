@@ -101,7 +101,7 @@ class GitHubAuthentication:
             if written and cleared.returncode:
                 raise ValueError("Cannot clear the credential-store test entry; unlock the desktop keyring and retry")
 
-    def _login(self, token: str, terminal: str) -> None:
+    def _login(self, token: str, terminal: str, scopes: tuple[str, ...]) -> None:
         if not token and not terminal:
             raise ValueError("GitHub sign-in is required; run setup from a desktop terminal or supply a CI token")
         self._check_credential_store()
@@ -110,13 +110,56 @@ class GitHubAuthentication:
             result = self._run([*command, "--with-token"], data=token)
         else:
             result = DesktopSession.run_in_terminal(
-                [*command, "--web"],
+                [*command, "--web", *(["--scopes", ",".join(scopes)] if scopes else [])],
                 terminal=terminal,
                 home=self.home,
                 environment={key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"},
             )
         if result.returncode:
             raise ValueError("GitHub login failed; verify account access with gh auth status, then rerun setup")
+
+    @staticmethod
+    def _has_scopes(status: dict[str, Any], scopes: tuple[str, ...]) -> bool:
+        """Compare the normalized OAuth scopes reported by the authenticated API request."""
+        granted = status.get("scopes", "")
+        if not isinstance(granted, str):
+            raise ValueError("GitHub CLI returned invalid authentication scopes")
+        return set(scopes).issubset(scope.strip() for scope in granted.split(","))
+
+    def _refresh_scopes(self, terminal: str, scopes: tuple[str, ...]) -> dict[str, Any]:
+        """Extend the existing active account through native browser authorization."""
+        if not terminal:
+            raise ValueError(
+                f"GitHub login needs {', '.join(scopes)} access; run gh auth refresh --hostname {self.host} "
+                f"--scopes {','.join(scopes)} as the managed user, then rerun setup"
+            )
+        self._check_credential_store()
+        refreshed = DesktopSession.run_in_terminal(
+            ["/usr/bin/gh", "auth", "refresh", "--hostname", self.host, "--scopes", ",".join(scopes)],
+            terminal=terminal,
+            home=self.home,
+            environment={key: value for key, value in self.environment.items() if key != "GH_PROMPT_DISABLED"},
+        )
+        status = self._status()
+        expected_account = not self.account or status.get("login") == self.account
+        if (
+            refreshed.returncode
+            or status.get("state") != "success"
+            or status.get("tokenSource") != "keyring"
+            or not expected_account
+            or not self._has_scopes(status, scopes)
+        ):
+            raise ValueError("GitHub permission refresh was not verified in the keyring for the configured account")
+        return status
+
+    def read_token(self) -> str:
+        """Read the selected account's token privately for another authenticated client."""
+        if not self.account:
+            raise ValueError("Reading a GitHub token requires an explicit account")
+        result = self._run(["/usr/bin/gh", "auth", "token", "--hostname", self.host, "--user", self.account])
+        if result.returncode or not result.stdout.strip():
+            raise ValueError("Cannot read the configured GitHub account's credential from the keyring")
+        return result.stdout.strip()
 
     def _git_helper_ready(self) -> bool:
         result = self._run(["git", "config", "--global", "--get-all", f"credential.https://{self.host}.helper"])
@@ -143,7 +186,9 @@ class GitHubAuthentication:
                 raise ValueError("GitHub login works but Git credential integration could not be configured")
         return True
 
-    def ensure(self, *, token: str = "", terminal: str = "", check_mode: bool = False) -> dict[str, Any]:
+    def ensure(
+        self, *, token: str = "", terminal: str = "", check_mode: bool = False, scopes: tuple[str, ...] = ()
+    ) -> dict[str, Any]:
         """Verify the account, keyring storage, and Git credential integration."""
         status = self._status()
         authenticated = status.get("state") == "success"
@@ -154,7 +199,7 @@ class GitHubAuthentication:
             )
         changed = not secure
         if not secure and not check_mode:
-            self._login(token, terminal)
+            self._login(token, terminal, scopes)
             status = self._status()
             if status.get("state") != "success" or status.get("tokenSource") != "keyring":
                 raise ValueError(
@@ -165,9 +210,17 @@ class GitHubAuthentication:
                     "GitHub authenticated a different account; select the configured account and rerun setup"
                 )
         if status.get("state") == "success":
+            if not self._has_scopes(status, scopes):
+                changed = True
+                if not check_mode:
+                    status = self._refresh_scopes(terminal, scopes)
             changed = self._ensure_git_helper(check_mode) or changed
         return {
             "changed": changed,
-            "authenticated": status.get("state") == "success" and status.get("tokenSource") == "keyring",
+            "authenticated": (
+                status.get("state") == "success"
+                and status.get("tokenSource") == "keyring"
+                and self._has_scopes(status, scopes)
+            ),
             "account": status.get("login", ""),
         }

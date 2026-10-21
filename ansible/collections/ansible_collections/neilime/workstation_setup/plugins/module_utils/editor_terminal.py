@@ -1,4 +1,4 @@
-"""Configure a host Zsh terminal without rewriting personal VS Code JSONC settings."""
+"""Configure the native terminal and clipboard without rewriting personal VS Code JSONC."""
 
 from __future__ import annotations
 
@@ -22,3 +22,17 @@ class EditorTerminalSettings:
             content, ("terminal.integrated.profiles.linux", "zsh"), {"path": "/usr/bin/zsh", "args": ["-l"]}
         )
         return document.set(content, ("terminal.integrated.defaultProfile.linux",), "zsh")
+
+
+# The module selects the appropriate document configurator.
+# pylint: disable-next=too-few-public-methods
+class EditorTerminalKeybindings:
+    """Route terminal paste shortcuts to the same clipboard as the Paste menu."""
+
+    def configure(self, content: str) -> str:
+        """Keep personal bindings and add terminal-scoped overrides with higher priority."""
+        bindings = [
+            {"key": key, "command": "workbench.action.terminal.paste", "when": "terminalFocus"}
+            for key in ("ctrl+v", "shift+insert")
+        ]
+        return JsoncDocument().append_keybindings(content, bindings)

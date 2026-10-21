@@ -312,6 +312,24 @@ desktop session does not yet have that group. Verify with `docker info`,
 Docker group access grants root-level control; see
 [Docker's post-installation guide](https://docs.docker.com/engine/install/linux-postinstall/).
 
+For `development.github.host: github.com`, setup also logs Docker into `ghcr.io`
+with the configured GitHub account. It reuses the GitHub CLI token and requests
+`write:packages` through browser authorization when that permission is missing.
+This supports pulling and pushing images allowed by your account's package and
+organization permissions; organization SSO authorization may also be required.
+
+The token is passed to Docker through standard input and stored by Docker's
+Secret Service helper in the desktop keyring. Setup preserves unrelated Docker
+settings, verifies login before replacing inline GHCR credentials, and refreshes
+Docker's saved credential when the GitHub token changes. Rerun setup after
+changing GitHub accounts or credentials. Dry runs inspect configuration and saved
+credentials without authorizing permissions or logging into the registry.
+
+Unattended setup requires a saved login with `write:packages` already granted.
+To grant it interactively as the managed user, run
+`gh auth refresh --hostname github.com --scopes write:packages`, then rerun setup.
+Keep the desktop keyring unlocked. Setup does not publish or delete any images.
+
 Setup creates `user.projects_directory` (`~/Documents/dev-projects` by default)
 and adds it to the Files sidebar bookmarks. Existing bookmarks and custom labels
 are preserved.
@@ -353,8 +371,22 @@ installation and compiles missing settings schemas. It preserves unrelated
 extensions and keeps GNOME compatibility validation enabled. Log out and back in
 after installation or an update.
 The companion profile retains 200 entries, images, search, pins, whitespace, and
-paste-on-select, with `Super+Shift+V` as its only global shortcut. Check that this
-shortcut is free in your desktop and apps during the
+`Super+Shift+V` as its only global shortcut. Select a history entry to make it the
+current clipboard value, then paste in the destination app. The profile disables
+automatic paste and the separate paste button so selecting history keeps that
+value current for subsequent pastes.
+
+Setup maps `Ctrl+V`, `Ctrl+Shift+V`, and `Shift+Insert` to regular clipboard paste
+in Ptyxis. It adds `Ctrl+V` and `Shift+Insert` overrides for the native Visual Studio Code
+terminal; its existing `Ctrl+Shift+V` and Paste menu use the same clipboard.
+The terminal `Ctrl+V` binding takes precedence over the shell's literal-next-key
+function. Copy explicitly with `Ctrl+C` in desktop apps or `Ctrl+Shift+C` in a
+terminal. Highlighting text alone does not replace the copied value.
+
+These bindings cover the managed terminals. Other terminal emulators, editor
+profiles, and applications with custom shortcuts need their own regular-clipboard
+paste bindings. Linux's primary selection still exists; middle-click or a
+separate Paste Selection action can use it. Check clipboard consistency during the
 [Wayland acceptance checks](../development/adr/adr-0001-workstation-toolchain.md#gnome-clipboard-indicator).
 
 Setup preserves existing `~/.config` permissions, including Chezmoi's private mode.

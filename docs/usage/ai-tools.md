@@ -14,6 +14,10 @@ configuration changes with `workstation.sh setup`.
 fields define the CLI package, exact release and verification command. Setup
 installs that CLI with the system Node runtime, verifies it without shell
 activation, establishes its native account login, and configures its extensions.
+CLI packages belong to the managed user, allowing Copilot's automatic updates
+and `/update` command to replace its executable without administrator access.
+Setup installs the configured npm release; client updates can change the running
+version between setup runs.
 
 `development.ai_tools.orca` contains Orca's release `version` and initial
 `settings`. Setup checks the architecture-specific package digest and seeds only
