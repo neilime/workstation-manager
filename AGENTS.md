@@ -147,7 +147,7 @@ more specific `AGENTS.md` files when working in their directories.
 
 ## Documentation
 
-- Keep the root README limited to project purpose, end-user prerequisites,
+- Keep the root readme limited to project purpose, end user prerequisites,
   everyday commands, and links into `docs/`. Put architecture, implementation,
   CI, testing, and detailed procedures in the appropriate guides.
 - Organize guides by audience: `docs/usage/` for workstation users and
