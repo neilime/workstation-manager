@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import stat
 import subprocess
 import sys
 from types import ModuleType
+
+import pytest
 
 SCRIPT_PATH = (
     pathlib.Path(__file__).parents[4]
@@ -18,10 +21,10 @@ SCRIPT_PATH = (
 )
 
 
-def load_script_module() -> ModuleType:
+def load_script_module(path=SCRIPT_PATH) -> ModuleType:
     """Import the helper script as a Python module for unit testing."""
 
-    spec = importlib.util.spec_from_file_location("git_project_report_script", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
         raise AssertionError("Unable to load the Git project report helper script")
 
@@ -104,3 +107,46 @@ def test_render_report_mentions_missing_projects_directory(tmp_path) -> None:
     assert module.render_report(report) == (
         f"Git project report for {(tmp_path / 'missing-projects').resolve()}\nProjects directory does not exist yet."
     )
+
+
+def test_notification_failures_are_reported_to_the_caller(tmp_path, monkeypatch, capsys) -> None:
+    """A notification failure must fail the scheduled command and explain the error."""
+    module = load_script_module()
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **_options: subprocess.CompletedProcess(command, 1, "", "Cannot save Git report\n"),
+    )
+    assert module.main(["--projects-directory", str(tmp_path / "missing"), "--notify"]) == 1
+    output = capsys.readouterr()
+    assert "Projects directory does not exist yet." in output.out
+    assert output.err == "Cannot save Git report\n"
+
+
+def test_saved_report_is_private_and_replaced_without_following_file_links(tmp_path) -> None:
+    """Refreshing the saved report preserves other files and keeps report contents private."""
+    module = load_script_module(SCRIPT_PATH.with_name("git_project_notification.py"))
+    notifications = module.GitReportNotifications(tmp_path)
+    notifications.save("First report\n")
+    assert stat.S_IMODE(notifications.path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(notifications.path.parent.stat().st_mode) == 0o700
+    preserved = tmp_path / "unmanaged.txt"
+    preserved.write_text("Preserved\n")
+    notifications.path.unlink()
+    notifications.path.symlink_to(preserved)
+    notifications.save("Updated report\n")
+    assert notifications.path.read_text() == "Updated report\n"
+    assert not notifications.path.is_symlink()
+    assert preserved.read_text() == "Preserved\n"
+    assert sorted(path.name for path in notifications.path.parent.iterdir()) == ["latest.txt"]
+
+
+def test_report_storage_rejects_a_symlinked_application_directory(tmp_path) -> None:
+    """A managed report must not be published into a redirected storage directory."""
+    module = load_script_module(SCRIPT_PATH.with_name("git_project_notification.py"))
+    notifications = module.GitReportNotifications(tmp_path)
+    notifications.path.parent.parent.mkdir()
+    notifications.path.parent.symlink_to(tmp_path)
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        notifications.save("Private report\n")
+    assert not (tmp_path / "latest.txt").exists()

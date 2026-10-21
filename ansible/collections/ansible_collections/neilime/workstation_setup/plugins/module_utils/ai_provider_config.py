@@ -105,16 +105,20 @@ class AiProviderConfiguration:
         return content
 
     def _toml(self, content: str, key: str, servers: dict, previous: dict) -> str:
-        current = tomllib.loads(content).get(key, {})
+        original = tomllib.loads(content)
+        current = original.get(key, {})
         if not isinstance(current, dict):
             raise ValueError("The MCP server map must be a table")
         self._check_ownership(current, servers, previous)
         outside = self._outside_block(content)
-        unmanaged = tomllib.loads(outside).get(key, {})
+        personal = tomllib.loads(outside)
+        unmanaged = personal.get(key, {})
         if any(name in unmanaged for name in previous.keys() | servers.keys()):
             raise ValueError("MCP TOML entries outside the managed block must be renamed or moved before setup")
         # Reject user-added entries inside the block before replacing it.
-        if current.keys() - unmanaged.keys() - previous.keys() - servers.keys():
+        if current.keys() - unmanaged.keys() - previous.keys() - servers.keys() or {
+            name: value for name, value in original.items() if name != key
+        } != {name: value for name, value in personal.items() if name != key}:
             raise ValueError("The managed MCP block contains user entries; move them outside the block")
         if not servers:
             return outside

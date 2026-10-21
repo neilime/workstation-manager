@@ -143,17 +143,21 @@ class GhcrAuthentication:
         if not self._matches(self._stored_credentials(), token):
             raise ValueError("Docker login did not save the configured GHCR account in Secret Service")
 
-    def ensure(self, *, terminal: str = "", check_mode: bool = False) -> dict:
-        """Check account, package scope and registry login without publishing an image."""
+    def ensure(self, *, token: str = "", terminal: str = "", check_mode: bool = False) -> dict:
+        """Verify registry login, using explicit automation credentials when supplied."""
         original = self._read_config()
         configured = self._configured(original)
         config_changed = (
             configured != original or not self.path.exists() or stat.S_IMODE(self.path.stat().st_mode) != 0o600
         )
-        github = self.github.ensure(terminal=terminal, check_mode=check_mode, scopes=("write:packages",))
+        # Actions tokens have repository permissions, not user OAuth scopes.
+        # The saved GitHub account is still verified independently of the registry credential.
+        github = self.github.ensure(
+            terminal=terminal, check_mode=check_mode, scopes=() if token else ("write:packages",)
+        )
         if not github["authenticated"]:
             return {"changed": True, "authenticated": False, "account": self.account}
-        token = self.github.read_token()
+        token = token or self.github.read_token()
         matches = self._matches(self._stored_credentials(), token)
         changed = config_changed or github["changed"] or not matches
         if not check_mode:

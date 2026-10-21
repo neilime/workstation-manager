@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from ansible_test_helpers import ansible_environment, run_playbook, write_local_playbook
+from ansible.parsing.dataloader import DataLoader
+from ansible_test_helpers import ansible_environment, managed_user, run_playbook, write_local_playbook
 
 COLLECTION = Path(__file__).parents[2] / "ansible/collections/ansible_collections/neilime/workstation_setup"
 pytestmark = pytest.mark.integration
@@ -26,15 +27,18 @@ args = sys.argv[1:]
 name = Path(sys.argv[0]).name
 assert not any(key.startswith('DOCKER_') for key in os.environ)
 assert not os.environ.get('GH_TOKEN')
+assert not os.environ.get('WORKSTATION_MANAGER_GHCR_TOKEN')
 with (home / 'calls').open('a') as log:
     log.write(json.dumps([name, *args]) + '\n')
 credential = home / 'credential'
 token = 'synthetic-registry-credential'
 if name == 'gh':
     if args[:2] == ['auth', 'status']:
+        scopes = 'repo' if (home / 'separate-token').exists() else 'repo, write:packages'
         print(json.dumps({'hosts': {'github.com': [dict(state='success', active=True,
-              login='fixture', tokenSource='keyring', scopes='repo, write:packages')]}}))
+              login='fixture', tokenSource='keyring', scopes=scopes)]}}))
     elif args[:2] == ['auth', 'token']:
+        assert not (home / 'separate-token').exists(), 'Registry login must not read the user token'
         assert args[-2:] == ['--user', 'fixture']
         print(token)
     else:
@@ -79,15 +83,43 @@ else:
         for original, replacement in replacements.items():
             source = source.replace(original, str(replacement))
         destination.write_text(source)
+    tasks = DataLoader().load_from_file(str(COLLECTION / "roles/development_tooling/tasks/ghcr.yml"))
+    for task in tasks:
+        if "ansible.builtin.get_url" in task:
+            # The VM checks the installed binary; this fixture isolates registry and keyring clients.
+            task["ansible.builtin.debug"] = {"msg": task.pop("ansible.builtin.get_url")}
+    task_file = isolated / "roles/development_tooling/tasks/ghcr.yml"
+    task_file.parent.mkdir(parents=True)
+    task_file.write_text(json.dumps(tasks))
     return ansible_environment(tmp_path, GIT_CONFIG_NOSYSTEM="1", GH_TOKEN="ignored-environment-token")
 
 
-def test_registry_login_preview_rerun_and_failure_keep_credentials_private(tmp_path, registry_environment):
+@pytest.mark.parametrize("separate_token", [False, True])
+def test_registry_login_preview_rerun_and_failure_keep_credentials_private(
+    tmp_path, registry_environment, separate_token
+):
     """Ansible reports semantic changes, preserves other config, and redacts failed-client output."""
+    if separate_token:
+        (tmp_path / "separate-token").touch()
+        registry_environment["WORKSTATION_MANAGER_GHCR_TOKEN"] = TOKEN
     playbook = write_local_playbook(
         tmp_path / "registry.json",
-        [{"neilime.workstation_setup.ghcr_auth": {"home": str(tmp_path), "account": "fixture"}}],
-        {},
+        [
+            {
+                "ansible.builtin.import_role": {
+                    "name": "neilime.workstation_setup.development_tooling",
+                    "tasks_from": "ghcr",
+                }
+            }
+        ],
+        {
+            "workstation_manager_use_become": False,
+            "workstation_manager_native_arch": "amd64",
+            "workstation_manager_resolved": {
+                "user": managed_user(tmp_path),
+                "development": {"github": {"account": "fixture"}, "docker": {"credential_helper_version": "0.0.0"}},
+            },
+        },
     )
     command = ["ansible-playbook", "-i", "localhost,", str(playbook)]
     configuration = tmp_path / ".docker/config.json"

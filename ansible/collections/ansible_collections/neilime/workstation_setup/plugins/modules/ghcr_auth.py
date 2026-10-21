@@ -9,10 +9,11 @@
 DOCUMENTATION = r"""
 ---
 module: ghcr_auth
-short_description: Authenticate Docker to GHCR using the GitHub keyring login
+short_description: Authenticate Docker to GHCR with credentials stored in the keyring
 version_added: "1.0.0"
 description:
-  - Requires the configured GitHub account and C(write:packages) permission.
+  - Verifies the configured GitHub account and uses its saved login by default, requiring C(write:packages).
+  - Accepts a separate registry token for automation, including GitHub Actions job tokens.
   - Uses Docker's Secret Service helper and passes the token only over standard input.
   - Validates the registry login and stored credential before merging Docker configuration.
   - Preserves unrelated Docker settings and registry credentials.
@@ -29,6 +30,13 @@ options:
   terminal:
     description: User terminal for native GitHub permission authorization when needed.
     type: path
+    default: ''
+  token:
+    description:
+      - Optional registry token with pull and push permissions granted by its issuer.
+      - Does not replace the managed user's GitHub CLI login.
+      - GitHub Actions tokens require C(packages:write) and access to the target package.
+    type: str
     default: ''
 author:
   - workstation-manager contributors (@neilime)
@@ -82,6 +90,7 @@ def main() -> None:
             "home": {"type": "path", "required": True},
             "account": {"type": "str", "required": True},
             "terminal": {"type": "path", "default": ""},
+            "token": {"type": "str", "default": "", "no_log": True},
         },
         supports_check_mode=True,
     )
@@ -95,7 +104,7 @@ def main() -> None:
         module.exit_json(changed=True, authenticated=False, account=account)
     try:
         result = GhcrAuthentication(home, account).ensure(
-            terminal=module.params["terminal"], check_mode=module.check_mode
+            token=module.params["token"], terminal=module.params["terminal"], check_mode=module.check_mode
         )
     except subprocess.TimeoutExpired:
         module.fail_json(msg="GHCR authentication timed out; check network access and unlock the desktop keyring")

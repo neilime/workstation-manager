@@ -62,7 +62,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--notify",
         action="store_true",
-        help="Show the report summary through notify-send after printing it.",
+        help="Save the full report and show a clickable desktop notification after printing it.",
     )
     return parser.parse_args(argv)
 
@@ -263,17 +263,18 @@ def build_notification(report: ScanReport) -> tuple[str, str]:
 
 
 def send_notification(report: ScanReport) -> int:
-    """Send the summary through notify-send."""
+    """Save the full report and send a notification with a persistent open action."""
 
     title, body = build_notification(report)
     notify_result = subprocess.run(
         [
-            "notify-send",
-            "--app-name=workstation-manager",
-            "--expire-time=15000",
+            "/usr/bin/python3",
+            str(Path(__file__).with_name("git_project_notification.py")),
+            "--notify",
             title,
             body,
         ],
+        input=render_report(report) + "\n",
         check=False,
         capture_output=True,
         text=True,
@@ -281,7 +282,7 @@ def send_notification(report: ScanReport) -> int:
     if notify_result.returncode == 0:
         return 0
 
-    message = notify_result.stderr.strip() or notify_result.stdout.strip() or "notify-send failed"
+    message = notify_result.stderr.strip() or notify_result.stdout.strip() or "Git report notification failed"
     print(message, file=sys.stderr)
     return notify_result.returncode
 

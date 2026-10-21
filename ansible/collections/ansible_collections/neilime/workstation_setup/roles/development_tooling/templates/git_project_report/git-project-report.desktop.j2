@@ -1,0 +1,11 @@
+{{ ansible_managed | comment }}
+[Desktop Entry]
+Name=Git project report
+Comment=Open the latest report of Git work in progress
+Type=Application
+Exec=/usr/bin/python3 {{ (workstation_manager_resolved.user.home ~ '/.local/share/workstation-manager/git_project_notification.py') | to_json(ensure_ascii=false) }}
+Icon=git
+Terminal=false
+NoDisplay=true
+DBusActivatable=true
+X-GNOME-UsesNotifications=true

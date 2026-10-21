@@ -3,6 +3,8 @@
 import json
 import os
 import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 from ansible.parsing.dataloader import DataLoader
@@ -17,8 +19,8 @@ from ansible_test_helpers import (
 pytestmark = pytest.mark.integration
 
 
-def test_notifications_install_without_configuration_and_converge(tmp_path):
-    """A preview preserves the home; setup enables future sessions and converges once."""
+def test_notifications_install_converge_and_open_full_report(tmp_path):
+    """Setup preserves previews, converges, and makes notification clicks open the complete report."""
     role = tmp_path / "development_tooling"
     shutil.copytree(SETUP_ROLES / role.name, role)
     notifications = role / "tasks/git_project_notifications.yml"
@@ -28,7 +30,7 @@ def test_notifications_install_without_configuration_and_converge(tmp_path):
             # The VM test verifies packages; all user files use real Ansible modules here.
             task["ansible.builtin.debug"] = {"msg": task.pop("ansible.builtin.apt")}
     notifications.write_text(json.dumps(tasks))
-    home = tmp_path / "home"
+    home = tmp_path / "home with spaces"
     (home / ".local/bin").mkdir(parents=True)
     autostart = home / ".config/autostart/workstation-manager-git-project-report.desktop"
     timer = home / ".config/systemd/user/timers.target.wants/workstation-manager-git-project-report.timer"
@@ -75,3 +77,42 @@ def test_notifications_install_without_configuration_and_converge(tmp_path):
     result = run_playbook(command, environment)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "changed=0" in result.stdout
+    exercise_notification_actions(home, environment)
+
+
+def exercise_notification_actions(home: Path, environment: dict[str, str]) -> None:
+    """Use the installed launchers in a private desktop session with a synthetic viewer."""
+    applications = home / ".local/share/applications"
+    viewer = home / "viewer.py"
+    viewer.write_text(
+        "import json, sys\nfrom pathlib import Path\n"
+        f"with Path({str(home / 'opened.jsonl')!r}).open('a') as log:\n"
+        "    log.write(json.dumps({'path': sys.argv[1], 'report': Path(sys.argv[1]).read_text()}) + '\\n')\n"
+    )
+    (applications / "fixture-viewer.desktop").write_text(
+        "[Desktop Entry]\nName=Fixture report viewer\nType=Application\n"
+        f"Exec=/usr/bin/python3 {json.dumps(str(viewer))} %f\nMimeType=text/plain;\n"
+    )
+    (home / ".config/mimeapps.list").write_text("[Default Applications]\ntext/plain=fixture-viewer.desktop;\n")
+    for index in range(6):
+        project = home / "projects" / f"project-{index}"
+        project.mkdir(parents=True)
+        subprocess.run(["git", "init", "--initial-branch=main", str(project)], check=True, capture_output=True)
+        (project / "uncommitted.txt").write_text("Local work\n")
+    session = Path(__file__).with_name("git_report_session_fixture.py")
+    result = subprocess.run(
+        ["dbus-run-session", "--", "/usr/bin/python3", str(session), str(home)],
+        env={
+            **environment,
+            "HOME": str(home),
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_DATA_HOME": str(home / ".local/share"),
+            "XDG_STATE_HOME": str(home / ".local/state"),
+            "GNOTIFICATION_BACKEND": "gtk",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=40,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

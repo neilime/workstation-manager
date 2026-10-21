@@ -43,6 +43,7 @@ def input_runner_fixture(tmp_path):
         "import json, os, pathlib, sys\n"
         'names = ["BITWARDEN_EMAIL", "BITWARDEN_CLIENT_ID", "BITWARDEN_CLIENT_SECRET", "BITWARDEN_PASSWORD",\n'
         '         "WORKSTATION_MANAGER_GITHUB_TOKEN", "WORKSTATION_MANAGER_INTERACTIVE",\n'
+        '         "WORKSTATION_MANAGER_GHCR_TOKEN",\n'
         '         "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0",\n'
         '         "WORKSTATION_MANAGER_TTY", "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR",\n'
         '         "WORKSTATION_MANAGER_RESTORE_ARCHIVE"]\n'
@@ -74,6 +75,7 @@ def input_runner_fixture(tmp_path):
         "BITWARDEN_CLIENT_SECRET": "fixture-client-secret",
         "BITWARDEN_PASSWORD": "fixture'password $HOME $(false)",
         "WORKSTATION_MANAGER_GITHUB_TOKEN": "fixture-token",
+        "WORKSTATION_MANAGER_GHCR_TOKEN": "fixture-registry-token",
         "WORKSTATION_MANAGER_TTY": "/dev/inherited-terminal",
         "WORKSTATION_MANAGER_INTERACTIVE": "1",
         "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR": str(tmp_path / "backup's files"),
@@ -120,6 +122,7 @@ def test_supplied_inputs_use_the_shared_bootstrap(input_runner, arguments, termi
         "BITWARDEN_CLIENT_SECRET",
         "BITWARDEN_PASSWORD",
         "WORKSTATION_MANAGER_GITHUB_TOKEN",
+        "WORKSTATION_MANAGER_GHCR_TOKEN",
     ):
         assert actual[name] == environment[name]
         assert environment[name] not in result.stdout + result.stderr

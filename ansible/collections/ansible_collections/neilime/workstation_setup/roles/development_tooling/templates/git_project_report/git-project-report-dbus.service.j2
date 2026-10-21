@@ -1,0 +1,4 @@
+{{ ansible_managed | comment }}
+[D-BUS Service]
+Name=io.github.neilime.WorkstationGitReport
+Exec=/usr/bin/python3 {{ (workstation_manager_resolved.user.home ~ '/.local/share/workstation-manager/git_project_notification.py') | to_json(ensure_ascii=false) }} --gapplication-service

@@ -35,6 +35,7 @@ class AiProviderAuthentication:
                 "GH_ENTERPRISE_TOKEN",
                 "GITHUB_ENTERPRISE_TOKEN",
                 "WORKSTATION_MANAGER_GITHUB_TOKEN",
+                "WORKSTATION_MANAGER_GHCR_TOKEN",
                 "GH_DEBUG",
             } or name.startswith("COPILOT_PROVIDER_"):
                 self.environment.pop(name)

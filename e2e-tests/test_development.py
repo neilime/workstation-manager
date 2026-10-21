@@ -218,8 +218,6 @@ def test_persistent_github_login_is_independent_of_token_overrides(host, worksta
     assert active["state"] == "success"
     assert active["tokenSource"] == "keyring"
     assert active["login"] == workstation_config["development"]["github"]["account"]
-    if hostname == "github.com":
-        assert "write:packages" in {scope.strip() for scope in active["scopes"].split(",")}
 
 
 def test_development_sysctl_configuration(host, workstation_config) -> None:
@@ -244,6 +242,10 @@ def test_git_project_report_command_and_schedule_are_managed(host) -> None:
     timer_unit = host.file(f"{user_home}/.config/systemd/user/workstation-manager-git-project-report.timer")
     timer_link = f"{user_home}/.config/systemd/user/timers.target.wants/workstation-manager-git-project-report.timer"
     autostart_file = host.file(f"{user_home}/.config/autostart/workstation-manager-git-project-report.desktop")
+    notification_handler = host.file(f"{user_home}/.local/share/workstation-manager/git_project_notification.py")
+    application_id = "io.github.neilime.WorkstationGitReport"
+    desktop_file = host.file(f"{user_home}/.local/share/applications/{application_id}.desktop")
+    activation_file = host.file(f"{user_home}/.local/share/dbus-1/services/{application_id}.service")
 
     # Act
     report_result = host.run(report_command)
@@ -254,7 +256,12 @@ def test_git_project_report_command_and_schedule_are_managed(host) -> None:
     assert helper_script.mode == 0o644
     assert timer_link_result.succeeded
     assert autostart_file.exists
-    assert host.run("command -v notify-send").succeeded
+    assert host.run("/usr/bin/python3 -c 'from gi.repository import Gio'").succeeded
+    assert notification_handler.exists
+    assert notification_handler.mode == 0o644
+    assert desktop_file.contains(r"^DBusActivatable=true$")
+    assert desktop_file.contains(r"^X-GNOME-UsesNotifications=true$")
+    assert activation_file.contains(r"^Name=" + application_id.replace(".", r"\.") + "$")
     assert activator_script.exists
     assert service_unit.exists
     assert timer_unit.contains(r"^OnCalendar=daily$")

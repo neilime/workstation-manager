@@ -185,8 +185,13 @@ configured when `code` is selected in `editor_packages`. Codex reads skills from
 Setup requires selected clients to exist after application provisioning. It
 preserves unrelated configuration and comments. Codex entries live in a marked
 TOML block; JSON entries are merged individually. Private native files have mode
-`0600`, including any credentials resolved from Bitwarden. Exclude these files
-from Chezmoi tracking and application settings synchronization. Setup refuses
+`0600`, including any credentials resolved from Bitwarden. Exclude generated MCP
+settings and credentials from Chezmoi source files and application settings
+synchronization. Personal Codex preferences may use a Chezmoi modify template
+that preserves the current MCP tables and their ownership markers. It must leave
+the existing file unchanged when personal preferences already match, so setup's
+updates do not create dotfile drift. Do not track the rendered configuration as a
+regular dotfile or use `chezmoi add` to capture its credentials. Setup refuses
 symlinked configuration paths so it cannot write credentials into a dotfile source.
 
 Ownership fingerprints and link targets live in
@@ -194,7 +199,9 @@ Ownership fingerprints and link targets live in
 unchanged, setup-owned entries and symlinks. Personal files, custom skill
 directories, and edits to managed entries are preserved; conflicting names fail
 setup. Move or rename conflicting native entries before adopting a name into the
-declaration. Keep personal Codex tables outside the managed block.
+declaration. Keep personal Codex tables outside the managed block. Codex can insert
+project tables before its closing marker; setup refuses to replace that block
+until those personal tables are moved outside it.
 
 Remove a server or skill from the declaration and rerun setup while its provider
 is still enabled to remove the managed entry or link. Disabling a provider

@@ -68,14 +68,19 @@ installs Orca, Helm, Dive, Skillshare, gh-act, and gh-stack.
 Setup provisions declared [project skills](../../../../../docs/development/README.md#project-skills)
 after restoring projects and establishing GitHub authentication. The default GitHub extensions use published binary release tags.
 The Starship launcher uses mise's resolved executable path for the configured release.
-The Git project report provides a manual command and daily desktop notifications.
+The Git project report provides a manual command and daily desktop notifications
+that open the complete saved report. See the
+[configuration guide](../../../../../docs/usage/configuration.md#developer-tools-and-project-files).
 GitHub authentication runs before private-repository access through
 `ansible/github_bootstrap.yml`, which installs or updates GitHub CLI from its
 official APT repository. It reuses a saved login or performs native browser
 sign-in, with token input for automation. The login persists in the managed user's
 OS credential store and must match `development.github.account` once configuration
-is loaded. For github.com accounts, setup also verifies Docker's GHCR login with
-`write:packages` and stores its credential using Docker's Secret Service helper.
+is loaded. For github.com accounts, setup also verifies Docker's GHCR login and
+stores its credential using Docker's Secret Service helper. It uses the saved
+GitHub login with `write:packages` by default; automation can supply a separate
+registry credential through the documented
+[automation inputs](../../../../../docs/development/README.md#automated-runs).
 Context7 requires a Bitwarden API-key item selector. See the
 [developer-tool configuration](../../../../../docs/usage/configuration.md#developer-tools-and-project-files)
 for selections and sign-in steps.

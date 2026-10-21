@@ -14,12 +14,13 @@
     group: root
     mode: "0755"
 
-- name: Verify Docker GHCR authentication with pull and push access
+- name: Verify Docker GHCR authentication and keyring storage
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
   neilime.workstation_setup.ghcr_auth:
     home: "{{ workstation_manager_resolved.user.home }}"
     account: "{{ workstation_manager_resolved.development.github.account }}"
+    token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GHCR_TOKEN') }}"
     terminal: >-
       {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY')
          if lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') == '1' else '' }}

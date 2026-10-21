@@ -29,6 +29,7 @@ class GitHubAuthentication:
             "GH_ENTERPRISE_TOKEN",
             "GITHUB_ENTERPRISE_TOKEN",
             "WORKSTATION_MANAGER_GITHUB_TOKEN",
+            "WORKSTATION_MANAGER_GHCR_TOKEN",
             "GH_DEBUG",
         ):
             self.environment.pop(name, None)

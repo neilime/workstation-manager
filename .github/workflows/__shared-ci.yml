@@ -170,7 +170,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      packages: read
+      packages: write
       pull-requests: write
     env:
       TOOLING_IMAGE: >-
@@ -230,6 +230,7 @@ jobs:
           # yamllint disable rule:line-length
           E2E_REPOSITORY_URL: ${{ format('https://github.com/{0}.git', github.repository) }}
           WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
+          WORKSTATION_MANAGER_GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # yamllint enable rule:line-length
           BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
           BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
