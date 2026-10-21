@@ -56,7 +56,9 @@ installs or updates GitHub CLI from its official APT repository and reuses a val
 saved in your desktop keyring. If sign-in is needed, it starts
 [`gh auth login --web`](https://cli.github.com/manual/gh_auth_login); approve access
 in your browser. Keep your desktop keyring unlocked so the login can be saved.
-Git then uses this login to download `workstation-config`.
+Git then uses this login to download the latest `main` revision of
+`workstation-config` into a fresh temporary checkout for each run. An explicitly
+supplied `WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE` is used as provided.
 
 After downloading configuration, the entrypoint reuses an already-unlocked
 Bitwarden CLI session when one is available (for example after you run `bw unlock`
@@ -154,9 +156,13 @@ local browser profiles missing from the collection as drift.
 ## Dotfiles and application settings
 
 `home_environment.chezmoi.source` selects the Git repository used to initialize
-`~/.local/share/chezmoi`. Use a full HTTPS or SSH Git URL. Setup applies its
-dotfiles to your home directory. An existing checkout is reused; changing the
-source setting does not switch its remote. Setup uses the managed source,
+`~/.local/share/chezmoi`. Use a full HTTPS or SSH Git URL. Every normal setup
+fetches the checkout's tracking branch and fast-forwards to its latest published
+revision before inspecting and applying dotfiles. Local source edits, unpublished
+commits, rewritten upstream history, or failed fetches stop setup before dotfile
+application. Commit and publish source changes or reconcile the checkout manually,
+then rerun setup. An existing checkout keeps its remote and tracking branch;
+changing the source setting does not switch its remote. Setup uses the managed source,
 configured `home_environment.chezmoi.config_path`, and target home explicitly,
 including when your terminal or IDE sets a different `XDG_DATA_HOME`. Existing
 baseline directory permissions are preserved, including private `.config`
@@ -166,8 +172,9 @@ at `0644` regardless of the calling shell's mask. Private source attributes reta
 their restricted permissions.
 
 Every normal setup checks pending changes with `chezmoi status` and applies them.
-Dry runs do not apply dotfiles. If local changes conflict with the source, setup
-lists the affected paths and prompts before replacing them.
+Dry runs do not fetch, update the source checkout, or apply dotfiles. If local
+changes conflict with the source, setup lists the affected paths and prompts
+before replacing them.
 Choose `apply` to use the source versions and permissions for those paths,
 `skip` to keep your local changes and continue setup without applying any Chezmoi
 dotfiles or scripts for this run, or `abort` to stop setup and reconcile your

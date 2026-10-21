@@ -150,3 +150,66 @@ def test_private_clone_passes_credentials_to_git_without_putting_them_in_the_url
     assert header == f"Authorization: Basic {encoded}"
     assert token not in json.dumps(arguments) + result.stdout + result.stderr
     assert encoded not in json.dumps(arguments) + result.stdout + result.stderr
+
+
+def test_each_setup_downloads_the_latest_published_private_override(tmp_path):
+    """Separate setup invocations read fresh remote configuration and remove temporary checkouts."""
+    environment = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path),
+        "TMPDIR": str(tmp_path),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "WORKSTATION_MANAGER_GITHUB_TOKEN": "synthetic-private-config-token",
+    }
+
+    def git(*arguments):
+        return subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.test",
+                "-c",
+                "commit.gpgsign=false",
+                *arguments,
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+
+    source = tmp_path / "published"
+    git("init", "--initial-branch=main", str(source))
+    (source / "ansible").mkdir()
+    override = source / "ansible/private.override.yml"
+    override.write_text("fixture_revision: initial\n")
+    git("-C", str(source), "add", ".")
+    git("-C", str(source), "commit", "-m", "Initial private configuration")
+    remote = tmp_path / "remote.git"
+    git("clone", "--bare", str(source), str(remote))
+    environment["TEST_REMOTE"] = remote.as_uri()
+    definitions = entrypoint_source_with_mock_controller().rsplit('main "$@"', 1)[0]
+    for revision in ("initial", "updated"):
+        if revision == "updated":
+            override.write_text("fixture_revision: updated\n")
+            git("-C", str(source), "commit", "-am", "Publish updated private configuration")
+            git("-C", str(source), "push", str(remote), "main")
+        result = subprocess.run(
+            ["sh", "-s"],
+            input=definitions
+            + '\nPRIVATE_OVERRIDE_REPOSITORY_URL="$TEST_REMOTE"\n'
+            + 'prepare_private_override_file\ncat "$PRIVATE_OVERRIDE_LOCAL_FILE"\n',
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"fixture_revision: {revision}" in result.stdout
+        assert "synthetic-private-config-token" not in result.stdout + result.stderr
+        assert not list(tmp_path.glob("workstation-manager-private-override-*"))
