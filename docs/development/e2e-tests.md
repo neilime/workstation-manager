@@ -74,6 +74,9 @@ acknowledgement, and a successful server commit for the captured device's deleti
 A local leave callback alone cannot authorize VM deletion. Preexisting profiles
 and profiles introduced after identity capture are excluded. Recovery words,
 device identities, and raw protocol data stay out of diagnostics.
+The settings tab must identify the captured device before requesting leave.
+While its native callback is pending, teardown requests refreshes over the private
+pipe so deletion uploads do not depend on background browser timers.
 The shared [browser observer contract](browser-adapters.md#brave-implementation)
 defines callback, navigation, and server-acknowledgement handling.
 

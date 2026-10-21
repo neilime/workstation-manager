@@ -46,9 +46,11 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_
     DesktopSession,
 )
 from browser_sync_fixture import (  # noqa: E402
+    _START_LEAVE,
     _START_TEARDOWN,
     _TEARDOWN_CHECKS,
     _TEARDOWN_STATE,
+    reset_device,
 )
 
 # pylint: enable=wrong-import-position
@@ -682,6 +684,48 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
     )
 
 
+def native_leave_driver(pipe: BrowserPipe) -> None:
+    """Check native leave identity and refresh-driven completion without browser timers."""
+
+    page = pipe.page("brave://version")
+    pipe.evaluate(
+        page,
+        """(() => {
+          window.fixtureDevices = [];
+          window.fixtureResets = 0;
+          window.fixtureRefreshes = 0;
+          window.workstationSyncSettings = {sendWithPromise: method => {
+            if (method === 'SyncGetDeviceList') return Promise.resolve(window.fixtureDevices);
+            if (method !== 'SyncSetupReset') throw Error('Unexpected fixture method');
+            window.fixtureResets++;
+            return new Promise(resolve => { window.fixtureResolveLeave = resolve; });
+          }};
+          chrome.send = method => {
+            if (method !== 'triggerRefresh') throw Error('Unexpected fixture refresh');
+            if (++window.fixtureRefreshes === 2) window.fixtureResolveLeave(window.fixtureLeaveResult);
+          };
+          return true;
+        })()""",
+    )
+    for devices in (
+        [],
+        [{"guid": "another-device", "isCurrentDevice": True}],
+        [{"guid": "captured-device", "isCurrentDevice": False}],
+        [{"guid": "captured-device", "isCurrentDevice": True}] * 2,
+    ):
+        pipe.evaluate(page, f"window.fixtureDevices = {json.dumps(devices)}; true")
+        assert pipe.evaluate(page, f"{_START_LEAVE}('captured-device')") is False
+        assert pipe.evaluate(page, "window.fixtureResets") == 0
+    for successful in (False, True):
+        pipe.evaluate(
+            page,
+            "window.fixtureDevices = [{guid: 'captured-device', isCurrentDevice: true}]; "
+            f"window.fixtureLeaveResult = {json.dumps(successful)}; window.fixtureRefreshes = 0; true",
+        )
+        assert reset_device(pipe, page, page, "captured-device", timeout=5) is successful
+        assert pipe.evaluate(page, "window.fixtureRefreshes") == 2
+
+
 def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
     """Persist a generated code through the native API while the Sync endpoint is disabled."""
 
@@ -883,6 +927,7 @@ def main() -> None:
             pipe.call("Target.createTarget", {"url": "data:text/plain,workstation-session-fixture"})
             diagnostics(pipe, pipe.page("brave://sync-internals"))
             teardown_readiness(pipe)
+            native_leave_driver(pipe)
             code = pending_chain(pipe, native)
             sync_selection(pipe, native.settings)
             profile_preferences(pipe, native)
