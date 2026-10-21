@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 from ansible.parsing.dataloader import DataLoader
-from ansible_test_helpers import ansible_environment, managed_user, run_playbook, write_local_playbook
+from ansible_test_helpers import (
+    ansible_environment,
+    managed_user,
+    run_playbook,
+    write_local_playbook,
+)
 
 COLLECTION = Path(__file__).parents[2] / "ansible/collections/ansible_collections/neilime/workstation_setup"
 pytestmark = pytest.mark.integration
