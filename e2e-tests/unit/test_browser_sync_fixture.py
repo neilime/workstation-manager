@@ -116,11 +116,13 @@ def test_teardown_leaves_only_captured_test_identities(tmp_path: Path, monkeypat
     write_device(root, "Everyday", "untracked-device")
     monkeypatch.setattr(browser_fixture, "closed_browser", lambda _root: nullcontext(("brave", {})))
     pipe = mock.Mock()
-    monkeypatch.setattr(browser_fixture, "BrowserPipe", lambda *_args: nullcontext(pipe))
+    browser = mock.Mock(return_value=nullcontext(pipe))
+    monkeypatch.setattr(browser_fixture, "BrowserPipe", browser)
     leave = mock.Mock()
     monkeypatch.setattr(browser_fixture, "leave_device", leave)
     fixture.leave()
     leave.assert_called_once_with(pipe, root / "Default", "test-device")
+    assert "--sync-short-nudge-delay-for-test" in browser.call_args.args[0]
     assert browser_fixture.device_identity(root / "Everyday") == "untracked-device"
     assert not fixture.load()["devices"]
     fixture.leave()
@@ -171,75 +173,42 @@ def mock_teardown_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(browser_fixture.time, "sleep", sleep)
 
 
-def mock_native_leave(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Isolate readiness and acknowledgement tests from the native leave driver."""
-
-    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
-    monkeypatch.setattr(
-        browser_fixture,
-        "reset_device",
-        lambda pipe, settings, _diagnostics, _identity: pipe.evaluate(settings, "fixture native leave"),
-    )
-
-
 @pytest.mark.parametrize("successful", [False, True])
-def test_native_leave_drives_refresh_until_its_callback_completes(
-    successful: bool, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A pending native leave gets refresh requests even when browser timers do not run."""
+def test_native_leave_preserves_the_native_callback_result(successful: bool) -> None:
+    """Only the native boolean acknowledgement can complete a captured device's leave."""
 
-    mock_teardown_clock(monkeypatch)
     pipe = mock.Mock()
-    pipe.evaluate.side_effect = [
-        True,
-        {"complete": False, "successful": False},
-        True,
-        {"complete": False, "successful": False},
-        True,
-        {"complete": True, "successful": successful},
-    ]
-    assert browser_fixture.reset_device(pipe, "settings", "diagnostics", "captured-device") is successful
-    refreshes = [call for call in pipe.evaluate.call_args_list if call.args[0] == "diagnostics"]
-    assert len(refreshes) == 2
-    assert all(call.args[1] == "chrome.send('triggerRefresh'); true" for call in refreshes)
+    pipe.evaluate.return_value = successful
+    assert browser_fixture.reset_device(pipe, "settings", "captured-device") is successful
+    pipe.evaluate.assert_called_once()
+    assert pipe.evaluate.call_args.kwargs["timeout"] == 120
 
 
 def test_native_leave_refuses_a_different_settings_device() -> None:
     """A matching diagnostic tab cannot authorize resetting another settings profile."""
 
     pipe = mock.Mock()
-    pipe.evaluate.return_value = False
+    pipe.evaluate.return_value = None
     with pytest.raises(ValueError, match="settings page no longer matches"):
-        browser_fixture.reset_device(pipe, "settings", "diagnostics", "captured-device")
+        browser_fixture.reset_device(pipe, "settings", "captured-device")
     pipe.evaluate.assert_called_once()
 
 
-@pytest.mark.parametrize("invalid", [None, {"complete": "private-response", "successful": False}])
+@pytest.mark.parametrize("invalid", ["private-response", {"successful": True}])
 def test_native_leave_rejects_untrusted_callback_state(invalid: object) -> None:
-    """Only the fixed boolean completion fields may affect teardown or its diagnostics."""
+    """An unsupported native result cannot enter diagnostics or authorize VM deletion."""
 
     pipe = mock.Mock()
-    pipe.evaluate.side_effect = [True, invalid]
+    pipe.evaluate.return_value = invalid
     with pytest.raises(ValueError, match="unsupported native leave diagnostics$"):
-        browser_fixture.reset_device(pipe, "settings", "diagnostics", "captured-device")
-
-
-def test_native_leave_callback_has_a_bounded_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An absent callback fails instead of issuing refresh requests indefinitely."""
-
-    mock_teardown_clock(monkeypatch)
-    pipe = mock.Mock()
-    pipe.evaluate.side_effect = [True, {"complete": False, "successful": False}, True]
-    with pytest.raises(ValueError, match="did not complete leaving"):
-        browser_fixture.reset_device(pipe, "settings", "diagnostics", "captured-device", timeout=0.05)
-    assert pipe.evaluate.call_count == 3
+        browser_fixture.reset_device(pipe, "settings", "captured-device")
 
 
 @pytest.mark.parametrize("matches", [False, True])
 def test_live_device_identity_is_required_before_leaving(matches: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     """Native teardown requires an active tracker and the exact captured device GUID."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.wait_for_acknowledgement.return_value = True
     pipe.evaluate.side_effect = [teardown_state(matches=matches), True, True]
@@ -262,7 +231,7 @@ def test_native_leave_requires_both_local_and_server_confirmation(
 ) -> None:
     """The native leave callback and server deletion acknowledgement must both succeed."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.wait_for_acknowledgement.return_value = acknowledged
     pipe.evaluate.side_effect = [teardown_state(), True, removed, dict.fromkeys(REMOVAL_CHECKS, False)]
@@ -275,7 +244,7 @@ def test_native_leave_requires_both_local_and_server_confirmation(
 def test_missing_removal_reports_only_incomplete_protocol_stages(monkeypatch: pytest.MonkeyPatch) -> None:
     """Distinguish a missing tombstone from an unconfirmed response without logging device data."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.wait_for_acknowledgement.return_value = False
     checks = {**dict.fromkeys(REMOVAL_CHECKS, True), "Matching Response": False, "Server Acknowledgement": False}
@@ -297,7 +266,7 @@ def test_removal_diagnostics_reject_untrusted_fields(invalid: object) -> None:
 def test_teardown_waits_for_server_evidence_before_removing_the_observer(monkeypatch: pytest.MonkeyPatch) -> None:
     """A successful leave callback can precede the diagnostic target's server event."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.watch_acknowledgement.return_value = lambda: False
     pipe.evaluate.side_effect = [teardown_state(), True, True]
@@ -323,7 +292,7 @@ def test_teardown_retains_server_confirmation_after_diagnostic_page_loss(
 ) -> None:
     """Losing page globals after native leave neither loses nor invents server confirmation."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.wait_for_acknowledgement.return_value = acknowledged
     pipe.evaluate.side_effect = [
@@ -343,7 +312,7 @@ def test_teardown_retains_server_confirmation_after_diagnostic_page_loss(
 def test_native_leave_failure_is_not_masked_by_diagnostic_page_loss(monkeypatch: pytest.MonkeyPatch) -> None:
     """A failed native leave stays failed even when its observer page also disappears."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.wait_for_acknowledgement.return_value = True
     pipe.evaluate.side_effect = [
@@ -360,7 +329,7 @@ def test_native_leave_failure_is_not_masked_by_diagnostic_page_loss(monkeypatch:
 def test_teardown_requires_native_callbacks_before_requesting_removal(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unavailable native callbacks cannot authorize a captured device's removal."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     mock_teardown_clock(monkeypatch)
     pipe = mock.Mock()
     pipe.evaluate.return_value = teardown_state(
@@ -380,7 +349,7 @@ def test_teardown_requires_native_callbacks_before_requesting_removal(monkeypatc
 def test_teardown_reloads_a_lost_context_and_rechecks_identity(matches: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     """Only the owned diagnostic target is recovered before checking readiness and identity again."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     mock_teardown_clock(monkeypatch)
     pipe = mock.Mock()
     pipe.wait_for_acknowledgement.return_value = True
@@ -414,7 +383,7 @@ def test_teardown_reloads_a_lost_context_and_rechecks_identity(matches: bool, mo
 def test_teardown_context_recovery_cannot_extend_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Repeated unavailable contexts stop within the original verification deadline without resetting Sync."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     mock_teardown_clock(monkeypatch)
     pipe = mock.Mock()
     pipe.evaluate.return_value = teardown_state(failed=("Diagnostic Page",), needs_navigation=True)
@@ -430,7 +399,7 @@ def test_teardown_context_recovery_cannot_extend_the_deadline(monkeypatch: pytes
 def test_teardown_context_recovery_preserves_protocol_failures(failure: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """A failed native protocol operation is not converted into readiness or a successful removal."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     error = ValueError("synthetic protocol failure")
     pipe.evaluate.return_value = teardown_state(needs_navigation=True)
@@ -450,7 +419,7 @@ def test_teardown_context_recovery_preserves_protocol_failures(failure: str, mon
 def test_teardown_does_not_leave_when_sync_cannot_be_verified(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unavailable server cannot turn a local reset into successful remote teardown."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     mock_teardown_clock(monkeypatch)
     pipe = mock.Mock()
     pipe.evaluate.side_effect = [teardown_state(failed=("Fresh Download", "Server Connection"))]
@@ -467,7 +436,7 @@ def test_teardown_diagnostics_never_report_untrusted_browser_fields(
 ) -> None:
     """Malformed readiness evidence stays private and cannot authorize server removal."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     checks = {**dict.fromkeys(TEARDOWN_CHECKS, True), **invalid} if isinstance(invalid, dict) else invalid
     pipe.evaluate.return_value = {**teardown_state(), "checks": checks}
@@ -482,7 +451,7 @@ def test_teardown_diagnostics_never_report_untrusted_browser_fields(
 def test_teardown_rejects_malformed_readiness_snapshots(invalid: object, monkeypatch: pytest.MonkeyPatch) -> None:
     """Unsupported result structures fail immediately without logging untrusted payloads or spinning."""
 
-    mock_native_leave(monkeypatch)
+    monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
     pipe.evaluate.return_value = invalid
     with pytest.raises(ValueError, match="unsupported teardown diagnostics") as error:
