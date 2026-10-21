@@ -11,6 +11,9 @@ from urllib.parse import urlsplit
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (
     DesktopSession,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.github_auth import (
+    GITHUB_CREDENTIAL_ENVIRONMENT,
+)
 
 
 # Authentication is one transaction with private provider-specific steps.
@@ -29,14 +32,8 @@ class AiProviderAuthentication:
                 "OPENAI_API_KEY",
                 "CODEX_API_KEY",
                 "CODEX_ACCESS_TOKEN",
-                "GH_TOKEN",
-                "GITHUB_TOKEN",
                 "COPILOT_GITHUB_TOKEN",
-                "GH_ENTERPRISE_TOKEN",
-                "GITHUB_ENTERPRISE_TOKEN",
-                "WORKSTATION_MANAGER_GITHUB_TOKEN",
-                "WORKSTATION_MANAGER_GHCR_TOKEN",
-                "GH_DEBUG",
+                *GITHUB_CREDENTIAL_ENVIRONMENT,
             } or name.startswith("COPILOT_PROVIDER_"):
                 self.environment.pop(name)
         self.environment.update(

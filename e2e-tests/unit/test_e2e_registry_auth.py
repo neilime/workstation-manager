@@ -41,10 +41,9 @@ def test_ci_registry_token_has_write_access_and_reaches_vm_setup_privately(tmp_p
         },
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
         timeout=10,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
     invocation = arguments.read_text().split("\0")[:-1]
     assert invocation[0] == "setup"
     assert f"WORKSTATION_MANAGER_GHCR_TOKEN={token}" in invocation

@@ -13,6 +13,16 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_
     DesktopSession,
 )
 
+GITHUB_CREDENTIAL_ENVIRONMENT = (
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_ENTERPRISE_TOKEN",
+    "GITHUB_ENTERPRISE_TOKEN",
+    "WORKSTATION_MANAGER_GITHUB_TOKEN",
+    "WORKSTATION_MANAGER_GHCR_TOKEN",
+    "GH_DEBUG",
+)
+
 
 # Authentication is a single transaction; its steps are deliberately private.
 # pylint: disable=too-few-public-methods
@@ -23,15 +33,7 @@ class GitHubAuthentication:
         account = account.strip()
         self.home, self.host, self.account = home, host, account
         self.environment = dict(os.environ)
-        for name in (
-            "GH_TOKEN",
-            "GITHUB_TOKEN",
-            "GH_ENTERPRISE_TOKEN",
-            "GITHUB_ENTERPRISE_TOKEN",
-            "WORKSTATION_MANAGER_GITHUB_TOKEN",
-            "WORKSTATION_MANAGER_GHCR_TOKEN",
-            "GH_DEBUG",
-        ):
+        for name in GITHUB_CREDENTIAL_ENVIRONMENT:
             self.environment.pop(name, None)
         self.environment.update(
             HOME=str(home),
