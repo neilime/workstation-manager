@@ -111,6 +111,46 @@ _TEARDOWN_STATE = (
     .replace("CHECK_NAMES", json.dumps(_TEARDOWN_CHECKS))
 )
 
+_START_LEAVE = r"""(async identity => {
+  const {sendWithPromise} = window.workstationSyncSettings;
+  const devices = await sendWithPromise('SyncGetDeviceList');
+  const current = Array.isArray(devices) ? devices.filter(device => device?.isCurrentDevice === true) : [];
+  if (current.length !== 1 || current[0].guid !== identity) return false;
+  const state = window.workstationDeviceLeave = {complete: false, successful: false};
+  sendWithPromise('SyncSetupReset').then(result => {
+    state.successful = result === true;
+    state.complete = true;
+  }, () => { state.complete = true; });
+  return true;
+})"""
+
+
+def reset_device(pipe: BrowserPipe, settings: str, diagnostics: str, identity: str, timeout: float = 120) -> bool:
+    """Drive native leave without relying on a background page's timer scheduling."""
+
+    if pipe.evaluate(settings, f"{_START_LEAVE}({json.dumps(identity)})", timeout=15) is not True:
+        raise ValueError("The settings page no longer matches the captured test identity")
+    deadline = time.monotonic() + timeout
+    refreshes = 0
+    while time.monotonic() < deadline:
+        state = pipe.evaluate(settings, "window.workstationDeviceLeave", timeout=5)
+        if (
+            not isinstance(state, dict)
+            or set(state) != {"complete", "successful"}
+            or any(not isinstance(value, bool) for value in state.values())
+        ):
+            raise ValueError("Brave returned unsupported native leave diagnostics")
+        if state["complete"]:
+            print(f"Native leave completed after {refreshes} direct Sync refresh requests.", flush=True)
+            return state["successful"]
+        # Brave stops its engine after a short upload deadline. Request work
+        # directly over the pipe while its native leave callback is pending;
+        # background-page timers are not guaranteed to run within that window.
+        pipe.evaluate(diagnostics, "chrome.send('triggerRefresh'); true", timeout=5)
+        refreshes += 1
+        time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+    raise ValueError("Brave did not complete leaving the captured test device")
+
 
 def device_identity(profile: Path, *, require_initialized: bool = False) -> str | None:
     """Read initialized device identity metadata without returning recovery words."""
@@ -206,11 +246,7 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
         )
     # This native operation takes no device ID: it leaves only the selected
     # profile's current device, whose freshly-created identity was checked above.
-    removed = pipe.evaluate(
-        native.settings,
-        "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')",
-        timeout=120,
-    )
+    removed = reset_device(pipe, native.settings, session, identity)
     if removed is not True:
         raise ValueError("Brave did not confirm leaving the captured test device")
     # The settings callback and diagnostic event arrive from separate targets.
