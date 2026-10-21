@@ -17,7 +17,7 @@ more specific `AGENTS.md` files when working in their directories.
 - Optional project skills are declared in `.skillshare/config.yaml` and applied
   automatically during workstation setup for projects under `user.projects_directory`.
   Skillshare owns its lockfile and generated skill content. See the
-  [project skill guide](docs/development/README.md#project-skills).
+  [project skill guide](docs/development/project-skills.md).
 
 ## Architecture and configuration
 
@@ -93,7 +93,7 @@ more specific `AGENTS.md` files when working in their directories.
 - Keep examples inheriting public pins instead of duplicating them. Tests should
   use configuration or synthetic version inputs, never duplicate current release
   pins that need editing on each upgrade. Document update ownership in the
-  [dependency update guide](docs/development/README.md#dependency-updates).
+  [dependency update guide](docs/development/dependencies.md).
 - Coordinate runtime upgrades across `docker/tooling/Dockerfile`,
   `docker/tooling/requirements.txt`, `e2e-tests/requirements.txt`, collection
   metadata, `Makefile`, and CI wherever affected. The test Python version must
@@ -147,25 +147,25 @@ more specific `AGENTS.md` files when working in their directories.
 
 ## Documentation
 
-- Keep `README.md` focused on the project purpose, prerequisites, and everyday
-  end user commands. Put detailed procedures and contracts in `docs/` and link
-  to them from the readme.
+- Keep the root README limited to project purpose, end-user prerequisites,
+  everyday commands, and links into `docs/`. Put architecture, implementation,
+  CI, testing, and detailed procedures in the appropriate guides.
 - Organize guides by audience: `docs/usage/` for workstation users and
   `docs/development/` for contributors. Maintain `docs/README.md` as the index.
   Add a page only when the topic needs its own useful guide.
 - Give each topic one canonical explanation. Collection and role readmes should
   state their purpose and link to the relevant guide, not duplicate user workflows.
-- Document current, implemented behavior only. Remove obsolete options, deleted
-  features, migration history, stale examples, and descriptions of dead code.
-  Do not retain old documentation as compatibility stubs after moving a guide.
-- Apply this rule to ADRs, development guides, comments, and tests as well as user
-  guides. Explain the current decision and its rationale; never narrate project
-  history, completed migrations, or before/after implementation stories. Keep
-  validation requirements distinct from checks actually completed.
+- Usage and development guides describe current implemented behavior. Remove
+  obsolete options, legacy workflows, migration narratives, stale examples, and
+  descriptions of dead code. Tests and comments protect current contracts.
+- Keep significant decision history and dated evidence in
+  `docs/development/adr/`: context, alternatives, decisions, consequences, and
+  supersession. Preserve accepted records and add a linked superseding ADR when
+  a decision changes. Do not present historical evidence as current validation.
 - In each change, check affected documentation and tests against the current
   implementation. Update file links, anchors, examples, test targets, and fixtures
   together. Delete obsolete material instead of relabeling it as current behavior.
-  Follow the [documentation and test review checklist](docs/development/README.md#documentation-and-test-contract).
+  Follow the [documentation and test review checklist](docs/development/documentation.md#review-each-change).
 - Write directly: state prerequisites, show the command or configuration, and
   explain the result. Include limitations only when they affect a user's action
   or expectations. Avoid filler, marketing language, repetitive disclaimers,

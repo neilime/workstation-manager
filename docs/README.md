@@ -1,23 +1,27 @@
 # Documentation
 
-Start with the [project readme](../README.md) for installation and everyday commands.
+Use the [root README](../README.md) for setup, backup, cleanup, and help.
 
-## Using the workstation
+## Workstation users
 
-| Guide                                             | Use it to                                                                  |
-| ------------------------------------------------- | -------------------------------------------------------------------------- |
-| [Configuration](usage/configuration.md)           | Set private overrides, Bitwarden collections, dotfiles, and tools.         |
-| [AI tools](usage/ai-tools.md)                     | Configure shared MCP servers and skills for Codex and Copilot.             |
-| [Browser profiles](usage/browser.md)              | Create and recover profiles, join Sync, and manage colors and logos.       |
-| [Backup and restore](usage/backup-and-restore.md) | Verify recovery sources, archive project files, and restore a workstation. |
-| [Cleanup](usage/cleanup.md)                       | Understand cleanup actions and terminal drift summaries.                   |
+| Guide                                             | Purpose                                                                |
+| ------------------------------------------------- | ---------------------------------------------------------------------- |
+| [Configuration](usage/configuration.md)           | Private overrides, credentials, dotfiles, desktop settings, and tools. |
+| [AI tools](usage/ai-tools.md)                     | Accounts, MCP servers, skills, and configuration ownership.            |
+| [Browser profiles](usage/browser.md)              | Recovery, Sync, colors, logos, and saved preferences.                  |
+| [Backup and restore](usage/backup-and-restore.md) | Recovery checks, archive contents, restoration, and limits.            |
+| [Cleanup](usage/cleanup.md)                       | Changes, preserved data, and drift summaries.                          |
 
-## Developing the project
+## Contributors
 
-| Guide                                                                          | Use it to                                                                    |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| [Development](development/README.md)                                           | Find the owning collection and run checks or VM tests.                       |
-| [Browser adapters](development/browser-adapters.md)                            | Implement another browser using the existing role contract.                  |
-| [AI adapters](development/ai-tools.md)                                         | Extend AI providers and run unit and isolated integration tests.             |
-| [Workstation toolchain ADR](development/adr/adr-0001-workstation-toolchain.md) | Understand current software choices, ownership, and validation requirements. |
-| [Decision records](development/adr/README.md)                                  | Understand why an architectural contract works the way it does.              |
+| Guide                                               | Purpose                                                          |
+| --------------------------------------------------- | ---------------------------------------------------------------- |
+| [Development](development/README.md)                | Source ownership and local validation.                           |
+| [Documentation rules](development/documentation.md) | Current guides, concise writing, ADR history, and review checks. |
+| [Automation](development/automation.md)             | Source overrides, credentials, and Bitwarden integration.        |
+| [Project skills](development/project-skills.md)     | Skillshare declarations and updates.                             |
+| [Dependencies](development/dependencies.md)         | Version pins and update ownership.                               |
+| [End-to-end tests](development/e2e-tests.md)        | VM workflow, live services, teardown, and reports.               |
+| [Browser adapters](development/browser-adapters.md) | Browser extension and recovery contracts.                        |
+| [AI adapters](development/ai-tools.md)              | Provider configuration, authentication, and testing.             |
+| [ADRs](development/adr/README.md)                   | Decisions, rationale, supersession, and dated evidence.          |

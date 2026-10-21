@@ -1,36 +1,20 @@
 # workstation-manager
 
-Set up, maintain, and recover an Ubuntu workstation with Ansible.
-
-The project installs applications and developer tools, configures GNOME, applies
-Chezmoi dotfiles, restores SSH/GPG keys from Bitwarden, and creates Brave profiles.
-Backup checks recovery sources before archiving project files and writes a
-browser sidecar with bookmarks plus sanitized non-secret preferences when
-profiles exist. Cleanup maintains
-packages, removes unused artifacts, and reports configuration drift.
+Set up, maintain, and recover an Ubuntu workstation with Ansible. Setup installs
+applications and developer tools, applies personal dotfiles, restores keys, and
+configures the desktop and Brave profiles.
 
 ## Before you start
 
-You need the latest stable Ubuntu release selected in
-[the supported baseline](ansible/ubuntu-version), internet access, `wget`, `sudo`, and:
+You need the [supported Ubuntu release](ansible/ubuntu-version), internet access,
+`wget`, `sudo`, access to your private configuration repository, and your Bitwarden
+credentials. Prepare your [configuration and recovery sources](docs/usage/configuration.md)
+first.
 
-- Access to your configured private configuration and dotfiles sources.
-- A GitHub account with access to your private configuration repository.
-- Bitwarden credentials, configured SSH/GPG key collections, and a Context7 API-key vault item.
-- A browser profile collection if you want managed Brave profiles.
-
-Use a conventional Ubuntu installation whose boot and encryption do not require
-Snap. Setup removes Snap after preserving its application data; see
-[application delivery](docs/usage/configuration.md#application-delivery).
-
-Set up your [private configuration](docs/usage/configuration.md) first. Run the
-commands below from a terminal in your desktop session with its keyring unlocked.
-Setup, backup, and cleanup first reuse your saved GitHub CLI login or open GitHub's
-browser sign-in. After downloading your private configuration, they prompt for
-Bitwarden access. Setup reuses the same GitHub login throughout installation.
-Password and emailed Bitwarden verification-code input are hidden. If Bitwarden
-rejects the entered email, verification code, or vault password, the script asks
-again. Press Ctrl-C to cancel a prompt.
+Run commands in your desktop session with its keyring unlocked. Complete GitHub,
+Bitwarden, and application sign-in when prompted. Close Brave before applying
+profile changes. Setup removes Snap; boot or encryption that depends on Snap
+requires a [supported installation](docs/usage/configuration.md#application-delivery).
 
 ## Set up or update the workstation
 
@@ -38,12 +22,8 @@ again. Press Ctrl-C to cancel a prompt.
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
 ```
 
-Run the same command after changing your configuration. Setup installs its
-dependencies and applies the configured packages, keys, dotfiles, and desktop
-settings. Close Brave before applying profile changes. Setup automatically
-recovers configured profiles through [Brave Sync](docs/usage/browser.md); run it
-from your desktop session with the system keyring unlocked. Complete editor
-sign-in when prompted.
+Rerun setup after publishing configuration changes. It applies the configured
+tools, dotfiles, desktop settings, keys, and browser recovery.
 
 To preview an action, append `--dry-run`:
 
@@ -51,9 +31,8 @@ To preview an action, append `--dry-run`:
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
 ```
 
-A preview uses Ansible check mode. Bootstrap dependencies may still be installed,
-repositories downloaded, and authentication performed. A fresh machine may need
-a normal setup before all preview checks can run.
+Previews use Ansible check mode. Bootstrap installation, downloads, and
+authentication can still occur. A fresh machine may need normal setup first.
 
 ## Back up
 
@@ -61,22 +40,20 @@ a normal setup before all preview checks can run.
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- backup
 ```
 
-Choose the destination when prompted and resolve any synchronization differences.
-See [backup and restore](docs/usage/backup-and-restore.md) for archive contents,
-recovery checks, the generated restore command file, and restoring onto another
-computer.
+Choose a destination and resolve synchronization differences when prompted.
+Read [backup and restore](docs/usage/backup-and-restore.md) for recovery checks,
+archive contents, and restoration onto another computer.
 
 ## Clean up
 
-Preview cleanup before applying it:
+Preview cleanup, then apply it:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup
 ```
 
-Cleanup reports pending updates, cleans obsolete package downloads, prunes old
-Docker cache, and applies log retention. Read [cleanup](docs/usage/cleanup.md) for the exact scope.
+See [cleanup](docs/usage/cleanup.md) for changes, preserved data, and preview limits.
 
 ## Help and documentation
 
@@ -84,10 +61,7 @@ Docker cache, and applies log retention. Read [cleanup](docs/usage/cleanup.md) f
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- help
 ```
 
-- [Configuration](docs/usage/configuration.md): private overrides, keys, dotfiles, and tools.
-- [Browser profiles](docs/usage/browser.md): Bitwarden records, Sync, colors, and logos.
-- [Backup and restore](docs/usage/backup-and-restore.md): recovery checks and archives.
-- [Cleanup](docs/usage/cleanup.md): changes, preserved data, and terminal results.
-- [Development](docs/development/README.md): repository layout, checks, and VM tests.
-
-The [documentation index](docs/README.md) lists all guides.
+- [Configuration](docs/usage/configuration.md): private settings, keys, dotfiles, and tools.
+- [AI tools](docs/usage/ai-tools.md): accounts, MCP servers, and skills.
+- [Browser profiles](docs/usage/browser.md): recovery, Sync, colors, and logos.
+- [Documentation index](docs/README.md): all detailed guides.
