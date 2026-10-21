@@ -8,12 +8,12 @@
 
 Users need short setup and everyday-use instructions. Contributors need detailed
 contracts, validation steps, and the reasons for architectural choices. Mixing
-these audiences in root READMEs makes common tasks harder to find. Mixing old
+these audiences in root readmes makes common tasks harder to find. Mixing old
 and current procedures makes supported behavior unclear.
 
 ## Decision
 
-Keep root READMEs focused on end users and link to detailed guides in `docs/`.
+Keep root readmes focused on end users and link to detailed guides in `docs/`.
 Use `docs/usage/` for user procedures, `docs/development/` for contributors, and
 `docs/README.md` as the index. Each topic has one canonical guide.
 
@@ -30,14 +30,14 @@ the Chezmoi-managed shared engineering and testing instructions.
 
 ## Alternatives
 
-- A comprehensive root README mixes end-user and contributor tasks.
+- A comprehensive root readme mixes end user and contributor tasks.
 - Rolling migration notes in active guides leave obsolete procedures beside
   supported ones.
 - Rewriting accepted ADRs to match current code loses the rationale for changes.
 
 ## Consequences
 
-Contributors maintain guide links and indexes when moving topics. Documentation
+Contributors maintain guide links and indices when moving topics. Documentation
 review checks source claims, Markdown, and local links. Documentation-only changes
 do not require workstation actions. Current guide maintenance and preserved
 decision history have separate responsibilities.

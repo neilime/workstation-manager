@@ -5,11 +5,11 @@ Current code and maintained configuration define supported behavior.
 
 ## Audience and ownership
 
-- Keep the root README limited to purpose, end-user prerequisites, everyday
+- Keep the root readme limited to purpose, end user prerequisites, everyday
   commands, and links into `docs/`.
 - Put user procedures in `docs/usage/` and contributor instructions in
   `docs/development/`. Maintain [the documentation index](../README.md).
-- Give each topic one canonical guide. Collection and role READMEs state their
+- Give each topic one canonical guide. Collection and role readmes state their
   responsibility and link to it.
 - Write concise, direct instructions: prerequisites, action, result, and any
   limitation that affects the user's decision. Keep implementation details in

@@ -1,6 +1,6 @@
 # Documentation
 
-Use the [root README](../README.md) for setup, backup, cleanup, and help.
+Use the [root readme](../README.md) for setup, backup, cleanup, and help.
 
 ## Workstation users
 
