@@ -46,10 +46,11 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_
     DesktopSession,
 )
 from browser_sync_fixture import (  # noqa: E402
-    _START_LEAVE,
+    _LEAVE_DEVICE,
     _START_TEARDOWN,
     _TEARDOWN_CHECKS,
     _TEARDOWN_STATE,
+    _WATCH_TEARDOWN_REMOVAL,
     reset_device,
 )
 
@@ -476,7 +477,7 @@ def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[],
     assert pipe.evaluate(page, f"{_WATCH_REMOVAL}([])") is False
     assert pipe.evaluate(page, f"{_WATCH_REMOVAL}(['captured-device', 'second-device'])") is True
     assert pipe.evaluate(page, "window.workstationDeviceRemoval.checks") == dict.fromkeys(_REMOVAL_CHECKS, False)
-    # Exercise the actual interval which prompts uploads during native leave.
+    # Exercise the refresh interval used by remote-device pruning.
     assert (
         pipe.evaluate(
             page,
@@ -684,8 +685,8 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
     )
 
 
-def native_leave_driver(pipe: BrowserPipe) -> None:
-    """Check native leave identity and refresh-driven completion without browser timers."""
+def native_fixture_leave(pipe: BrowserPipe) -> None:
+    """Verify the leave target and observe deletion without scheduling competing downloads."""
 
     page = pipe.page("brave://version")
     pipe.evaluate(
@@ -694,18 +695,29 @@ def native_leave_driver(pipe: BrowserPipe) -> None:
           window.fixtureDevices = [];
           window.fixtureResets = 0;
           window.fixtureRefreshes = 0;
-          window.workstationSyncSettings = {sendWithPromise: method => {
-            if (method === 'SyncGetDeviceList') return Promise.resolve(window.fixtureDevices);
-            if (method !== 'SyncSetupReset') throw Error('Unexpected fixture method');
-            window.fixtureResets++;
-            return new Promise(resolve => { window.fixtureResolveLeave = resolve; });
-          }};
+          window.workstationDeviceRemoved = () => {};
+          window.workstationSyncSettings = {
+            addWebUiListener: () => {},
+            sendWithPromise: method => {
+              if (method === 'SyncGetDeviceList') return Promise.resolve(window.fixtureDevices);
+              if (method !== 'SyncSetupReset') throw Error('Unexpected fixture method');
+              window.fixtureResets++;
+              return Promise.resolve(window.fixtureLeaveResult);
+            }
+          };
           chrome.send = method => {
-            if (method !== 'triggerRefresh') throw Error('Unexpected fixture refresh');
-            if (++window.fixtureRefreshes === 2) window.fixtureResolveLeave(window.fixtureLeaveResult);
+            if (method === 'triggerRefresh') window.fixtureRefreshes++;
           };
           return true;
         })()""",
+    )
+    assert pipe.evaluate(page, f"{_WATCH_TEARDOWN_REMOVAL}(['captured-device'])") is True
+    assert (
+        pipe.evaluate(
+            page,
+            "new Promise(resolve => setTimeout(() => resolve(window.fixtureRefreshes), 200))",
+        )
+        == 0
     )
     for devices in (
         [],
@@ -714,16 +726,15 @@ def native_leave_driver(pipe: BrowserPipe) -> None:
         [{"guid": "captured-device", "isCurrentDevice": True}] * 2,
     ):
         pipe.evaluate(page, f"window.fixtureDevices = {json.dumps(devices)}; true")
-        assert pipe.evaluate(page, f"{_START_LEAVE}('captured-device')") is False
+        assert pipe.evaluate(page, f"{_LEAVE_DEVICE}('captured-device')") is None
         assert pipe.evaluate(page, "window.fixtureResets") == 0
     for successful in (False, True):
         pipe.evaluate(
             page,
             "window.fixtureDevices = [{guid: 'captured-device', isCurrentDevice: true}]; "
-            f"window.fixtureLeaveResult = {json.dumps(successful)}; window.fixtureRefreshes = 0; true",
+            f"window.fixtureLeaveResult = {json.dumps(successful)}; true",
         )
-        assert reset_device(pipe, page, page, "captured-device", timeout=5) is successful
-        assert pipe.evaluate(page, "window.fixtureRefreshes") == 2
+        assert reset_device(pipe, page, "captured-device") is successful
 
 
 def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
@@ -927,7 +938,7 @@ def main() -> None:
             pipe.call("Target.createTarget", {"url": "data:text/plain,workstation-session-fixture"})
             diagnostics(pipe, pipe.page("brave://sync-internals"))
             teardown_readiness(pipe)
-            native_leave_driver(pipe)
+            native_fixture_leave(pipe)
             code = pending_chain(pipe, native)
             sync_selection(pipe, native.settings)
             profile_preferences(pipe, native)
