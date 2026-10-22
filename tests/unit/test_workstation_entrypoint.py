@@ -12,6 +12,8 @@ import unittest
 from entrypoint_test_helpers import (
     entrypoint_source_with_mock_controller,
     sudo_passthrough_script,
+    write_entrypoint_definitions,
+    write_mock_commands,
 )
 
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
@@ -93,12 +95,9 @@ class AnsibleTargetContextTests(unittest.TestCase):
 
     def test_actions_preserve_resolved_home_and_check_mode(self) -> None:
         """Every action must preserve the target context when passwd uses a custom home."""
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = write_entrypoint_definitions(fixture / "wrapper-definitions.sh")
             commands = {
                 "id": '#!/bin/sh\nprintf "%s\n" "$TEST_PROCESS_USER"\n',
                 "getent": ('#!/bin/sh\nprintf "runner:x:1000:1000::%s:/bin/sh\n" "$TEST_TARGET_HOME"\n'),
@@ -123,9 +122,7 @@ class AnsibleTargetContextTests(unittest.TestCase):
                     "}))\n"
                 ),
             }
-            for name, content in commands.items():
-                (fixture / name).write_text(content)
-                (fixture / name).chmod(0o700)
+            write_mock_commands(fixture, commands)
 
             for target_home in ("/home/runner", "/home/runner.guest"):
                 for action, process_user, dry_run in (
@@ -196,15 +193,12 @@ class RepositorySourceTests(unittest.TestCase):
     def test_local_entrypoint_defaults_to_local_repo_and_branch(self) -> None:
         """Without an explicit repository URL, the entrypoint should use its own checkout and current branch."""
 
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
             repository = fixture / "repository"
             (repository / "ansible/collections").mkdir(parents=True)
             (repository / "ansible/collections/requirements.yml").write_text("collections: []\n")
-            wrapper = repository / "workstation.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = write_entrypoint_definitions(repository / "workstation.sh")
             git = fixture / "git"
             git.write_text(
                 "#!/bin/sh\n"
@@ -250,16 +244,13 @@ class RepositorySourceTests(unittest.TestCase):
     def test_local_repository_requirements_use_local_manifest(self) -> None:
         """A local repository URL should install collection requirements from the local checkout."""
 
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
             repository = fixture / "repository"
             requirements = repository / "ansible/collections/requirements.yml"
             requirements.parent.mkdir(parents=True)
             requirements.write_text("collections: []\n")
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = write_entrypoint_definitions(fixture / "wrapper-definitions.sh")
             ansible_galaxy_log = fixture / "ansible-galaxy.log"
             ansible_galaxy = fixture / "ansible-galaxy"
             ansible_galaxy.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >"$TEST_ANSIBLE_GALAXY_LOG"\n')
@@ -297,15 +288,12 @@ class RepositorySourceTests(unittest.TestCase):
     def test_local_repository_runs_playbook_from_worktree(self) -> None:
         """A local repository source should run ansible-playbook from the working tree."""
 
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
             repository = fixture / "repository"
             (repository / "ansible").mkdir(parents=True)
             (repository / "ansible/backup.yml").write_text("[]\n")
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = write_entrypoint_definitions(fixture / "wrapper-definitions.sh")
             commands = {
                 "id": '#!/bin/sh\nprintf "%s\n" "$TEST_PROCESS_USER"\n',
                 "getent": ('#!/bin/sh\nprintf "runner:x:1000:1000::%s:/bin/sh\n" "$TEST_TARGET_HOME"\n'),
@@ -320,10 +308,7 @@ class RepositorySourceTests(unittest.TestCase):
                 ),
                 "ansible-pull": "#!/bin/sh\nexit 99\n",
             }
-            for name, content in commands.items():
-                command = fixture / name
-                command.write_text(content)
-                command.chmod(0o700)
+            write_mock_commands(fixture, commands)
 
             result = subprocess.run(
                 [
@@ -358,15 +343,12 @@ class RepositorySourceTests(unittest.TestCase):
     def test_run_ansible_pull_exports_interactive_tty_path(self) -> None:
         """Interactive runs should forward the resolved TTY path to Ansible."""
 
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
             repository = fixture / "repository"
             (repository / "ansible").mkdir(parents=True)
             (repository / "ansible/backup.yml").write_text("[]\n")
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = write_entrypoint_definitions(fixture / "wrapper-definitions.sh")
             commands = {
                 "id": '#!/bin/sh\nprintf "%s\n" "$TEST_PROCESS_USER"\n',
                 "getent": ('#!/bin/sh\nprintf "runner:x:1000:1000::%s:/bin/sh\n" "$TEST_TARGET_HOME"\n'),
@@ -382,10 +364,7 @@ class RepositorySourceTests(unittest.TestCase):
                 ),
                 "ansible-pull": "#!/bin/sh\nexit 99\n",
             }
-            for name, content in commands.items():
-                command = fixture / name
-                command.write_text(content)
-                command.chmod(0o700)
+            write_mock_commands(fixture, commands)
 
             result = subprocess.run(
                 [
@@ -425,12 +404,9 @@ class BitwardenRetryTests(unittest.TestCase):
     def test_retry_helper_reprompts_after_rejected_email_password(self) -> None:
         """A rejected interactive login should prompt again and rerun with the replacement values."""
 
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = write_entrypoint_definitions(fixture / "wrapper-definitions.sh")
             attempt_file = fixture / "attempt.txt"
             records_file = fixture / "records.txt"
             prompt_count_file = fixture / "prompt-count.txt"
@@ -489,12 +465,11 @@ class BitwardenRetryTests(unittest.TestCase):
                     "TEST_PROMPT_COUNT_FILE": str(prompt_count_file),
                     "WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE": "1",
                 },
-                check=False,
+                check=True,
                 capture_output=True,
                 text=True,
                 timeout=10,
             )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(
                 records_file.read_text().splitlines(),
                 [

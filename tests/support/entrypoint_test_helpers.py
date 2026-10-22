@@ -1,4 +1,4 @@
-"""Shared shell snippets for workstation entrypoint integration tests."""
+"""Shared shell fixtures for workstation entrypoint tests."""
 
 from __future__ import annotations
 
@@ -31,6 +31,21 @@ esac
 """
     fixture_controller = fixture_controller.replace("TEMPORARY_ROOT", shlex.quote(tempfile.gettempdir()))
     return source.rsplit('main "$@"', 1)[0] + fixture_controller + '\nmain "$@"\n'
+
+
+def write_entrypoint_definitions(path: Path) -> Path:
+    """Write sourceable entrypoint functions with the isolated controller commands."""
+    definitions = entrypoint_source_with_mock_controller().rsplit('main "$@"', 1)[0]
+    path.write_text(definitions)
+    return path
+
+
+def write_mock_commands(directory: Path, commands: dict[str, str]) -> None:
+    """Create private executable stand-ins for an isolated entrypoint test."""
+    for name, content in commands.items():
+        command = directory / name
+        command.write_text(content)
+        command.chmod(0o700)
 
 
 def controlling_tty_exec_python(exec_arguments: str) -> str:
