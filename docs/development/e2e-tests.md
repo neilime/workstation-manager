@@ -78,6 +78,11 @@ The settings tab must identify the captured device before requesting leave.
 Fixture browsers use Chromium's `--sync-short-nudge-delay-for-test` option to
 schedule deletion promptly. The observer avoids refresh downloads during native
 leave, which has a short upload deadline; server acknowledgement remains required.
+Before leaving, teardown checkpoints the captured profile in a private temporary
+directory. If native leave succeeds without a server acknowledgement, it closes
+the browser, restores the same device identity and Sync tracker, and retries up to
+three attempts. Exhausting those attempts restores the profile and retains its
+manifest entry so teardown remains retryable. Other failures stop immediately.
 The shared [browser observer contract](browser-adapters.md#brave-implementation)
 defines callback, navigation, and server-acknowledgement handling.
 

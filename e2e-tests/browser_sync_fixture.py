@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shutil
+import tempfile
 import time
 from pathlib import Path
 
@@ -128,6 +130,10 @@ _LEAVE_DEVICE = r"""(async identity => {
 })"""
 
 
+class UnconfirmedDeviceRemoval(ValueError):
+    """Native leave completed without proof that the server committed the deletion."""
+
+
 def reset_device(pipe: BrowserPipe, settings: str, identity: str) -> bool:
     """Require the captured identity in the settings target before invoking native leave."""
 
@@ -245,7 +251,7 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     # Keep the binding installed until its event arrives; confirmation must not
     # depend on page globals that leave may discard. The pipe closes every target.
     if pipe.wait_for_acknowledgement(session, _REMOVAL_BINDING) is not True:
-        raise ValueError(
+        raise UnconfirmedDeviceRemoval(
             "The Sync server did not confirm removal of the captured test device; "
             f"incomplete checks: {incomplete_removal_checks(pipe, session)}"
         )
@@ -292,6 +298,37 @@ class BrowserSyncFixture:
         record["phase"] = "captured"
         self.manifest.write_text(json.dumps(record))
 
+    def leave_captured_device(self, profile: Path, identity: str, executable: str, environment: dict[str, str]) -> None:
+        """Retry unacknowledged native leave with the same captured identity and Sync state."""
+
+        # Brave stops Sync after its fixed upload deadline, even without a server
+        # response. Its successful callback clears the seed and tracker, so simply
+        # reopening that profile cannot retry the deletion. Checkpoint only this
+        # owned fixture, while the browser is closed, in a private directory.
+        with tempfile.TemporaryDirectory(prefix="browser-leave-", dir=self.manifest.parent) as directory:
+            checkpoint = Path(directory) / "profile"
+            shutil.copytree(profile, checkpoint, symlinks=True)
+            for attempt in range(3):
+                try:
+                    with BrowserPipe(
+                        [
+                            *automation_arguments(executable, str(self.root), profile.name),
+                            "--sync-short-nudge-delay-for-test",
+                        ],
+                        environment,
+                    ) as pipe:
+                        leave_device(pipe, profile, identity)
+                    return
+                except UnconfirmedDeviceRemoval:
+                    # BrowserPipe has closed and reaped the writer. Restore the
+                    # complete tracker, including its GUID, rather than rejoining
+                    # the chain with a new device. Also retain it on final failure.
+                    shutil.rmtree(profile)
+                    shutil.copytree(checkpoint, profile, symlinks=True)
+                    if attempt == 2:
+                        raise
+                    print("Retrying unconfirmed E2E device removal with its saved Sync state.", flush=True)
+
     def leave(self) -> None:
         """Leave only captured devices; never enumerate other profiles for mutation."""
 
@@ -309,14 +346,7 @@ class BrowserSyncFixture:
                 profile = self.root / directory
                 if device_identity(profile) != identity:
                     raise ValueError("The browser profile no longer matches the captured test identity")
-                with BrowserPipe(
-                    [
-                        *automation_arguments(executable, str(self.root), directory),
-                        "--sync-short-nudge-delay-for-test",
-                    ],
-                    environment,
-                ) as pipe:
-                    leave_device(pipe, profile, identity)
+                self.leave_captured_device(profile, identity, executable, environment)
                 del record["devices"][directory]
                 self.manifest.write_text(json.dumps(record))
                 print("The Sync server confirmed removal of a captured E2E browser device.", flush=True)

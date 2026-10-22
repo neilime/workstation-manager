@@ -6,7 +6,8 @@ import importlib.util
 import json
 import os
 import subprocess
-from contextlib import nullcontext
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from unittest import mock
 
@@ -39,6 +40,16 @@ def write_device(root: Path, name: str, guid: str, *, initialized: bool = True) 
             }
         )
     )
+
+
+@contextmanager
+def reset_browser_writer(profile: Path) -> Iterator[object]:
+    """Ensure profile restoration waits until the browser has finished writing its reset state."""
+
+    try:
+        yield mock.sentinel.pipe
+    finally:
+        assert (profile / "Preferences").read_text() == "{}"
 
 
 def test_existing_browser_tree_cannot_be_claimed_by_tests(tmp_path: Path) -> None:
@@ -147,6 +158,97 @@ def test_teardown_refuses_a_replaced_device_identity(tmp_path: Path, monkeypatch
     assert fixture.load()["devices"] == {"Default": "test-device"}
 
 
+@pytest.mark.parametrize("acknowledged", [False, True])
+def test_teardown_retries_unconfirmed_leave_with_the_saved_device_state(
+    acknowledged: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A local reset without a server reply cannot destroy the identity needed to retry deletion."""
+
+    root = tmp_path / "browser"
+    fixture = browser_fixture.BrowserSyncFixture(root, tmp_path / "fixture.json")
+    fixture.prepare()
+    write_device(root, "Default", "captured-device")
+    fixture.capture()
+    write_device(root, "Everyday", "untracked-device")
+    profile = root / "Default"
+    preferences = (profile / "Preferences").read_bytes()
+    tracker = profile / "Sync Data"
+    tracker.mkdir()
+    (tracker / "state").write_text("private-tracker-state")
+    monkeypatch.setattr(browser_fixture, "closed_browser", lambda _root: nullcontext(("brave", {})))
+    attempts = []
+
+    def leave(pipe: object, selected: Path, identity: str) -> None:
+        assert pipe is mock.sentinel.pipe
+        assert selected == profile and identity == "captured-device"
+        assert (profile / "Preferences").read_bytes() == preferences
+        assert (tracker / "state").read_text() == "private-tracker-state"
+        assert not (profile / "reset-only-file").exists()
+        assert fixture.load()["devices"] == {"Default": "captured-device"}
+        checkpoints = list(tmp_path.glob("browser-leave-*"))
+        assert len(checkpoints) == 1
+        assert checkpoints[0].stat().st_mode & 0o777 == 0o700
+        # Simulate Brave clearing its seed and tracker before the upload is confirmed.
+        (profile / "Preferences").write_text("{}")
+        (tracker / "state").unlink()
+        (profile / "reset-only-file").write_text("reset state")
+        attempts.append(identity)
+        if not acknowledged or len(attempts) == 1:
+            raise browser_fixture.UnconfirmedDeviceRemoval("No server acknowledgement")
+
+    monkeypatch.setattr(browser_fixture, "BrowserPipe", lambda _args, _env: reset_browser_writer(profile))
+    monkeypatch.setattr(browser_fixture, "leave_device", leave)
+    if acknowledged:
+        fixture.leave()
+        assert len(attempts) == 2
+        assert fixture.load()["devices"] == {}
+        assert browser_fixture.device_identity(profile) is None
+    else:
+        with pytest.raises(browser_fixture.UnconfirmedDeviceRemoval, match="No server acknowledgement"):
+            fixture.leave()
+        assert len(attempts) == 3
+        assert fixture.load()["devices"] == {"Default": "captured-device"}
+        assert (profile / "Preferences").read_bytes() == preferences
+        assert (tracker / "state").read_text() == "private-tracker-state"
+        assert not (profile / "reset-only-file").exists()
+    assert not list(tmp_path.glob("browser-leave-*"))
+    assert browser_fixture.device_identity(root / "Everyday") == "untracked-device"
+    output = capsys.readouterr().out
+    assert "Retrying unconfirmed E2E device removal" in output
+    assert "captured-device" not in output and "private" not in output
+
+
+@pytest.mark.parametrize("close_failed", [False, True])
+def test_teardown_does_not_retry_other_failures(
+    close_failed: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Protocol and browser shutdown failures cannot trigger a retry or overwrite a live profile."""
+
+    root = tmp_path / "browser"
+    fixture = browser_fixture.BrowserSyncFixture(root, tmp_path / "fixture.json")
+    fixture.prepare()
+    write_device(root, "Default", "captured-device")
+    fixture.capture()
+    monkeypatch.setattr(browser_fixture, "closed_browser", lambda _root: nullcontext(("brave", {})))
+    pipe = mock.MagicMock()
+    pipe.__exit__.return_value = False
+    browser = mock.Mock(return_value=pipe)
+    monkeypatch.setattr(browser_fixture, "BrowserPipe", browser)
+    failure = browser_fixture.BrowserProtocolError("Native operation failed")
+    leave = mock.Mock(side_effect=failure)
+    if close_failed:
+        leave.side_effect = browser_fixture.UnconfirmedDeviceRemoval("No server acknowledgement")
+        pipe.__exit__.side_effect = failure
+    monkeypatch.setattr(browser_fixture, "leave_device", leave)
+    with mock.patch.object(browser_fixture.shutil, "rmtree", wraps=browser_fixture.shutil.rmtree) as remove:
+        with pytest.raises(browser_fixture.BrowserProtocolError, match="Native operation failed"):
+            fixture.leave()
+        assert all(call.args[0] != root / "Default" for call in remove.call_args_list)
+    browser.assert_called_once()
+    leave.assert_called_once()
+    assert fixture.load()["devices"] == {"Default": "captured-device"}
+
+
 def teardown_state(*, matches: bool = True, failed: tuple[str, ...] = (), needs_navigation: bool = False) -> dict:
     """Build one synthetic atomic readiness observation without browser data."""
 
@@ -249,7 +351,10 @@ def test_missing_removal_reports_only_incomplete_protocol_stages(monkeypatch: py
     pipe.wait_for_acknowledgement.return_value = False
     checks = {**dict.fromkeys(REMOVAL_CHECKS, True), "Matching Response": False, "Server Acknowledgement": False}
     pipe.evaluate.side_effect = [teardown_state(), True, True, checks]
-    with pytest.raises(ValueError, match="incomplete checks: Matching Response, Server Acknowledgement$"):
+    with pytest.raises(
+        browser_fixture.UnconfirmedDeviceRemoval,
+        match="incomplete checks: Matching Response, Server Acknowledgement$",
+    ):
         browser_fixture.leave_device(pipe, Path("/fixture/Default"), "private-test-device")
     pipe.call.assert_not_called()
 

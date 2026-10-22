@@ -51,6 +51,8 @@ from browser_sync_fixture import (  # noqa: E402
     _TEARDOWN_CHECKS,
     _TEARDOWN_STATE,
     _WATCH_TEARDOWN_REMOVAL,
+    BrowserSyncFixture,
+    UnconfirmedDeviceRemoval,
     reset_device,
 )
 
@@ -763,6 +765,33 @@ def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
     return code
 
 
+def retry_native_fixture_leave(arguments: list[str], environment: dict[str, str], root: Path, code: str) -> None:
+    """Restore encrypted recovery state after a real native reset with simulated missing server evidence."""
+
+    fixture = BrowserSyncFixture(root, root / "fixture.json")
+    attempts = []
+
+    def reset_without_server_reply(pipe: BrowserPipe, profile: Path, identity: str) -> None:
+        native = NativeSync(pipe, str(profile))
+        assert native.code() == code, "The checkpoint did not restore the encrypted recovery code"
+        assert (
+            pipe.evaluate(native.settings, "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')") is True
+        )
+        attempts.append(identity)
+        if len(attempts) == 1:
+            raise UnconfirmedDeviceRemoval("Simulated missing server acknowledgement")
+
+    # Keep Sync offline: test profile restoration, leaving server verification to live teardown.
+    with (
+        patch("browser_sync_fixture.automation_arguments", return_value=arguments),
+        patch("browser_sync_fixture.leave_device", side_effect=reset_without_server_reply),
+    ):
+        fixture.leave_captured_device(root / "Default", "captured-device", arguments[0], environment)
+    assert attempts == ["captured-device", "captured-device"]
+    assert not list(root.glob("browser-leave-*")), "Private teardown checkpoints were retained"
+    print("Native reset retries preserve encrypted recovery state and remove private checkpoints.", flush=True)
+
+
 def settings_callbacks(pipe: BrowserPipe) -> None:
     """Route private requests without replacing the bundled page's own callbacks."""
 
@@ -957,6 +986,7 @@ def main() -> None:
             selected = [argument for argument in arguments if not argument.startswith("--profile-directory=")]
             with BrowserPipe([*selected, f"--profile-directory={profile}"], environment) as pipe:
                 NativeSync(pipe, directory + "/" + profile)
+        retry_native_fixture_leave(arguments, environment, Path(directory), code)
         assert not (Path(directory) / "SingletonLock").exists()
     restore_open_profiles(environment)
     print(
