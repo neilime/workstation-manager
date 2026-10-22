@@ -295,6 +295,142 @@ def test_source_update_failures_preserve_source_and_target_without_applying_dotf
     assert (root / "calls.jsonl").read_bytes() == calls_before
     if problem == "untracked":
         assert (source / "untracked-user-file").read_text() == "private synthetic data\n"
+    if problem in {"edited", "untracked"}:
+        assert "interactive terminal to stash source edits or skip Chezmoi" in output
+        assert str(source) in output
+        assert "status --short" in output
+
+
+@pytest.fixture(name="dirty_chezmoi_source")
+def fixture_dirty_chezmoi_source(chezmoi_setup):
+    """Keep staged, unstaged, and untracked edits separate from published dotfiles."""
+    root, env = chezmoi_setup
+    initial = run_setup(chezmoi_setup)
+    assert initial.returncode == 0, initial.stdout + initial.stderr
+    source = root / "home/.local/share/chezmoi"
+    (source / "dot_zshrc").write_text("# staged source edit\n")
+    git(source, "add", "dot_zshrc")
+    (source / "dot_zshrc").write_text("# unstaged source edit\n")
+    (source / "untracked-user-file").write_text("private synthetic source data\n")
+    env["WORKSTATION_MANAGER_INTERACTIVE"] = "1"
+    return source
+
+
+@pytest.mark.parametrize("answers", [("skip",), ("invalid", " SKIP "), ("abort",), ("",)])
+def test_source_prompt_skip_and_abort_preserve_edits_and_do_not_apply(chezmoi_setup, dirty_chezmoi_source, answers):
+    """Only an explicit source skip continues setup, leaving source, dotfiles, and scripts untouched."""
+    root, env = chezmoi_setup
+    source = dirty_chezmoi_source
+    before = git(source, "status", "--porcelain")
+    calls_before = (root / "calls.jsonl").read_bytes()
+    playbook_path = root / "playbook.json"
+    playbook = json.loads(playbook_path.read_text())
+    playbook[0]["tasks"].append({"ansible.builtin.debug": {"msg": "Fixture setup continued after source prompt."}})
+    playbook_path.write_text(json.dumps(playbook))
+    command = ["ansible-playbook", "--inventory", "localhost,", str(playbook_path)]
+
+    returncode, output = run_interactive(
+        command, root, env, [("Type stash, skip, or abort", answer) for answer in answers]
+    )
+
+    skipped = answers[-1].strip().lower() == "skip"
+    assert (returncode == 0) == skipped, output
+    assert ("Fixture setup continued after source prompt." in output) == skipped
+    assert ("Skipped Chezmoi source update, dotfile application and scripts" in output) == skipped
+    assert git(source, "status", "--porcelain") == before
+    assert git(source, "stash", "list") == ""
+    assert (source / "dot_zshrc").read_text() == "# unstaged source edit\n"
+    assert git(source, "show", ":dot_zshrc") == "# staged source edit"
+    assert (source / "untracked-user-file").read_text() == "private synthetic source data\n"
+    assert (root / "calls.jsonl").read_bytes() == calls_before
+    assert "private synthetic source data" not in output
+
+
+def test_source_stash_approval_preserves_edits_and_applies_published_dotfiles(chezmoi_setup, dirty_chezmoi_source):
+    """An approved stash retains staged and untracked data while setup applies the fetched revision."""
+    root, env = chezmoi_setup
+    source = dirty_chezmoi_source
+    published = root / "published"
+    (published / "dot_new_setting").write_text("# newly published configuration\n")
+    git(published, "add", ".")
+    git(published, "commit", "-m", "Publish another dotfile")
+    git(published, "push", "origin", "fixture")
+    (source / ".git/info/exclude").write_text("ignored-user-file\n")
+    (source / "ignored-user-file").write_text("keep ignored data\n")
+    # Existing saved work must survive creating the setup stash.
+    git(source, "stash", "push", "--include-untracked", "-m", "Existing saved work")
+    previous_stash = git(source, "rev-parse", "refs/stash")
+    git(source, "stash", "apply", "--index", previous_stash)
+    (source / "untracked-user-file").write_text("private synthetic source data\nnew edit\n")
+    (root / "applied").unlink()
+    command = ["ansible-playbook", "--inventory", "localhost,", str(root / "playbook.json")]
+
+    returncode, output = run_interactive(command, root, env, [("Type stash, skip, or abort", "stash")])
+
+    assert returncode == 0, output
+    assert git(source, "status", "--porcelain") == ""
+    assert git(source, "rev-parse", "HEAD") == git(published, "rev-parse", "HEAD")
+    assert (root / "home/.zshrc").read_text() == "# fixture configuration\n"
+    assert (root / "applied").exists()
+    assert (source / "ignored-user-file").read_text() == "keep ignored data\n"
+    stash = git(source, "rev-parse", "refs/stash")
+    assert stash != previous_stash
+    assert git(source, "rev-parse", "stash@{1}") == previous_stash
+    assert stash in output
+    assert "stash apply --index" in output
+    assert "private synthetic source data" not in output
+    assert "# unstaged source edit" not in output
+    git(source, "stash", "apply", "--index", stash)
+    assert (source / "dot_zshrc").read_text() == "# unstaged source edit\n"
+    assert git(source, "show", ":dot_zshrc") == "# staged source edit"
+    assert (source / "untracked-user-file").read_text() == "private synthetic source data\nnew edit\n"
+
+
+def test_dirty_source_preview_and_missing_terminal_cannot_authorize_stashing(chezmoi_setup, dirty_chezmoi_source):
+    """A dirty checkout remains untouched by dry runs and by a stale interactive environment flag."""
+    root, _env = chezmoi_setup
+    source = dirty_chezmoi_source
+    calls_before = (root / "calls.jsonl").read_bytes()
+    before = git(source, "status", "--porcelain")
+    preview = run_setup(chezmoi_setup, "--check")
+    assert preview.returncode == 0, preview.stdout + preview.stderr
+    assert "Type stash, skip, or abort" not in preview.stdout
+    failed = run_setup(chezmoi_setup)
+    assert failed.returncode != 0
+    assert "source edits were left unchanged" in failed.stdout
+    assert git(source, "status", "--porcelain") == before
+    assert git(source, "stash", "list") == ""
+    assert (root / "calls.jsonl").read_bytes() == calls_before
+
+
+def test_failed_update_after_stashing_preserves_ignored_files_and_reports_recovery(chezmoi_setup, dirty_chezmoi_source):
+    """An update that would overwrite ignored data fails and leaves approved source edits recoverable."""
+    root, env = chezmoi_setup
+    source = dirty_chezmoi_source
+    published = root / "published"
+    (published / "ignored-user-file").write_text("published replacement\n")
+    git(published, "add", ".")
+    git(published, "commit", "-m", "Publish conflicting path")
+    git(published, "push", "origin", "fixture")
+    (source / ".git/info/exclude").write_text("ignored-user-file\n")
+    (source / "ignored-user-file").write_text("private ignored data\n")
+    calls_before = (root / "calls.jsonl").read_bytes()
+    before = git(source, "rev-parse", "HEAD")
+    command = ["ansible-playbook", "--inventory", "localhost,", str(root / "playbook.json")]
+
+    returncode, output = run_interactive(command, root, env, [("Type stash, skip, or abort", "stash")])
+
+    assert returncode != 0, output
+    stash = git(source, "rev-parse", "refs/stash")
+    assert stash in output
+    assert "stash apply --index" in output
+    assert "private ignored data" not in output
+    assert (source / "ignored-user-file").read_text() == "private ignored data\n"
+    assert git(source, "rev-parse", "HEAD") == before
+    assert (root / "calls.jsonl").read_bytes() == calls_before
+    git(source, "stash", "apply", "--index", stash)
+    assert (source / "dot_zshrc").read_text() == "# unstaged source edit\n"
+    assert (source / "untracked-user-file").read_text() == "private synthetic source data\n"
 
 
 @pytest.mark.parametrize("operation", ["status", "apply"])

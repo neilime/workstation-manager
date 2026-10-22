@@ -158,10 +158,22 @@ local browser profiles missing from the collection as drift.
 `home_environment.chezmoi.source` selects the Git repository used to initialize
 `~/.local/share/chezmoi`. Use a full HTTPS or SSH Git URL. Every normal setup
 fetches the checkout's tracking branch and fast-forwards to its latest published
-revision before inspecting and applying dotfiles. Local source edits, unpublished
-commits, rewritten upstream history, or failed fetches stop setup before dotfile
-application. Commit and publish source changes or reconcile the checkout manually,
-then rerun setup. An existing checkout keeps its remote and tracking branch;
+revision before inspecting and applying dotfiles. When the source has local edits,
+interactive setup offers three actions:
+
+- `stash`: save tracked and untracked source edits in a Git stash, then update and
+  apply the published dotfiles. The stash remains available; setup prints its
+  recovery command and does not reapply it automatically. Ignored files stay in
+  place. Recovery can require resolving conflicts with published changes.
+- `skip`: preserve source edits and continue setup without updating the source or
+  applying Chezmoi dotfiles or scripts for this run.
+- `abort` (also an empty answer): stop setup so you can review, commit and publish,
+  or move source edits aside manually.
+
+A run without an interactive terminal stops with a command to inspect the source.
+Unpublished commits, rewritten upstream history, unfinished Git operations, or
+failed fetches still stop setup before dotfile application. Reconcile the checkout
+manually, then rerun setup. An existing checkout keeps its remote and tracking branch;
 changing the source setting does not switch its remote. Setup uses the managed source,
 configured `home_environment.chezmoi.config_path`, and target home explicitly,
 including when your terminal or IDE sets a different `XDG_DATA_HOME`. Existing

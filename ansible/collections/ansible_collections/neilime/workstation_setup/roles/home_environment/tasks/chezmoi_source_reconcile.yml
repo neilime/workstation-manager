@@ -1,0 +1,81 @@
+---
+- name: Require an interactive terminal to reconcile Chezmoi source edits
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) == '1'
+    quiet: true
+    fail_msg: |
+      Chezmoi source has local changes in {{ workstation_manager_home_environment_chezmoi_source_dir }}.
+      Rerun setup in an interactive terminal to stash source edits or skip Chezmoi for this run.
+      To review them manually as {{ workstation_manager_resolved.user.name }}, run:
+      {{ ['git', '-C', workstation_manager_home_environment_chezmoi_source_dir, 'status', '--short'] | map('quote') | join(' ') }}
+      Commit and publish the intended changes, or move them aside, then rerun setup.
+
+- name: Choose how to handle local Chezmoi source edits
+  vars:
+    workstation_manager_home_environment_chezmoi_carriage_return: "\r"
+    workstation_manager_home_environment_chezmoi_source_prompt: |
+      Chezmoi source has local changes in {{ workstation_manager_home_environment_chezmoi_source_dir }}.
+
+      stash: Save tracked and untracked source edits in a Git stash, then update and apply the published dotfiles.
+             The stash stays available for manual recovery; it is not reapplied automatically.
+      skip: Keep source edits and continue setup without applying Chezmoi dotfiles or scripts.
+      abort: Stop setup to review, commit and publish, or move source edits aside manually.
+      Type stash, skip, or abort (default abort)
+  ansible.builtin.pause:
+    prompt: >-
+      {{ workstation_manager_home_environment_chezmoi_source_prompt
+         | regex_replace('(?m)^', workstation_manager_home_environment_chezmoi_carriage_return) }}
+  register: workstation_manager_home_environment_chezmoi_source_answer
+  until: >-
+    workstation_manager_home_environment_chezmoi_source_answer.user_input
+    | default('', true) | trim | lower in ['', 'stash', 'skip', 'abort']
+  retries: 3
+  delay: 0
+
+- name: Resolve the Chezmoi source decision
+  ansible.builtin.set_fact:
+    workstation_manager_home_environment_chezmoi_source_action: >-
+      {{ workstation_manager_home_environment_chezmoi_source_answer.user_input
+         | default('', true) | trim | lower }}
+
+- name: Stop setup when Chezmoi source reconciliation is aborted
+  ansible.builtin.assert:
+    that:
+      - workstation_manager_home_environment_chezmoi_source_action in ['stash', 'skip']
+    quiet: true
+    fail_msg: |
+      Setup stopped; Chezmoi source edits were left unchanged.
+      Review them as {{ workstation_manager_resolved.user.name }}:
+      {{ ['git', '-C', workstation_manager_home_environment_chezmoi_source_dir, 'status', '--short'] | map('quote') | join(' ') }}
+      Commit and publish the intended changes, or move them aside, then rerun setup.
+
+- name: Report skipped Chezmoi source update and dotfile application
+  ansible.builtin.debug:
+    msg: >-
+      Skipped Chezmoi source update, dotfile application and scripts for this setup run;
+      source edits were left unchanged. Setup will continue.
+  when: workstation_manager_home_environment_chezmoi_source_action == 'skip'
+
+- name: Stash approved Chezmoi source edits and require the latest published source
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  neilime.workstation_setup.chezmoi_source:
+    source: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
+    github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+    stash_local_changes: true
+  register: workstation_manager_home_environment_chezmoi_stashed_update
+  environment:
+    HOME: "{{ workstation_manager_resolved.user.home }}"
+    XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+  when: workstation_manager_home_environment_chezmoi_source_action == 'stash'
+
+- name: Report how to recover the saved Chezmoi source edits
+  ansible.builtin.debug:
+    msg: |
+      Chezmoi source edits remain saved in Git stash {{ workstation_manager_home_environment_chezmoi_stashed_update.stash_revision }}.
+      To recover them later as {{ workstation_manager_resolved.user.name }}, run:
+      {{ ['git', '-C', workstation_manager_home_environment_chezmoi_source_dir, 'stash', 'apply', '--index',
+          workstation_manager_home_environment_chezmoi_stashed_update.stash_revision] | map('quote') | join(' ') }}
+      Recovery can require resolving conflicts with newly published changes. The stash is retained.
+  when: workstation_manager_home_environment_chezmoi_stashed_update.stash_revision | default('') | length > 0

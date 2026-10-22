@@ -13,7 +13,8 @@ short_description: Fast-forward the managed Chezmoi source to its fetched tracki
 version_added: "1.0.0"
 description:
   - Fetches the existing remote tracking branch before inspecting or applying dotfiles.
-  - Rejects local changes, unpublished commits, detached checkouts, and unfinished Git operations.
+  - Rejects unapproved local changes, unpublished commits, detached checkouts, and unfinished Git operations.
+  - Optionally stashes tracked and untracked source edits after explicit approval, retaining them for manual recovery.
   - Fast-forwards clean checkouts without resetting, rebasing, committing, or pushing user work.
   - Leaves the existing remote and branch selection unchanged.
 options:
@@ -25,6 +26,10 @@ options:
     description: Optional token scoped to HTTPS requests to github.com.
     type: str
     default: ''
+  stash_local_changes:
+    description: Save local source edits in a retained Git stash before updating. Requires explicit user approval.
+    type: bool
+    default: false
 author:
   - workstation-manager contributors (@neilime)
 attributes:
@@ -50,6 +55,16 @@ remote_verified:
   type: bool
   returned: success
   sample: true
+stash_revision:
+  description: Saved stash commit for manual recovery, or an empty string when nothing was stashed.
+  type: str
+  returned: success outside check mode
+  sample: '0123456789012345678901234567890123456789'
+local_changes:
+  description: Whether failure is due to local edits that can be reconciled before any source mutation.
+  type: bool
+  returned: failure
+  sample: true
 """
 # pylint: enable=duplicate-code
 
@@ -72,6 +87,7 @@ def main() -> None:
         argument_spec={
             "source": {"type": "path", "required": True},
             "github_token": {"type": "str", "default": "", "no_log": True},
+            "stash_local_changes": {"type": "bool", "default": False},
         },
         supports_check_mode=True,
     )
@@ -80,10 +96,10 @@ def main() -> None:
         module.fail_json(msg="Chezmoi source must be an absolute path")
     try:
         result = ChezmoiSourceUpdater(source, module.run_command, module.params["github_token"]).ensure(
-            check_mode=module.check_mode
+            check_mode=module.check_mode, stash_local_changes=module.params["stash_local_changes"]
         )
     except ChezmoiSourceError as error:
-        module.fail_json(msg=str(error), changed=error.changed)
+        module.fail_json(msg=str(error), changed=error.changed, local_changes=error.local_changes)
     except OSError:
         module.fail_json(msg="Cannot access Git or the Chezmoi source checkout; check its ownership and permissions")
     module.exit_json(**result)

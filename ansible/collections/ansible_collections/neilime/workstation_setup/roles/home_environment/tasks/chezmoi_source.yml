@@ -1,4 +1,8 @@
 ---
+- name: Reset the Chezmoi source decision for this setup run
+  ansible.builtin.set_fact:
+    workstation_manager_home_environment_chezmoi_source_action: ""
+
 - name: Initialize the managed Chezmoi source repository
   become: "{{ workstation_manager_use_become }}"
   become_user: "{{ workstation_manager_resolved.user.name }}"
@@ -50,6 +54,14 @@
   neilime.workstation_setup.chezmoi_source:
     source: "{{ workstation_manager_home_environment_chezmoi_source_dir }}"
     github_token: "{{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_GITHUB_TOKEN') }}"
+  register: workstation_manager_home_environment_chezmoi_source_update
+  failed_when: >-
+    workstation_manager_home_environment_chezmoi_source_update.failed | default(false)
+    and not workstation_manager_home_environment_chezmoi_source_update.local_changes | default(false)
   environment:
     HOME: "{{ workstation_manager_resolved.user.home }}"
     XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+
+- name: Reconcile local edits in the managed Chezmoi source
+  ansible.builtin.include_tasks: chezmoi_source_reconcile.yml
+  when: workstation_manager_home_environment_chezmoi_source_update.local_changes | default(false)

@@ -143,4 +143,6 @@
 
 - name: Inspect and apply the managed Chezmoi dotfiles
   ansible.builtin.import_tasks: chezmoi_apply.yml
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - workstation_manager_home_environment_chezmoi_source_action | default('') != 'skip'
