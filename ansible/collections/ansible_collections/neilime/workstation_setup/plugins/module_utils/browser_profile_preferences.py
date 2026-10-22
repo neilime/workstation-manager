@@ -32,7 +32,9 @@ def saved_bookmark_bar(preferences: dict) -> str | None:
     settings = preferences.get("bookmark_bar", {})
     brave = preferences.get("brave", {})
     if not isinstance(settings, dict) or not isinstance(brave, dict):
-        raise ValueError("Expected browser bookmark-bar settings objects")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Expected browser bookmark-bar settings objects"
+        )
     if "visibility_state" in settings:
         state = settings["visibility_state"]
         if not isinstance(state, int) or isinstance(state, bool) or not 0 <= state < len(BOOKMARK_BAR_MODES):
@@ -42,7 +44,9 @@ def saved_bookmark_bar(preferences: dict) -> str | None:
     show = settings.get("show_on_all_tabs", False)
     ntp = brave.get("always_show_bookmark_bar_on_ntp", True)
     if not isinstance(show, bool) or not isinstance(ntp, bool):
-        raise ValueError("Invalid browser bookmark-bar visibility flags")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Invalid browser bookmark-bar visibility flags"
+        )
     if "show_on_all_tabs" not in settings and "always_show_bookmark_bar_on_ntp" not in brave:
         return None
     return "always" if show else "new_tab" if ntp else "never"
@@ -52,7 +56,9 @@ def close_tabs_confirmation(value: object) -> bool:
     """Reject non-boolean declarations without confusing disabled with absent."""
 
     if not isinstance(value, bool):
-        raise ValueError("Browser confirm_close_tabs must be a boolean")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Browser confirm_close_tabs must be a boolean"
+        )
     return value
 
 
@@ -61,7 +67,9 @@ def saved_close_tabs_confirmation(preferences: dict) -> bool | None:
 
     brave = preferences.get("brave", {})
     if not isinstance(brave, dict):
-        raise ValueError("Expected a browser settings object for brave")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Expected a browser settings object for brave"
+        )
     if "enable_window_closing_confirm" not in brave:
         return None
     return close_tabs_confirmation(brave["enable_window_closing_confirm"])

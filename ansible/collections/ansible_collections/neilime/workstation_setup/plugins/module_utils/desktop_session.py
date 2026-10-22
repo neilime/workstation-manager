@@ -84,7 +84,7 @@ class DesktopSession:
         environment = dict(environment)
         try:
             session = DesktopSession.environment()
-        except (OSError, ValueError):
+        except OSError, ValueError:
             # Native clients can still display a URL for manual opening without a live desktop.
             session = {}
         for name in ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE"):

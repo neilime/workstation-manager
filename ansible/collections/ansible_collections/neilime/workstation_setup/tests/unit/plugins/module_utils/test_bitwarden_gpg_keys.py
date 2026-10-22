@@ -94,10 +94,12 @@ def test_build_plan_normalizes_flattened_openpgp_armor_and_appends_subkey() -> N
 
     # Arrange
     planner = BitwardenGpgKeyRestorePlanner()
-    begin_private = "".join(["-----", "BEGIN", " PGP PRIVATE KEY ", "BLOCK", "-----"])
-    end_private = "".join(["-----", "END", " PGP PRIVATE KEY ", "BLOCK", "-----"])
-    begin_public = "".join(["-----", "BEGIN", " PGP PUBLIC KEY ", "BLOCK", "-----"])
-    end_public = "".join(["-----", "END", " PGP PUBLIC KEY ", "BLOCK", "-----"])
+    private_label = "PGP PRIVATE KEY BLOCK"
+    public_label = "PGP PUBLIC KEY BLOCK"
+    begin_private = f"-----BEGIN {private_label}-----"
+    end_private = f"-----END {private_label}-----"
+    begin_public = f"-----BEGIN {public_label}-----"
+    end_public = f"-----END {public_label}-----"
     item_payload: dict[str, object] = {
         "id": "item-123",
         "name": "Example primary GPG key",

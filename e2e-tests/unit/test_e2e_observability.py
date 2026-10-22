@@ -237,13 +237,15 @@ def test_vm_swap_preserves_active_pages_and_requires_successful_formatting(
     for name, body in (
         (
             "swapon",
-            'if [[ "$1" == --show=NAME ]]; then\n'
-            '  if [[ "$TEST_PROBE_STATUS" != 0 ]]; then exit "$TEST_PROBE_STATUS"; fi\n'
-            '  if [[ -f "$TEST_ACTIVE" ]]; then cat "$TEST_ACTIVE"; fi\n'
-            "else\n"
-            '  printf "%s\\n" "$1" >"$TEST_ACTIVE"\n'
-            '  printf "activate\\n" >>"$TEST_TRACE"\n'
-            "fi\n",
+            (
+                'if [[ "$1" == --show=NAME ]]; then\n'
+                '  if [[ "$TEST_PROBE_STATUS" != 0 ]]; then exit "$TEST_PROBE_STATUS"; fi\n'
+                '  if [[ -f "$TEST_ACTIVE" ]]; then cat "$TEST_ACTIVE"; fi\n'
+                "else\n"
+                '  printf "%s\\n" "$1" >"$TEST_ACTIVE"\n'
+                '  printf "activate\\n" >>"$TEST_TRACE"\n'
+                "fi\n"
+            ),
         ),
         ("fallocate", '[[ "$1" == --length && "$2" == 4GiB ]] || exit 99\nprintf "pages" >"$3"\n'),
         (
@@ -328,9 +330,11 @@ class ProfilingConfigurationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_dir:
             config = pathlib.Path(temporary_dir) / "ansible.cfg"
             config.write_text("[defaults]\nforks = 7\n")
-            with mock.patch.object(pathlib.Path, "replace", fail_replacement):
-                with self.assertRaisesRegex(OSError, "synthetic install failure"):
-                    task_profiling.prepare(config)
+            with (
+                mock.patch.object(pathlib.Path, "replace", fail_replacement),
+                self.assertRaisesRegex(OSError, "synthetic install failure"),
+            ):
+                task_profiling.prepare(config)
             self.assertEqual(config.read_text(), "[defaults]\nforks = 7\n")
             self.assertEqual(list(config.parent.iterdir()), [config])
 
@@ -347,9 +351,11 @@ class PhaseTimingTests(unittest.TestCase):
                     [
                         "bash",
                         "-c",
-                        'set -euo pipefail; source "$1"; '
-                        "run_e2e_timed_command fixture bash -c 'exit \"$1\"' "
-                        'fixture "$2" synthetic-vault-password',
+                        (
+                            'set -euo pipefail; source "$1"; '
+                            "run_e2e_timed_command fixture bash -c 'exit \"$1\"' "
+                            'fixture "$2" synthetic-vault-password'
+                        ),
                         "timing-test",
                         str(E2E_PATH / "e2e-common.sh"),
                         str(exit_status),
@@ -532,64 +538,66 @@ class SuiteFailureTests(unittest.TestCase):
             (0, 1, 0),
             (0, 0, 42),
         ):
-            with self.subTest(setup=setup_status, screenshot=screenshot_status, restore=restore_status):
-                with tempfile.TemporaryDirectory() as temporary_dir:
-                    fixture = pathlib.Path(temporary_dir)
-                    scripts = fixture / "e2e-tests"
-                    scripts.mkdir()
-                    (scripts / "e2e-test.sh").write_text((E2E_PATH / "e2e-test.sh").read_text())
-                    (scripts / "test_setup.py").touch()
-                    (scripts / "e2e-common.sh").write_text(
-                        (E2E_PATH / "e2e-common.sh").read_text()
-                        + '\nprepare_e2e_task_profiling() { printf "prepare\\n" >>"$TEST_TRACE"; }\n'
-                        + 'restore_e2e_task_profiling() { printf "restore\\n" >>"$TEST_TRACE"; '
-                        + 'return "$TEST_RESTORE_STATUS"; }\n'
-                        + "restart_e2e_desktop_session() { :; }\n"
-                        + "wait_for_e2e_clipboard_extension() { :; }\n"
-                        + 'print_e2e_desktop_diagnostics() { printf "desktop-diagnostics\\n" >>"$TEST_TRACE"; '
-                        + "return 43; }\n"
-                        + 'run_e2e_lima_shell() { printf "browser-diagnostics\\n" >>"$TEST_TRACE"; return 44; }\n'
-                        + 'capture_e2e_vm_desktop() { printf "screenshot\\n" >>"$TEST_TRACE"; '
-                        + 'printf "image" >"$2/$1.png"; return "$TEST_SCREENSHOT_STATUS"; }\n'
+            with (
+                self.subTest(setup=setup_status, screenshot=screenshot_status, restore=restore_status),
+                tempfile.TemporaryDirectory() as temporary_dir,
+            ):
+                fixture = pathlib.Path(temporary_dir)
+                scripts = fixture / "e2e-tests"
+                scripts.mkdir()
+                (scripts / "e2e-test.sh").write_text((E2E_PATH / "e2e-test.sh").read_text())
+                (scripts / "test_setup.py").touch()
+                (scripts / "e2e-common.sh").write_text(
+                    (E2E_PATH / "e2e-common.sh").read_text()
+                    + '\nprepare_e2e_task_profiling() { printf "prepare\\n" >>"$TEST_TRACE"; }\n'
+                    + 'restore_e2e_task_profiling() { printf "restore\\n" >>"$TEST_TRACE"; '
+                    + 'return "$TEST_RESTORE_STATUS"; }\n'
+                    + "restart_e2e_desktop_session() { :; }\n"
+                    + "wait_for_e2e_clipboard_extension() { :; }\n"
+                    + 'print_e2e_desktop_diagnostics() { printf "desktop-diagnostics\\n" >>"$TEST_TRACE"; '
+                    + "return 43; }\n"
+                    + 'run_e2e_lima_shell() { printf "browser-diagnostics\\n" >>"$TEST_TRACE"; return 44; }\n'
+                    + 'capture_e2e_vm_desktop() { printf "screenshot\\n" >>"$TEST_TRACE"; '
+                    + 'printf "image" >"$2/$1.png"; return "$TEST_SCREENSHOT_STATUS"; }\n'
+                )
+                for phase in ("backup", "setup", "cleanup"):
+                    (scripts / f"e2e-{phase}.sh").write_text(
+                        f'printf "{phase}\\n" >>"$TEST_TRACE"\n'
+                        + ('exit "$TEST_SETUP_STATUS"\n' if phase == "setup" else "exit 0\n")
                     )
-                    for phase in ("backup", "setup", "cleanup"):
-                        (scripts / f"e2e-{phase}.sh").write_text(
-                            f'printf "{phase}\\n" >>"$TEST_TRACE"\n'
-                            + ('exit "$TEST_SETUP_STATUS"\n' if phase == "setup" else "exit 0\n")
-                        )
-                    docker = fixture / "docker"
-                    docker.write_text('#!/bin/sh\nprintf "assertions\\n" >>"$TEST_TRACE"\n')
-                    docker.chmod(0o700)
-                    trace = fixture / "trace"
-                    result = subprocess.run(
-                        ["bash", str(scripts / "e2e-test.sh"), "fixture"],
-                        cwd=fixture,
-                        env={
-                            **os.environ,
-                            "PATH": f"{fixture}:/usr/bin:/bin",
-                            "TEST_TRACE": str(trace),
-                            "TEST_SETUP_STATUS": str(setup_status),
-                            "TEST_SCREENSHOT_STATUS": str(screenshot_status),
-                            "TEST_RESTORE_STATUS": str(restore_status),
-                        },
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        timeout=10,
-                    )
-                    self.assertEqual(
-                        result.returncode,
-                        setup_status or screenshot_status or restore_status,
-                        result.stderr,
-                    )
-                    phases = trace.read_text().splitlines()
-                    self.assertEqual(phases[0], "prepare")
-                    self.assertIn("screenshot", phases)
-                    self.assertEqual(phases[-1], "restore")
-                    self.assertEqual("cleanup" in phases, setup_status == 0)
-                    self.assertEqual("desktop-diagnostics" in phases, setup_status != 0)
-                    if setup_status:
-                        self.assertLess(phases.index("desktop-diagnostics"), phases.index("browser-diagnostics"))
-                    started_phases = re.findall(r"^E2E phase: (\S+)$", result.stderr, re.MULTILINE)
-                    completed_phases = re.findall(r"^E2E timing: phase=(\S+) ", result.stderr, re.MULTILINE)
-                    self.assertEqual(completed_phases, started_phases)
+                docker = fixture / "docker"
+                docker.write_text('#!/bin/sh\nprintf "assertions\\n" >>"$TEST_TRACE"\n')
+                docker.chmod(0o700)
+                trace = fixture / "trace"
+                result = subprocess.run(
+                    ["bash", str(scripts / "e2e-test.sh"), "fixture"],
+                    cwd=fixture,
+                    env={
+                        **os.environ,
+                        "PATH": f"{fixture}:/usr/bin:/bin",
+                        "TEST_TRACE": str(trace),
+                        "TEST_SETUP_STATUS": str(setup_status),
+                        "TEST_SCREENSHOT_STATUS": str(screenshot_status),
+                        "TEST_RESTORE_STATUS": str(restore_status),
+                    },
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                self.assertEqual(
+                    result.returncode,
+                    setup_status or screenshot_status or restore_status,
+                    result.stderr,
+                )
+                phases = trace.read_text().splitlines()
+                self.assertEqual(phases[0], "prepare")
+                self.assertIn("screenshot", phases)
+                self.assertEqual(phases[-1], "restore")
+                self.assertEqual("cleanup" in phases, setup_status == 0)
+                self.assertEqual("desktop-diagnostics" in phases, setup_status != 0)
+                if setup_status:
+                    self.assertLess(phases.index("desktop-diagnostics"), phases.index("browser-diagnostics"))
+                started_phases = re.findall(r"^E2E phase: (\S+)$", result.stderr, re.MULTILINE)
+                completed_phases = re.findall(r"^E2E timing: phase=(\S+) ", result.stderr, re.MULTILINE)
+                self.assertEqual(completed_phases, started_phases)

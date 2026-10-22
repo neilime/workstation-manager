@@ -73,7 +73,7 @@ def browser_processes(root: Path) -> list[int]:
                     selected = arguments[index + 1]
             if Path(selected).is_absolute() and Path(selected).resolve() == root.resolve():
                 result.append(int(process.name))
-        except (FileNotFoundError, ProcessLookupError, PermissionError, UnicodeError):
+        except FileNotFoundError, ProcessLookupError, PermissionError, UnicodeError:
             continue
     return result
 
@@ -89,7 +89,7 @@ def _request_close(process: int) -> None:
             # signal would kill it if a previous graceful shutdown was blocked.
             raise BrowserLifecycleBlocked("Brave cannot accept another safe close request; its process was retained")
         os.kill(process, signal.SIGINT)
-    except (FileNotFoundError, ProcessLookupError):
+    except FileNotFoundError, ProcessLookupError:
         pass
 
 
@@ -98,7 +98,9 @@ def _previous_profiles(root: Path) -> list[str]:
 
     profiles = _object(_read_settings(root / "Local State"), "profile").get("last_active_profiles", [])
     if not isinstance(profiles, list):
-        raise ValueError("Brave's previous session profile list is invalid")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Brave's previous session profile list is invalid"
+        )
     planner = BrowserProfilePathsPlanner()
     return list(dict.fromkeys(planner.validate_profile_directory(profile) for profile in profiles))
 

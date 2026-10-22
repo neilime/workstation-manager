@@ -10,6 +10,7 @@ import sys
 import time
 from collections.abc import Callable
 from types import TracebackType
+from typing import Self
 from urllib.parse import urlsplit, urlunsplit
 
 # dup2 must run after Python's descriptor cleanup, before exec. No data or secrets
@@ -75,7 +76,7 @@ class BrowserPipe:
             os.close(read_command)
             os.close(write_response)
 
-    def __enter__(self) -> BrowserPipe:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(

@@ -115,7 +115,7 @@ class AiProviderAuthentication:
                 if any(key in status and not isinstance(status[key], str) for key in ("login", "host")):
                     break
                 return status
-        except (KeyError, TypeError, AttributeError, ValueError):
+        except KeyError, TypeError, AttributeError, ValueError:
             pass
         raise ValueError("Copilot returned an invalid authentication status")
 

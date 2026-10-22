@@ -36,22 +36,19 @@ def test_require_sudo_starts_a_keepalive_that_refreshes_until_stopped(tmp_path) 
     """require_sudo runs a background refresh; stopping it clears the tracked process."""
     result = _run_snippet(
         tmp_path,
-        "\n".join(
-            [
-                "",
-                "require_sudo",
-                'printf "started=%s\\n" "$SUDO_KEEPALIVE_PID"',
-                'kill -0 "$SUDO_KEEPALIVE_PID" 2>/dev/null && printf "alive=yes\\n"',
-                'keepalive_pid="$SUDO_KEEPALIVE_PID"',
-                "start_sudo_keepalive",
-                'printf "same=%s\\n" "$([ "$SUDO_KEEPALIVE_PID" = "$keepalive_pid" ] && echo yes || echo no)"',
-                "/bin/sleep 0.3",
-                "stop_sudo_keepalive",
-                'printf "after=%s\\n" "$SUDO_KEEPALIVE_PID"',
-                "/bin/sleep 0.3",
-                'kill -0 "$keepalive_pid" 2>/dev/null && printf "still=yes\\n" || printf "still=no\\n"',
-                "",
-            ]
+        (
+            "\n"
+            "require_sudo\n"
+            'printf "started=%s\\n" "$SUDO_KEEPALIVE_PID"\n'
+            'kill -0 "$SUDO_KEEPALIVE_PID" 2>/dev/null && printf "alive=yes\\n"\n'
+            'keepalive_pid="$SUDO_KEEPALIVE_PID"\n'
+            "start_sudo_keepalive\n"
+            'printf "same=%s\\n" "$([ "$SUDO_KEEPALIVE_PID" = "$keepalive_pid" ] && echo yes || echo no)"\n'
+            "/bin/sleep 0.3\n"
+            "stop_sudo_keepalive\n"
+            'printf "after=%s\\n" "$SUDO_KEEPALIVE_PID"\n'
+            "/bin/sleep 0.3\n"
+            'kill -0 "$keepalive_pid" 2>/dev/null && printf "still=yes\\n" || printf "still=no\\n"\n'
         ),
     )
     assert result.returncode == 0, result.stdout + result.stderr

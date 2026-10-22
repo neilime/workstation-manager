@@ -103,7 +103,7 @@ def main() -> None:
                     session.check_access(check, available_tools)
                     access_verified.append(name)
             verified.append(name)
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         module.fail_json(
             msg="MCP startup or authentication/access verification failed; check the declared credentials, executable, "
             "prerequisites and client logs privately. No server output is logged."

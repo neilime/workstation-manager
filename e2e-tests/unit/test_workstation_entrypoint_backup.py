@@ -224,8 +224,10 @@ class PipedBackupTests(unittest.TestCase):
                 self.assertEqual(
                     (fixture / "downloads.txt").read_text().splitlines(),
                     [
-                        "https://raw.githubusercontent.com/fixture/workstation-manager/fixture-ref/"
-                        "ansible/collections/requirements.yml",
+                        (
+                            "https://raw.githubusercontent.com/fixture/workstation-manager/fixture-ref/"
+                            "ansible/collections/requirements.yml"
+                        ),
                         "https://raw.githubusercontent.com/fixture/workstation-manager/fixture-ref/workstation.sh",
                     ],
                 )

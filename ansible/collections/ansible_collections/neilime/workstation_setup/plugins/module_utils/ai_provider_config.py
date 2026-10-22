@@ -96,7 +96,9 @@ class AiProviderConfiguration:
         document = JsoncDocument()
         current = document.loads(content).get(key, {})
         if not isinstance(current, dict):
-            raise ValueError("The MCP server map must be an object")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "The MCP server map must be an object"
+            )
         self._check_ownership(current, servers, previous)
         for name in previous.keys() - servers.keys():
             content = document.remove(content, (key, name))
@@ -108,7 +110,9 @@ class AiProviderConfiguration:
         original = tomllib.loads(content)
         current = original.get(key, {})
         if not isinstance(current, dict):
-            raise ValueError("The MCP server map must be a table")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "The MCP server map must be a table"
+            )
         self._check_ownership(current, servers, previous)
         outside = self._outside_block(content)
         personal = tomllib.loads(outside)

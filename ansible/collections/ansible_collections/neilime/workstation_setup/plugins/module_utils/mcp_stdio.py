@@ -57,7 +57,7 @@ class McpStdioSession:
                 raise ValueError("MCP initialization returned an invalid response")
             self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
             return self
-        except (OSError, ValueError):
+        except OSError, ValueError:
             self.close()
             raise ValueError("MCP initialization failed; inspect the selected client's server log privately") from None
 
@@ -105,7 +105,7 @@ class McpStdioSession:
                 line, self._pending = self._pending.split(b"\n", 1)
                 try:
                     message = json.loads(line)
-                except (ValueError, UnicodeError):
+                except ValueError, UnicodeError:
                     raise ValueError("MCP server returned invalid protocol data") from None
                 if not isinstance(message, dict):
                     # Malformed wire data is a protocol error, not a caller type error.

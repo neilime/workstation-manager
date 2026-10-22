@@ -405,41 +405,43 @@ class InteractiveBootstrapTests(unittest.TestCase):
             # Read the script from a pipe while Ansible reads answers from /dev/tty.
             command = "printf '%s\\n' " + shlex.quote(bootstrap + RETRY_WRAPPER_COMMAND.rstrip("\n")) + " | sh"
             for interrupt in (False, True):
-                with self.subTest(interrupt=interrupt):
-                    with subprocess.Popen(
+                with (
+                    self.subTest(interrupt=interrupt),
+                    subprocess.Popen(
                         ["script", "--quiet", "--return", "--command", command, os.devnull],
                         cwd=fixture,
                         env=environment,
                         stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
-                    ) as process:
-                        assert process.stdin is not None
-                        output = bytearray()
+                    ) as process,
+                ):
+                    assert process.stdin is not None
+                    output = bytearray()
 
-                        try:
-                            self.wait_for_prompt(process, output, DECISION_PROMPT)
-                            self.assert_prompt_layout(output)
-                            if interrupt:
-                                process.stdin.write(b"\x03")
-                                process.stdin.flush()
-                                self.wait_for_prompt(process, output, b"to abort")
-                                process.stdin.write(b"a")
-                            else:
-                                process.stdin.write(b"skip\n")
+                    try:
+                        self.wait_for_prompt(process, output, DECISION_PROMPT)
+                        self.assert_prompt_layout(output)
+                        if interrupt:
+                            process.stdin.write(b"\x03")
                             process.stdin.flush()
-                            remaining, _ = process.communicate(timeout=20)
-                            output.extend(remaining)
-                            if interrupt:
-                                self.assertNotEqual(process.returncode, 0, output)
-                                self.assertNotIn(b"FIXTURE_COMPLETED", output)
-                            else:
-                                self.assertEqual(process.returncode, 0, output)
-                                self.assertIn(b"FIXTURE_COMPLETED", output)
-                        finally:
-                            if process.poll() is None:
-                                process.terminate()
-                                process.communicate(timeout=5)
+                            self.wait_for_prompt(process, output, b"to abort")
+                            process.stdin.write(b"a")
+                        else:
+                            process.stdin.write(b"skip\n")
+                        process.stdin.flush()
+                        remaining, _ = process.communicate(timeout=20)
+                        output.extend(remaining)
+                        if interrupt:
+                            self.assertNotEqual(process.returncode, 0, output)
+                            self.assertNotIn(b"FIXTURE_COMPLETED", output)
+                        else:
+                            self.assertEqual(process.returncode, 0, output)
+                            self.assertIn(b"FIXTURE_COMPLETED", output)
+                    finally:
+                        if process.poll() is None:
+                            process.terminate()
+                            process.communicate(timeout=5)
 
     def test_retry_wrapper_accepts_answers_in_a_direct_terminal_run(self) -> None:
         """The retry wrapper must still allow Ansible pause prompts in a real controlling tty."""

@@ -113,7 +113,7 @@ def main() -> None:
         module.run_command,
     )
     try:
-        result = browser_live_sync.sync_browser_recovery(  # noqa: E111
+        result = browser_live_sync.sync_browser_recovery(
             module.params["user_data_dir"],
             module.params["profiles"],
             module.params["action"],

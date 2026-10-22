@@ -95,7 +95,9 @@ def _text(value: object) -> str:
     """Keep metadata on one printable line without interpreting terminal controls."""
 
     if not isinstance(value, str):
-        raise ValueError("Browser recovery display metadata must be text")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Browser recovery display metadata must be text"
+        )
     return "".join(character if character.isprintable() else " " for character in value).strip()
 
 
@@ -173,7 +175,9 @@ def browser_recovery_report(inspection: dict) -> str:
     """Group known diagnostics by action, never displaying notes, images, or seeds."""
 
     if not isinstance(inspection, dict):
-        raise ValueError("Browser recovery inspection must be an object")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Browser recovery inspection must be an object"
+        )
     profiles = {_text(profile.get("directory")): profile for profile in _records(inspection, "profiles")}
     groups: dict[str, list[str]] = {}
     sync_issues = browser_recovery_inspection(inspection)["sync_issues"]
@@ -216,7 +220,9 @@ def browser_sync_report(inspection: dict) -> str:
     """Describe automatic verification without asking users to inspect secrets."""
 
     if not isinstance(inspection, dict):
-        raise ValueError("Browser recovery inspection must be an object")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Browser recovery inspection must be an object"
+        )
     profiles = {_text(profile.get("directory")): profile for profile in _records(inspection, "profiles")}
     if not profiles:
         return "No browser profiles to check."

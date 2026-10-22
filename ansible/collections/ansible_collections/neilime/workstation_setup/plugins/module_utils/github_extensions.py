@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 
 # Keep pin reconciliation and its state internal to one public operation.
@@ -44,7 +44,9 @@ class GitHubExtensions:
             return False
         pins = json.loads(self.record.read_text(encoding="utf-8")) if self.record.exists() else {}
         if not isinstance(pins, dict):
-            raise ValueError("Invalid managed GitHub extension revision record")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "Invalid managed GitHub extension revision record"
+            )
         installed = self._installed()
         changed = False
         for repository, revision in extensions.items():

@@ -6,9 +6,9 @@ import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,9 @@ class EditorTerminalSettings:
         document = JsoncDocument()
         settings = document.loads(content)
         if not isinstance(settings.get("terminal.integrated.profiles.linux", {}), dict):
-            raise ValueError("VS Code terminal profiles must be a JSONC object.")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "VS Code terminal profiles must be a JSONC object."
+            )
         content = document.set(
             content, ("terminal.integrated.profiles.linux", "zsh"), {"path": "/usr/bin/zsh", "args": ["-l"]}
         )

@@ -18,8 +18,7 @@ def run_command(arguments: list[str], *, environ_update: dict[str, str]) -> tupl
         env=environ_update,
         check=False,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -37,8 +36,7 @@ def git(path: Path, *arguments: str) -> str:
         ["git", "-C", str(path), *arguments],
         check=True,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     ).stdout.strip()
 
 
