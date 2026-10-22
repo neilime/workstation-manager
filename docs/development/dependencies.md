@@ -28,7 +28,7 @@ handlers and verify extraction at the actual file path.
 Inline Renovate annotations cover release-based tools, AI packages, MCP servers,
 and GitHub-backed mise tools. Git skill sources pin full commit SHAs; `git-refs`
 annotations select the upstream branch for digest proposals. The
-[pin extraction tests](../../e2e-tests/unit/test_ai_tools_pins.py) verify coverage.
+[pin extraction tests](../../tests/unit/test_ai_tools_pins.py) verify coverage.
 Project skills use their [own update commands](project-skills.md).
 
 ## Coordinated and reviewed updates

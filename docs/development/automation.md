@@ -71,7 +71,7 @@ user without loosening its permissions. Piped capture fetches the configured
 entrypoint and validates its shell syntax. Cleanup traps remove temporary
 manifests, capture files, source copies, and credentials on success or failure.
 
-Exercise changes with isolated entrypoint tests in `e2e-tests/unit/`.
+Exercise changes with entrypoint tests in `tests/unit/` and `tests/integration/`.
 Never put credential values in examples, overrides, or Git.
 
 ## Bitwarden integration

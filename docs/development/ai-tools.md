@@ -81,7 +81,7 @@ version and command lives in `development.ai_tools.providers.<name>`. Each entry
 in `development.ai_tools.mcp_servers` owns its package, version, binary and launch
 settings. The annotated Renovate manager in
 `.github/renovate/renovate-config.json5` extracts these pins;
-`e2e-tests/unit/test_ai_tools_pins.py` checks the actual expression against every
+`tests/unit/test_ai_tools_pins.py` checks the actual expression against every
 public AI package and GitHub-backed mise tool. Global skills use Skillshare's
 `name` and `source` fields. GitHub skill URLs contain immutable full commit SHAs;
 the separate `git-refs` manager follows the `depName` and `branch` annotation on
@@ -119,10 +119,11 @@ make test-integration
 ```
 
 Collection unit tests cover normalization, native configuration merging, skill
-ownership, authentication status handling and MCP protocol failures using synthetic
-inputs and disposable processes. Pin tests verify the active Renovate expressions.
+ownership, and authentication status handling using synthetic inputs. Pin tests
+verify the active Renovate expressions. Integration tests exercise MCP protocol
+failures and terminal authentication with disposable processes.
 
-Integration tests under `e2e-tests/unit/` run real Ansible against isolated homes,
+Integration tests under `tests/integration/` run real Ansible against isolated homes,
 synthetic client executables and local HTTP/MCP fixtures. They cover provider
 installation orchestration, Orca release authentication, adapter idempotence,
 permissions, skill reconciliation, check mode and credential redaction.
