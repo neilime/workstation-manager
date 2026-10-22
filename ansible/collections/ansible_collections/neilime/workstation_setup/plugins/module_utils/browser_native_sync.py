@@ -286,7 +286,9 @@ def recovery_words(value: object) -> str:
     """Accept the stable code, tolerating copied case and surrounding note text."""
 
     if not isinstance(value, str):
-        raise ValueError("The browser recovery note must contain exactly 24 recovery words")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "The browser recovery note must contain exactly 24 recovery words"
+        )
 
     lines = [[word.lower() for word in re.findall(r"[A-Za-z]+", line)] for line in value.splitlines()]
     candidates: list[list[str]] = []

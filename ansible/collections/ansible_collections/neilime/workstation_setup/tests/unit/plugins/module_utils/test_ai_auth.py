@@ -54,7 +54,7 @@ def provider_authentication(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(argv, 1 if state.get("login_failure") else 0, None, None)
 
     monkeypatch.setattr(subprocess, "run", run)
-    monkeypatch.setattr(ai_auth.DesktopSession, "environment", lambda: {})
+    monkeypatch.setattr(ai_auth.DesktopSession, "environment", dict)
     return tmp_path, state
 
 

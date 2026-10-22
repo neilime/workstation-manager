@@ -14,7 +14,7 @@ class HomeEnvironmentSectionNormalizer(desired_state_support.DesiredStateDefault
     def _string_or_default(self, value: object, default: object, name: str) -> str:
         resolved = self._resolver.value_or_default(value, default)
         if not isinstance(resolved, str):
-            raise ValueError(f"{name} must be a string")
+            raise ValueError(f"{name} must be a string")  # noqa: TRY004 - Schema validation reports ValueError.
         return resolved
 
     def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:

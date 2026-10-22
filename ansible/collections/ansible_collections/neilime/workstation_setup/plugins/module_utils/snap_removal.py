@@ -47,11 +47,15 @@ class SnapInventory:
         if not isinstance(system, dict) or system.get("on-classic") is not True:
             raise ValueError("Snap is essential on this installation. Migrate to conventional Ubuntu before setup.")
         if not isinstance(records, list):
-            raise ValueError("Invalid installed Snap inventory.")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "Invalid installed Snap inventory."
+            )
         groups: list[set[str]] = [set(), set(), set()]
         for record in records:
             if not isinstance(record, dict):
-                raise ValueError("Invalid installed Snap record.")
+                raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                    "Invalid installed Snap record."
+                )
             name, kind = record.get("name"), record.get("type")
             if not isinstance(name, str) or re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name) is None:
                 raise ValueError("Invalid installed Snap name.")
@@ -176,7 +180,7 @@ class SnapRemoval:
         for executable in Path("/proc").glob("[0-9]*/exe"):
             try:
                 target = os.readlink(executable)
-            except (FileNotFoundError, PermissionError):
+            except FileNotFoundError, PermissionError:
                 continue
             match = re.match(r"/snap/([^/]+)/", target)
             if match is None or match.group(1) == "snapd" or match.group(1) in background:
@@ -236,7 +240,9 @@ class SnapRemoval:
         """Stop active Snap services and report every snap that runs a background daemon."""
         services = SnapInventory.read("/v2/apps?select=service")
         if not isinstance(services, list):
-            raise ValueError("Cannot inspect Snap services before data preservation.")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "Cannot inspect Snap services before data preservation."
+            )
         daemons: set[str] = set()
         for service in services:
             if not isinstance(service, dict) or not all(isinstance(service.get(key), str) for key in ("snap", "name")):

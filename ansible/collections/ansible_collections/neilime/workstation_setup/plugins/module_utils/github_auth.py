@@ -147,7 +147,9 @@ class GitHubAuthentication:
         """Compare the normalized OAuth scopes reported by the authenticated API request."""
         granted = status.get("scopes", "")
         if not isinstance(granted, str):
-            raise ValueError("GitHub CLI returned invalid authentication scopes")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "GitHub CLI returned invalid authentication scopes"
+            )
         return set(scopes).issubset(scope.strip() for scope in granted.split(","))
 
     def _refresh_scopes(self, terminal: str, scopes: tuple[str, ...]) -> dict[str, Any]:

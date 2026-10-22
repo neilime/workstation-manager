@@ -114,7 +114,7 @@ def make_removal_fixture(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(removal, "installed_packages", lambda: ["snapd"] if state["installed"] else [])
     monkeypatch.setattr(removal, "require_closed_applications", lambda *_args: None)
     monkeypatch.setattr(SnapInventory, "read", lambda _endpoint: [])
-    monkeypatch.setattr(SnapInventory, "mounts", lambda: [])
+    monkeypatch.setattr(SnapInventory, "mounts", list)
     monkeypatch.setattr(SnapInventory, "user_directories", lambda: [data] if data.exists() else [])
     monkeypatch.setattr(SnapRemoval, "SYSTEM_PATHS", ())
     return removal, data, tmp_path / "recovery", calls, state

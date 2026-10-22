@@ -63,10 +63,12 @@ class CollectionInstallRetryTests(unittest.TestCase):
                 [
                     "/bin/sh",
                     "-c",
-                    '. "$1"\n'
-                    'REPOSITORY_URL="$2"\n'
-                    'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
-                    "install_collection_requirements\n",
+                    (
+                        '. "$1"\n'
+                        'REPOSITORY_URL="$2"\n'
+                        'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
+                        "install_collection_requirements\n"
+                    ),
                     "entrypoint-test",
                     str(wrapper),
                     str(repository),
@@ -145,11 +147,13 @@ class CollectionInstallRetryTests(unittest.TestCase):
                 [
                     "/bin/sh",
                     "-c",
-                    '. "$1"\n'
-                    'REPOSITORY_URL="https://github.com/example/workstation-manager.git"\n'
-                    'REPOSITORY_BRANCH="main"\n'
-                    'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
-                    "install_collection_requirements\n",
+                    (
+                        '. "$1"\n'
+                        'REPOSITORY_URL="https://github.com/example/workstation-manager.git"\n'
+                        'REPOSITORY_BRANCH="main"\n'
+                        'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
+                        "install_collection_requirements\n"
+                    ),
                     "entrypoint-test",
                     str(wrapper),
                 ],

@@ -123,7 +123,9 @@ class JsoncDocument:
             ) from error
         if not isinstance(settings, container_type):
             expected = "array" if container_type is list else "object"
-            raise ValueError(f"Configuration must be a JSONC {expected}.")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                f"Configuration must be a JSONC {expected}."
+            )
         return masked
 
     @staticmethod

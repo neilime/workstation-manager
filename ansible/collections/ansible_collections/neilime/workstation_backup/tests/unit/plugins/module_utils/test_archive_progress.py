@@ -75,10 +75,12 @@ def test_creation_failure_stops_progress_and_preserves_the_failure(tmp_path):
     """The monitor must exit promptly without replacing a failed archive result."""
 
     messages = Queue()
-    with pytest.raises(RuntimeError, match="fixture archive failed"):
-        with archive_progress.archive_progress(str(tmp_path / "backup.tar.gz"), messages.put, interval=0.01):
-            assert "preparing files" in messages.get(timeout=2)
-            raise RuntimeError("fixture archive failed")
+    with (
+        pytest.raises(RuntimeError, match="fixture archive failed"),
+        archive_progress.archive_progress(str(tmp_path / "backup.tar.gz"), messages.put, interval=0.01),
+    ):
+        assert "preparing files" in messages.get(timeout=2)
+        raise RuntimeError("fixture archive failed")
     while not messages.empty():
         messages.get_nowait()
     with pytest.raises(Empty):
@@ -98,7 +100,9 @@ def test_progress_read_errors_are_reported(tmp_path, monkeypatch):
             raise PermissionError("fixture archive became unreadable")
 
     monkeypatch.setattr(archive_progress, "_archive_snapshot", unreadable_snapshot)
-    with pytest.raises(PermissionError, match="fixture archive became unreadable"):
-        with archive_progress.archive_progress(str(destination), messages.put, interval=0.01):
-            destination.write_bytes(b"fixture")
-            assert attempted.wait(timeout=2)
+    with (
+        pytest.raises(PermissionError, match="fixture archive became unreadable"),
+        archive_progress.archive_progress(str(destination), messages.put, interval=0.01),
+    ):
+        destination.write_bytes(b"fixture")
+        assert attempted.wait(timeout=2)

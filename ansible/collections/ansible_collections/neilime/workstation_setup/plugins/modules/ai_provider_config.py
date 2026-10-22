@@ -92,7 +92,7 @@ def main() -> None:
             module.params["servers"],
             module.check_mode,
         )
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         module.fail_json(
             msg="Cannot reconcile MCP configuration: check its syntax, symlinks, permissions "
             "and conflicting user entries. No configuration values are logged."

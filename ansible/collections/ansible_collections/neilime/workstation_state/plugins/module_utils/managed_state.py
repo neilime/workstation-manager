@@ -59,7 +59,7 @@ class ManagedStateContentBuilder:
         """Return the serialized cleanup baseline captured after setup."""
 
         if not isinstance(baseline, dict):
-            raise ValueError("baseline must be a mapping")
+            raise ValueError("baseline must be a mapping")  # noqa: TRY004 - Schema validation reports ValueError.
 
         return {
             "manual_apt_packages": self._normalize_string_list(
@@ -79,12 +79,14 @@ class ManagedStateContentBuilder:
         if value is None:
             return []
         if not isinstance(value, list):
-            raise ValueError(f"{name} must be a list")
+            raise ValueError(f"{name} must be a list")  # noqa: TRY004 - Schema validation reports ValueError.
 
         normalized: list[str] = []
         for item in value:
             if not isinstance(item, str):
-                raise ValueError(f"{name} must contain only strings")
+                raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                    f"{name} must contain only strings"
+                )
 
             candidate = item.strip()
             if candidate:

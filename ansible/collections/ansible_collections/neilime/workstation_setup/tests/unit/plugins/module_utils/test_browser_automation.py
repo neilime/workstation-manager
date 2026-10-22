@@ -215,9 +215,11 @@ def test_protocol_failures_are_bounded_and_never_echo_browser_payloads(method: s
 def test_protocol_rejections_report_only_codes_and_fixed_context_reasons(reason: str) -> None:
     """Context loss is distinguishable without exposing arbitrary protocol error messages."""
 
-    with BrowserPipe([sys.executable, "-c", _CHILD], dict(os.environ)) as pipe:
-        with pytest.raises(BrowserProtocolError) as error:
-            pipe.call("error", {"code": -32000, "message": reason, "data": "private-browser-data"})
+    with (
+        BrowserPipe([sys.executable, "-c", _CHILD], dict(os.environ)) as pipe,
+        pytest.raises(BrowserProtocolError) as error,
+    ):
+        pipe.call("error", {"code": -32000, "message": reason, "data": "private-browser-data"})
     assert "protocol code -32000" in str(error.value)
     assert ("Promise was collected" in str(error.value)) is (reason == "Promise was collected")
     assert "private" not in str(error.value)
@@ -563,9 +565,11 @@ def test_profile_lock_is_retained_without_launching_a_browser(tmp_path: Path, mo
     monkeypatch.setattr(lifecycle.DesktopSession, "environment", dict)
     launch = Mock()
     monkeypatch.setattr(lifecycle.subprocess, "Popen", launch)
-    with pytest.raises(lifecycle.BrowserLifecycleBlocked, match="still locked"):
-        with lifecycle.closed_browser(str(tmp_path)):
-            pytest.fail("Locked profiles must not enter the operation")
+    with (
+        pytest.raises(lifecycle.BrowserLifecycleBlocked, match="still locked"),
+        lifecycle.closed_browser(str(tmp_path)),
+    ):
+        pytest.fail("Locked profiles must not enter the operation")
     assert lock.is_symlink()
     launch.assert_not_called()
 
@@ -602,9 +606,8 @@ def test_existing_browser_is_reopened_even_when_sync_fails(tmp_path: Path, monke
     launch.return_value.wait.side_effect = subprocess.TimeoutExpired("fixture", 2)
     monkeypatch.setattr(lifecycle, "_request_close", terminate)
     monkeypatch.setattr(lifecycle.subprocess, "Popen", launch)
-    with pytest.raises(ValueError, match="fixture failure"):
-        with lifecycle.closed_browser(str(tmp_path)):
-            raise ValueError("fixture failure")
+    with pytest.raises(ValueError, match="fixture failure"), lifecycle.closed_browser(str(tmp_path)):
+        raise ValueError("fixture failure")
     terminate.assert_called_once_with(123)
     assert launch.call_count == 2
     for call, profile in zip(launch.call_args_list, ["Default", "Profile 2"]):

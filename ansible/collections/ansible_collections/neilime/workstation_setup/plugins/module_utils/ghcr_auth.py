@@ -59,7 +59,9 @@ class GhcrAuthentication:
         except (json.JSONDecodeError, UnicodeError) as error:
             raise ValueError("Docker config.json is malformed; repair it before running setup") from error
         if not isinstance(config, dict):
-            raise ValueError("Docker config.json must contain a JSON object")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "Docker config.json must contain a JSON object"
+            )
         for name, value_type in (("auths", dict), ("credHelpers", str)):
             entries = config.get(name, {})
             if not isinstance(entries, dict) or any(not isinstance(value, value_type) for value in entries.values()):

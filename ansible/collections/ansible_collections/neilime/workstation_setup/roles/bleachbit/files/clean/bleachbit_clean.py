@@ -30,10 +30,7 @@ def has_enabled_preset(config_path: Path) -> bool:
 
     for value in config["tree"].values():
         normalized = value.strip().lower()
-        if (
-            normalized in configparser.ConfigParser.BOOLEAN_STATES
-            and configparser.ConfigParser.BOOLEAN_STATES[normalized]
-        ):
+        if configparser.ConfigParser.BOOLEAN_STATES.get(normalized):
             return True
     return False
 

@@ -127,7 +127,9 @@ class BrowserVault:
                 "Bitwarden returned malformed browser record JSON; check the Bitwarden CLI installation"
             ) from error
         if not isinstance(value, dict):
-            raise ValueError("Bitwarden returned a browser record with an unexpected JSON type")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "Bitwarden returned a browser record with an unexpected JSON type"
+            )
         return value
 
     def selected_item(self, declaration: dict) -> dict:

@@ -37,7 +37,9 @@ def _profile_fields(item: dict, reader: BitwardenItemFieldReader) -> dict[str, s
     for field in reader.fields(item.get("fields")):
         name = field.get("name")
         if not isinstance(name, str):
-            raise ValueError("custom field names must be strings")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "custom field names must be strings"
+            )
         if name not in {"id", "directory", "theme_colors", "bookmark_bar", "confirm_close_tabs"}:
             continue
         if name in values:

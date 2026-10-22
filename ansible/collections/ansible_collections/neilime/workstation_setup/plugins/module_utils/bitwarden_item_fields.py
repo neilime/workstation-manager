@@ -41,12 +41,14 @@ class BitwardenItemFieldReader:
         if raw_fields is None:
             return []
         if not isinstance(raw_fields, list):
-            raise ValueError("item.fields must be a list")
+            raise ValueError("item.fields must be a list")  # noqa: TRY004 - Schema validation reports ValueError.
 
         normalized_fields: list[dict[str, object]] = []
         for index, raw_field in enumerate(raw_fields):
             if not isinstance(raw_field, dict):
-                raise ValueError(f"item.fields[{index}] must be a mapping")
+                raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                    f"item.fields[{index}] must be a mapping"
+                )
             normalized_fields.append(raw_field)
 
         return normalized_fields
@@ -55,7 +57,7 @@ class BitwardenItemFieldReader:
         """Return a trimmed required string value."""
 
         if not isinstance(value, str):
-            raise ValueError(f"{name} must be a string")
+            raise ValueError(f"{name} must be a string")  # noqa: TRY004 - Schema validation reports ValueError.
 
         trimmed_value = value.strip()
         if not trimmed_value:

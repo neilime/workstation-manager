@@ -135,7 +135,9 @@ def reset_device(pipe: BrowserPipe, settings: str, identity: str) -> bool:
     if removed is None:
         raise ValueError("The settings page no longer matches the captured test identity")
     if not isinstance(removed, bool):
-        raise ValueError("Brave returned unsupported native leave diagnostics")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Brave returned unsupported native leave diagnostics"
+        )
     return removed
 
 

@@ -122,7 +122,7 @@ def _run_login_attempt(
         # The Ansible-only checker is absent from standalone Pylint.
         # pylint: disable-next=unknown-option-value
         # pylint: disable-next=ansible-bad-function
-        completed = subprocess.run(  # noqa: S603,S607
+        completed = subprocess.run(
             argv,
             capture_output=True,
             check=False,
@@ -151,7 +151,7 @@ def _run_interactive_login(
         # The Ansible-only checker is absent from standalone Pylint.
         # pylint: disable-next=unknown-option-value
         # pylint: disable-next=consider-using-with,ansible-bad-function
-        with subprocess.Popen(  # noqa: S603,S607
+        with subprocess.Popen(
             argv,
             stdin=slave_fd,
             stdout=slave_fd,

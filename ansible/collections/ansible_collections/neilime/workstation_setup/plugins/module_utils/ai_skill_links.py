@@ -77,9 +77,8 @@ class AiSkillLinks:
                 if name in previous and existing == previous[name]:
                     ownership[name] = existing
                 continue
-            if path.exists() or path.is_symlink():
-                if existing is None or existing != previous.get(name):
-                    raise ValueError(f"AI skill {name} conflicts with a user file; preserve or rename it before setup")
+            if (path.exists() or path.is_symlink()) and (existing is None or existing != previous.get(name)):
+                raise ValueError(f"AI skill {name} conflicts with a user file; preserve or rename it before setup")
             target = desired.get(name)
             operations.append((path, target))
             if target is None:

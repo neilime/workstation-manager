@@ -20,12 +20,16 @@ class GitGpgSigningPlanner:
         """Return normalized restored-key plans."""
 
         if not isinstance(value, list):
-            raise ValueError("restored GPG key plans must be a list")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "restored GPG key plans must be a list"
+            )
 
         normalized_plans: list[dict[str, object]] = []
         for index, plan in enumerate(value):
             if not isinstance(plan, dict):
-                raise ValueError(f"restored GPG key plan {index} must be a mapping")
+                raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                    f"restored GPG key plan {index} must be a mapping"
+                )
             normalized_plans.append(plan)
 
         return normalized_plans
@@ -34,7 +38,9 @@ class GitGpgSigningPlanner:
         """Return a normalized Git-signing fingerprint."""
 
         if not isinstance(value, str):
-            raise ValueError("restored GPG key fingerprint must be a string")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "restored GPG key fingerprint must be a string"
+            )
 
         fingerprint = value.strip().upper()
         if not fingerprint:

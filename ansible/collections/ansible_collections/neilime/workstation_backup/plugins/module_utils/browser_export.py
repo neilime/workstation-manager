@@ -67,7 +67,9 @@ class BrowserBackupExportBuilder:
         directories: set[str],
     ) -> dict[str, Any] | None:
         if not isinstance(profile, dict):
-            raise ValueError("Browser export profiles must be objects")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "Browser export profiles must be objects"
+            )
 
         directory = profile.get("directory")
         label = profile.get("label")
@@ -114,13 +116,17 @@ class BrowserBackupExportBuilder:
         except (ValueError, UnicodeError) as error:
             raise ValueError(f"Invalid JSON in browser export file: {path.parent.name}/{path.name}") from error
         if not isinstance(content, dict):
-            raise ValueError(f"Expected a JSON object in browser export file: {path.parent.name}/{path.name}")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                f"Expected a JSON object in browser export file: {path.parent.name}/{path.name}"
+            )
         return True, content
 
     def _sanitize_preferences(self, preferences: dict[str, Any]) -> dict[str, Any]:
         sanitized = self._sanitize_value(preferences, ())
         if not isinstance(sanitized, dict):
-            raise ValueError("Sanitized browser preferences must stay object-shaped")
+            raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                "Sanitized browser preferences must stay object-shaped"
+            )
         return sanitized
 
     def _sanitize_value(self, value: Any, path: tuple[str, ...]) -> Any:
@@ -128,7 +134,9 @@ class BrowserBackupExportBuilder:
             sanitized: dict[str, Any] = {}
             for key, child in value.items():
                 if not isinstance(key, str):
-                    raise ValueError("Browser preference keys must be strings")
+                    raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+                        "Browser preference keys must be strings"
+                    )
                 next_path = path + (key,)
                 if self._is_sensitive_path(next_path) or self._is_sensitive_key(key):
                     continue

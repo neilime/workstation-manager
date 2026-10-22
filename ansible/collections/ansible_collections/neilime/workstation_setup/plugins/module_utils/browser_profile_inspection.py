@@ -38,14 +38,18 @@ def _read_settings(path: Path) -> dict:
     except (ValueError, UnicodeError) as error:
         raise ValueError(f"Invalid JSON in browser settings: {path.name}") from error
     if not isinstance(result, dict):
-        raise ValueError(f"Expected a JSON object in browser settings: {path.name}")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            f"Expected a JSON object in browser settings: {path.name}"
+        )
     return result
 
 
 def _object(settings: dict, key: str) -> dict:
     result = settings.get(key, {})
     if not isinstance(result, dict):
-        raise ValueError(f"Expected a browser settings object for {key}")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            f"Expected a browser settings object for {key}"
+        )
     return result
 
 
@@ -53,7 +57,9 @@ def _label(value: object, fallback: str) -> str:
     if value is None or value == "":
         return fallback
     if not isinstance(value, str):
-        raise ValueError("Browser profile names must be strings")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            "Browser profile names must be strings"
+        )
     return "".join(character if character.isprintable() else " " for character in value)
 
 

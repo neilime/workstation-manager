@@ -94,7 +94,7 @@ class LookupModule(LookupBase):
             os.environ.update(environment)
             lookup = lookup_loader.get("community.general.bitwarden", loader=self._loader, templar=self._templar)
             return lookup.run(terms, variables=variables, **options)
-        except Exception:
+        except Exception:  # noqa: BLE001 - Any upstream exception may contain vault data.
             # Upstream exceptions can contain vault data in CLI stderr. Never chain them.
             raise AnsibleError(
                 "Bitwarden record lookup failed; check the unlocked session, CLI installation, "

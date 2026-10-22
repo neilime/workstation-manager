@@ -56,28 +56,30 @@ def network_metrics(pipe: BrowserPipe) -> None:
 def control_chain(executable: str, environment: dict[str, str]) -> None:
     """Verify an independent empty chain without changing any saved recovery chain."""
 
-    with tempfile.TemporaryDirectory(prefix="workstation-sync-control-") as root:
-        with BrowserPipe(
+    with (
+        tempfile.TemporaryDirectory(prefix="workstation-sync-control-") as root,
+        BrowserPipe(
             automation_arguments(executable, root, "Default"),
             environment,
-        ) as pipe:
-            native = NativeSync(pipe, str(Path(root) / "Default"))
+        ) as pipe,
+    ):
+        native = NativeSync(pipe, str(Path(root) / "Default"))
+        try:
+            native.restore(native.code())
+            verified = native.wait()
+            print(f"Disposable control chain verified={verified}", flush=True)
+            if not verified:
+                print(f"Incomplete checks: {native.pending_reason}", flush=True)
+        finally:
             try:
-                native.restore(native.code())
-                verified = native.wait()
-                print(f"Disposable control chain verified={verified}", flush=True)
-                if not verified:
-                    print(f"Incomplete checks: {native.pending_reason}", flush=True)
+                network_metrics(pipe)
             finally:
-                try:
-                    network_metrics(pipe)
-                finally:
-                    # Only this newly created control profile leaves its own chain.
-                    removed = pipe.evaluate(
-                        native.settings, "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')"
-                    )
-                    if removed is not True:
-                        raise ValueError("Could not remove the disposable control device")
+                # Only this newly created control profile leaves its own chain.
+                removed = pipe.evaluate(
+                    native.settings, "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')"
+                )
+                if removed is not True:
+                    raise ValueError("Could not remove the disposable control device")
 
 
 def main() -> None:

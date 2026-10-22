@@ -278,12 +278,14 @@ class AnsibleTargetContextTests(unittest.TestCase):
                             [
                                 "/bin/sh",
                                 "-c",
-                                '. "$1"\n'
-                                "has_interactive_terminal() { return 1; }\n"
-                                "prepare_action_dependencies() { :; }\n"
-                                "prepare_bitwarden_credentials() { :; }\n"
-                                "prompt_for_backup_output_dir_if_needed() { :; }\n"
-                                'run_action "$2" "$3"',
+                                (
+                                    '. "$1"\n'
+                                    "has_interactive_terminal() { return 1; }\n"
+                                    "prepare_action_dependencies() { :; }\n"
+                                    "prepare_bitwarden_credentials() { :; }\n"
+                                    "prompt_for_backup_output_dir_if_needed() { :; }\n"
+                                    'run_action "$2" "$3"'
+                                ),
                                 "entrypoint-test",
                                 str(wrapper),
                                 action,
@@ -349,11 +351,13 @@ class RepositorySourceTests(unittest.TestCase):
                 [
                     "/bin/sh",
                     "-c",
-                    '. "$1"\n'
-                    'REPOSITORY_URL=""\n'
-                    'REPOSITORY_BRANCH=""\n'
-                    "initialize_repository_source\n"
-                    'printf "%s\\n%s\\n" "$REPOSITORY_URL" "$REPOSITORY_BRANCH"\n',
+                    (
+                        '. "$1"\n'
+                        'REPOSITORY_URL=""\n'
+                        'REPOSITORY_BRANCH=""\n'
+                        "initialize_repository_source\n"
+                        'printf "%s\\n%s\\n" "$REPOSITORY_URL" "$REPOSITORY_BRANCH"\n'
+                    ),
                     "entrypoint-test",
                     str(wrapper),
                 ],
@@ -394,10 +398,12 @@ class RepositorySourceTests(unittest.TestCase):
                 [
                     "/bin/sh",
                     "-c",
-                    '. "$1"\n'
-                    'REPOSITORY_URL="$2"\n'
-                    'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
-                    "install_collection_requirements\n",
+                    (
+                        '. "$1"\n'
+                        'REPOSITORY_URL="$2"\n'
+                        'COLLECTIONS_INSTALL_DIR="/tmp/collections"\n'
+                        "install_collection_requirements\n"
+                    ),
                     "entrypoint-test",
                     str(wrapper),
                     str(repository),
@@ -450,10 +456,12 @@ class RepositorySourceTests(unittest.TestCase):
                 [
                     "/bin/sh",
                     "-c",
-                    '. "$1"\n'
-                    'REPOSITORY_URL="$2"\n'
-                    'REPOSITORY_BRANCH="feature/local-fix"\n'
-                    "run_ansible_pull ansible/backup.yml 0\n",
+                    (
+                        '. "$1"\n'
+                        'REPOSITORY_URL="$2"\n'
+                        'REPOSITORY_BRANCH="feature/local-fix"\n'
+                        "run_ansible_pull ansible/backup.yml 0\n"
+                    ),
                     "entrypoint-test",
                     str(wrapper),
                     str(repository),
@@ -510,12 +518,14 @@ class RepositorySourceTests(unittest.TestCase):
                 [
                     "/bin/sh",
                     "-c",
-                    '. "$1"\n'
-                    'interactive_terminal_flag() { printf "%s\\n" "1"; }\n'
-                    'interactive_terminal_path() { printf "%s\\n" "/dev/pts/fake"; }\n'
-                    'REPOSITORY_URL="$2"\n'
-                    'REPOSITORY_BRANCH="feature/local-fix"\n'
-                    "run_ansible_pull ansible/backup.yml 0\n",
+                    (
+                        '. "$1"\n'
+                        'interactive_terminal_flag() { printf "%s\\n" "1"; }\n'
+                        'interactive_terminal_path() { printf "%s\\n" "/dev/pts/fake"; }\n'
+                        'REPOSITORY_URL="$2"\n'
+                        'REPOSITORY_BRANCH="feature/local-fix"\n'
+                        "run_ansible_pull ansible/backup.yml 0\n"
+                    ),
                     "entrypoint-test",
                     str(wrapper),
                     str(repository),
@@ -594,43 +604,46 @@ class BitwardenRetryTests(unittest.TestCase):
                 [
                     "/bin/sh",
                     "-c",
-                    '. "$1"\n'
-                    "has_interactive_terminal() { return 0; }\n"
-                    "prompt_for_required_value() {\n"
-                    "  prompt_count=0\n"
-                    '  if [ -f "$TEST_PROMPT_COUNT_FILE" ]; then\n'
-                    '    prompt_count="$(cat "$TEST_PROMPT_COUNT_FILE")"\n'
-                    "  fi\n"
-                    "  prompt_count=$((prompt_count + 1))\n"
-                    '  printf "%s\\n" "$prompt_count" >"$TEST_PROMPT_COUNT_FILE"\n'
-                    '  case "$prompt_count" in\n'
-                    '    1) printf "%s" "first@example.com" ;;\n'
-                    '    2) printf "%s" "first-password" ;;\n'
-                    '    3) printf "%s" "second@example.com" ;;\n'
-                    '    4) printf "%s" "second-password" ;;\n'
-                    "    *) return 99 ;;\n"
-                    "  esac\n"
-                    "}\n"
-                    "run_ansible_pull() {\n"
-                    "  attempt=0\n"
-                    '  if [ -f "$TEST_ATTEMPT_FILE" ]; then\n'
-                    '    attempt="$(cat "$TEST_ATTEMPT_FILE")"\n'
-                    "  fi\n"
-                    "  attempt=$((attempt + 1))\n"
-                    '  printf "%s\\n" "$attempt" >"$TEST_ATTEMPT_FILE"\n'
-                    '  printf "%s|%s\\n" "$PROMPTED_BITWARDEN_EMAIL" '
-                    '"$BITWARDEN_PASSWORD_VALUE" >>"$TEST_RECORDS_FILE"\n'
-                    '  if [ "$attempt" -eq 1 ]; then\n'
-                    '    printf "%s\\n" "WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED: synthetic rejection"\n'
-                    "    return 2\n"
-                    "  fi\n"
-                    '  printf "%s\\n" "synthetic success"\n'
-                    "}\n"
-                    'PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value '
-                    'BITWARDEN_EMAIL "Bitwarden email: " 0)"\n'
-                    'BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value '
-                    'BITWARDEN_PASSWORD "Bitwarden vault password: " 1)"\n'
-                    "run_ansible_pull_with_bitwarden_retry ansible/setup.yml 0\n",
+                    (
+                        '. "$1"\n'
+                        "has_interactive_terminal() { return 0; }\n"
+                        "prompt_for_required_value() {\n"
+                        "  prompt_count=0\n"
+                        '  if [ -f "$TEST_PROMPT_COUNT_FILE" ]; then\n'
+                        '    prompt_count="$(cat "$TEST_PROMPT_COUNT_FILE")"\n'
+                        "  fi\n"
+                        "  prompt_count=$((prompt_count + 1))\n"
+                        '  printf "%s\\n" "$prompt_count" >"$TEST_PROMPT_COUNT_FILE"\n'
+                        '  case "$prompt_count" in\n'
+                        '    1) printf "%s" "first@example.com" ;;\n'
+                        '    2) printf "%s" "first-password" ;;\n'
+                        '    3) printf "%s" "second@example.com" ;;\n'
+                        '    4) printf "%s" "second-password" ;;\n'
+                        "    *) return 99 ;;\n"
+                        "  esac\n"
+                        "}\n"
+                        "run_ansible_pull() {\n"
+                        "  attempt=0\n"
+                        '  if [ -f "$TEST_ATTEMPT_FILE" ]; then\n'
+                        '    attempt="$(cat "$TEST_ATTEMPT_FILE")"\n'
+                        "  fi\n"
+                        "  attempt=$((attempt + 1))\n"
+                        '  printf "%s\\n" "$attempt" >"$TEST_ATTEMPT_FILE"\n'
+                        '  printf "%s|%s\\n" "$PROMPTED_BITWARDEN_EMAIL" '
+                        '"$BITWARDEN_PASSWORD_VALUE" >>"$TEST_RECORDS_FILE"\n'
+                        '  if [ "$attempt" -eq 1 ]; then\n'
+                        '    printf "%s\\n" "WORKSTATION_MANAGER_BITWARDEN_EMAIL_PASSWORD_REJECTED: '
+                        'synthetic rejection"\n'
+                        "    return 2\n"
+                        "  fi\n"
+                        '  printf "%s\\n" "synthetic success"\n'
+                        "}\n"
+                        'PROMPTED_BITWARDEN_EMAIL="$(prompt_for_required_value '
+                        'BITWARDEN_EMAIL "Bitwarden email: " 0)"\n'
+                        'BITWARDEN_PASSWORD_VALUE="$(prompt_for_required_value '
+                        'BITWARDEN_PASSWORD "Bitwarden vault password: " 1)"\n'
+                        "run_ansible_pull_with_bitwarden_retry ansible/setup.yml 0\n"
+                    ),
                     "entrypoint-test",
                     str(wrapper),
                 ],
@@ -717,11 +730,13 @@ class BitwardenRetryTests(unittest.TestCase):
                     [
                         "/bin/sh",
                         "-c",
-                        '. "$1"\n'
-                        'TARGET_USER="fixture"\n'
-                        'TARGET_USER_HOME="$HOME"\n'
-                        'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
-                        "run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n",
+                        (
+                            '. "$1"\n'
+                            'TARGET_USER="fixture"\n'
+                            'TARGET_USER_HOME="$HOME"\n'
+                            'COLLECTIONS_INSTALL_DIR="$HOME/.ansible/collections"\n'
+                            "run_ansible_pull_with_bitwarden_retry ansible/backup.yml 0\n"
+                        ),
                         "entrypoint-test",
                         str(wrapper),
                     ]

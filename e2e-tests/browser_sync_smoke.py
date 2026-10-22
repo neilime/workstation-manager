@@ -879,9 +879,11 @@ def restore_open_profiles(environment: dict[str, str]) -> None:
                 pass
         # The secondary launcher returns before its window finishes opening.
         time.sleep(3)
-        with closed_browser(str(root)):
-            with BrowserPipe([*arguments, "--profile-directory=Profile 3"], environment) as automated:
-                NativeSync(automated, str(root / "Profile 3"))
+        with (
+            closed_browser(str(root)),
+            BrowserPipe([*arguments, "--profile-directory=Profile 3"], environment) as automated,
+        ):
+            NativeSync(automated, str(root / "Profile 3"))
         time.sleep(3)
         assert browser_processes(root), "Previous browser session was not reopened"
         for process in browser_processes(root):

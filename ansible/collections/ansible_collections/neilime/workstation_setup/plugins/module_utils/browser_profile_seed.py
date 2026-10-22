@@ -36,7 +36,9 @@ def _read_json(path: Path) -> dict:
     with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
-        raise ValueError(f"Expected a JSON object in {path.name}")
+        raise ValueError(  # noqa: TRY004 - Schema validation reports ValueError.
+            f"Expected a JSON object in {path.name}"
+        )
     return data
 
 
@@ -45,7 +47,7 @@ def _object(parent: dict, key: str) -> dict:
 
     value = parent.setdefault(key, {})
     if not isinstance(value, dict):
-        raise ValueError(f"Expected a JSON object for {key}")
+        raise ValueError(f"Expected a JSON object for {key}")  # noqa: TRY004 - Schema validation reports ValueError.
     return value
 
 
@@ -140,7 +142,7 @@ def _brave_running(proc_root: Path = Path("/proc")) -> bool:
             executable = Path(command[0]).name
             if executable in {"brave", "brave-browser", "brave-browser-stable"}:
                 return True
-        except (OSError, ValueError):
+        except OSError, ValueError:
             # A process can exit between listing it and reading its command line.
             continue
     return False
@@ -232,7 +234,7 @@ def _plan_profile(
     # Setup preserves names; an explicit remote reconciliation replaces them.
     profile_preferences = preferences.get("profile", {})
     if not isinstance(profile_preferences, dict):
-        raise ValueError("Expected a JSON object for profile")
+        raise ValueError("Expected a JSON object for profile")  # noqa: TRY004 - Schema validation reports ValueError.
     if path.name not in info_cache:
         info_cache[path.name] = {
             "name": profile_preferences.get("name", label),

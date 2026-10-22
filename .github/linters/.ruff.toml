@@ -1,0 +1,12 @@
+cache-dir = "/tmp/.ruff_cache"
+line-length = 120
+target-version = "py314"
+
+[lint]
+ignore = ["E203"]
+# Ansible sanity checks import positions too; keep their E402 suppressions valid.
+extend-select = ["E402"]
+
+[lint.per-file-ignores]
+# Ansible requires module shebangs and rejects executable module files.
+"ansible/collections/ansible_collections/neilime/*/plugins/modules/*.py" = ["EXE001"]
