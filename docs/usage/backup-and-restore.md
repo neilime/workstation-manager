@@ -1,9 +1,8 @@
 # Backup and restore
 
-Recovery uses Bitwarden for keys and browser profiles, Git for Chezmoi files, a
-browser sidecar for bookmarks plus sanitized non-secret preferences, and an archive
-for project files and workstation-manager user configuration. Keep access to all
-four; the archive alone is not a complete recovery source.
+Recovery uses Bitwarden for keys and browser profiles, Git for Chezmoi files,
+Brave Sync for browser data, and an archive for project files and workstation
+configuration. Keep access to each source; the archive alone is incomplete.
 
 ## Create a backup
 
@@ -14,159 +13,108 @@ wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/wor
   sh -s -- backup
 ```
 
-Enter the destination when prompted. Choose a directory outside the files being
-backed up. You can provide it directly:
+Choose a destination outside the files being backed up, or supply it directly:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
   WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR=/media/backup/workstation sh -s -- backup
 ```
 
-Backup authenticates with sudo before launching Ansible. Your local sudo password
-is separate from your Bitwarden vault password. Recovery checks, user caches, and
-archive creation run as the managed user; dependency installation runs as root.
-Non-interactive runs must allow sudo to launch Ansible without prompting.
+Backup requests sudo authentication before launching Ansible. Use your local sudo
+password, which is separate from your Bitwarden password. Recovery and archive
+creation run as the managed user; dependency installation runs as root.
+Unattended runs need sudo access without prompting.
 
-Backup checks recovery sources before creating the archive:
+### Recovery decisions
 
-- Chezmoi managed files: Choose `save` to capture workstation files, or `restore` to apply source state locally.
-- Chezmoi Git checkout: Choose how to reconcile local and remote source changes, then approve `publish` separately if keeping local changes.
-- Local SSH/GPG keys: Choose `save` to update Bitwarden with the local key. Each save is verified. Keys stored only in Bitwarden are left untouched.
-- Browser profiles: Choose `save` to update Bitwarden with local names, colors and logos; use `retry` after manual pairing or record creation. See [browser recovery](browser.md).
-- Browser Sync: Check every profile has finished syncing and its stable 24 recovery words match its Bitwarden note. Brave supplies the current rotating 25th pairing word when joining. Never paste the words into the prompt.
+Before archiving, backup checks recovery sources and asks how to reconcile drift:
 
-SSH keys are identified by their contents. If backup reports private-key material
-in a `.pub` file, check the local filenames and the Bitwarden `private_key` and
-`public_key` fields. Preserve existing files before correcting the pair: the
-private key belongs in `~/.ssh/<name>` with mode `0600`, and its matching public
-key belongs in `~/.ssh/<name>.pub`. Setup rejects private-key material in a
-Bitwarden `public_key` field.
+| Source             | Available reconciliation                                                      |
+| ------------------ | ----------------------------------------------------------------------------- |
+| Chezmoi files      | `save` captures local files; `restore` applies the source versions locally.   |
+| Chezmoi Git source | `save` preserves local work; `publish` separately approves pushing it.        |
+| SSH/GPG keys       | `save` updates Bitwarden from a local key and verifies the result.            |
+| Browser settings   | `save` updates existing notes; `retry` rechecks manual fixes.                 |
+| Browser Sync       | `sync` verifies recovery; mismatches can offer `save`, `restore`, or `retry`. |
 
-GPG synchronization includes the key's ownertrust record when one exists. Keys
-without an ownertrust record can still be synchronized; a failed ownertrust
-export stops backup.
+See [browser recovery](browser.md#before-backup) for profile and Sync decisions.
+Never paste recovery words into prompts. Each approval applies only to its step.
 
-If a key save reports that the Bitwarden session is locked or expired, rerun
-backup to unlock the vault. Avoid locking or unlocking the same Bitwarden CLI
-profile in another terminal while backup is waiting for your decisions.
+Each prompt also offers `skip` and `abort`. A skip preserves that step's state and
+continues other backup work:
 
-Recovery prompts use the same direction names, chosen separately at each step:
+- Chezmoi: skip all remaining Chezmoi checks for the run.
+- SSH/GPG: skip only the current key.
+- Browser settings: skip browser recovery and live Sync verification.
+- Live browser Sync: skip live verification alone.
 
-- `save` keeps this computer's version in recovery storage.
-- `restore` replaces this computer's version with the stored version.
+Skipping does not undo approved actions or add dotfiles and keys to the archive.
+The final output reports **incomplete recovery coverage**, and the manifest records
+`recovery_status: incomplete` and affected `recovery_skipped` categories. Key skip
+records identify categories without exposing key contents or vault records.
 
-Backup only offers `save` for keys, copying the local key to Bitwarden without
-deleting unrelated keys or remote records. A key present only in Bitwarden is left
-untouched, because backup never overwrites local keys to match the vault. GPG `save`
-includes the key's ownertrust record when one exists.
+`abort` stops backup without an archive. Ctrl+C followed by `a` at Ansible's prompt
+also aborts. Unresolved checks without a skip, invalid configuration, failed
+operations, and failed verification of an approved change stop backup.
+Non-interactive runs never choose skips automatically or confirm live browser Sync.
 
-Backup verifies each applied change. When Sync everything is disabled, enable it in
-the browser and choose `retry`. Browser `sync` runs synchronization and verifies recovery
-codes against Bitwarden; code mismatches offer `save`.
-Each prompt also offers `skip` and `abort`; an earlier approval never selects a later action.
-`skip` leaves that recovery source unchanged at this step and continues the other
-backup work:
+### Chezmoi reconciliation
 
-- In a Chezmoi prompt, `skip` skips all remaining Chezmoi checks for this run.
-- In an SSH/GPG prompt, `skip` skips only the current key; other keys still prompt.
-- In browser drift, `skip` skips browser recovery and automatic live Sync verification.
-  At the live Sync prompt, it skips live verification alone.
+Initialize Chezmoi and configure its Git upstream before backup. Complete Chezmoi
+coverage requires a clean source checkout synchronized with that remote. When
+incoming changes or local work exist, backup shows source status and offers
+`save`, `skip`, or `abort`.
 
-Skipping does not undo actions you already approved. It does not add dotfiles or
-keys to the archive automatically, and setup still does not restore browser data
-from local files. Backup can still write a separate browser sidecar with local
-bookmarks and sanitized non-secret preferences when native profiles exist, but
-Bitwarden and Sync remain the recovery path for profile recreation. An archive can
-still be created, and the final output reports **incomplete recovery coverage**,
-with its manifest containing `recovery_status` set to `incomplete` plus
-`recovery_skipped` records for the affected categories. Key records identify only
-SSH/GPG categories, not key contents or vault records.
+`save` preserves local work. If the branch is behind or diverged, it commits
+uncommitted source changes, then fast-forwards or merges upstream while retaining
+local commits. It does not push. Merge conflicts stop backup: inspect `git status`
+in the displayed source directory, resolve and finish the merge or run
+`git merge --abort`, then retry. Any commit created to save edits remains after
+aborting the merge. Without incoming commits, edits remain for publication approval.
 
-Choose `abort` to stop backup. You can also press Ctrl+C, then `a` when Ansible
-asks whether to abort or continue.
+After reconciliation, backup checks managed files against the updated source and
+offers `save` or `restore` for differences. Remaining local Git changes need a
+separate `publish` approval or explicit skip. A remote update during these checks
+stops backup for review on the next run.
 
-Unresolved checks without an explicit skip stop backup. Non-interactive runs never
-choose `skip` automatically and cannot confirm live browser Sync. Invalid
-configuration, failed operations, and failed verification after an approved save
-still stop backup. Saved browser settings do not prove that an upload completed.
+Backup never discards local source work to match the remote. Files no longer
+managed by the source are not automatically deleted from your home. Publish
+[private overrides](configuration.md) too; publication of a separately supplied
+local override is not checked.
 
-Chezmoi must already be initialized. Its Git branch must have an upstream, and a
-fully checked Chezmoi recovery requires a clean checkout synchronized with that remote.
-You can explicitly skip its reconciliation; the archive then records incomplete recovery coverage.
-When its branch has incoming changes, local edits, or unpushed commits, backup
-shows the ahead/behind counts and source file status before asking what to do:
+### Key recovery
 
-- `save` preserves local source changes. When the branch is behind or
-  diverged, it commits all
-  uncommitted source changes, then fast-forwards or merges the
-  upstream branch while preserving local commits. It does not push. A conflict
-  stops backup; inspect `git status` in the displayed source directory, resolve
-  and complete the merge or run `git merge --abort`, then retry backup. Any commit
-  made to save local edits remains available after aborting the merge.
-  When there are no incoming commits, it keeps local changes for the separate
-  publication approval.
-- `skip` leaves this step unchanged and skips the remaining Chezmoi recovery
-  checks. It does not publish local changes or add dotfiles to the archive.
-- `abort` stops backup without changing source files or publishing anything.
+Key saves update Bitwarden without replacing local keys or deleting unrelated
+vault records. Keys present only in Bitwarden are left untouched. GPG saves include
+ownertrust when it exists; a failed ownertrust export stops backup.
 
-Backup never discards local source changes to match the remote, because that
-would drop the very changes a backup exists to preserve. Reconcile manually in
-another terminal if you need to replace local work, then retry backup.
+SSH keys are identified by contents. If private-key material appears in a `.pub`
+file, preserve the files before correcting local names and Bitwarden fields. The
+private key belongs in `~/.ssh/<name>` with mode `0600`; its public counterpart
+belongs in `~/.ssh/<name>.pub`.
 
-After Git reconciliation, backup checks managed workstation files against the
-updated source and offers `save`, `restore`, `skip`, or `abort` if they differ. Remaining
-local Git changes require a separate `publish` approval or an explicit `skip`
-before backup can continue. A remote update during these checks stops backup so you can review it
-on the next run.
-
-Files no longer managed by the remote source are not automatically deleted from
-your home.
-
-Publish changes to your private overrides too; see
-[configuration](configuration.md). A separately supplied local override is not
-checked for publication.
+If a save reports a locked or expired vault session, rerun backup to unlock it.
+Avoid changing the same Bitwarden CLI session from another terminal while backup
+is waiting for decisions.
 
 ## Included files and recovery limits
 
-The default archive includes:
+The default archive contains:
 
-- `~/Documents/dev-projects`: project files, including local modifications and
-  untracked files outside the exclusions below.
+- `~/Documents/dev-projects`: project files and eligible untracked files.
 - `~/.config/workstation-manager`: workstation-manager user configuration.
 
-Missing source paths are listed in the manifest. Backup fails if no source path
-exists. The archive excludes nested `.git` metadata and the contents of
-`node_modules`, `.venv`, `.pytest_cache`, `__pycache__`, `dist`, `build`, `.next`,
-`coverage`, and `target` directories.
+Missing paths appear in the manifest; backup fails if none exists. Exclusions are
+nested `.git` metadata and contents of `node_modules`, `.venv`, `.pytest_cache`,
+`__pycache__`, `dist`, `build`, `.next`, `coverage`, and `target` directories.
 
-Inside Git repositories, backup also excludes untracked files and directories
-ignored by `.gitignore` files, `.git/info/exclude`, or your global Git ignore file.
-Nested projects, worktrees, and submodules use their own ignore rules; ignored
-nested checkouts are omitted entirely. Tracked files remain eligible even when
-they match a Git ignore pattern, because Git does not treat tracked files as
-ignored. Files outside Git repositories use the directory exclusions above.
+Inside Git repositories, untracked paths ignored by `.gitignore`, `.git/info/exclude`,
+or global Git rules are also excluded. Nested projects, worktrees, and submodules
+use their own rules; ignored nested checkouts are omitted. Tracked files remain
+eligible even if they match an ignore pattern. Outside repositories, only the
+directory exclusions apply.
 
-Backup skips excluded directory trees before reading their contents and streams
-each included entry once through native `tar` and `gzip`. It uses fast gzip
-compression; archives can be larger than with maximum compression. A private
-`.partial` file holds the archive until creation succeeds, then replaces the
-destination. A failed backup leaves any
-previous completed archive intact. If an interrupted process leaves a `.partial`
-file, check that no backup is running and move it aside before retrying.
-If a source file changes while `tar` reads it, backup fails; stop writes to your
-projects and retry.
-
-During archive creation, backup displays the compressed archive size and elapsed
-time every five seconds. Updates start with `preparing files` until the archive
-begins growing. A final size update appears when archive creation finishes.
-
-SSH/GPG keys, browser data, and other home directories are not archive sources by
-default. Setup restores keys from Bitwarden, applies Chezmoi, and recreates browser
-profiles with [automatic Sync recovery](browser.md). Backup writes browser bookmarks and
-sanitized non-secret preferences to a separate sidecar when profiles exist, but
-setup does not import that sidecar automatically.
-
-To include additional directories, set a colon-separated list:
+Include extra directories with a colon-separated list:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
@@ -174,112 +122,98 @@ wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/wor
   sh -s -- backup
 ```
 
-The same exclusions apply to extra paths. Explicitly selected browser stores are
-included without browser-specific filtering. Archive paths are relative to the
-common parent of all requested sources, including missing default sources. Default
-backups therefore keep paths relative to your home. Keep extra paths under your
-home and check the archive layout before restoring.
+The same exclusions apply. Explicitly selected browser stores receive no
+browser-specific filtering. Keep extra paths under your home and inspect the
+archive layout before restoring. Paths are relative to the common parent of all
+requested sources, including missing defaults; default backups are home-relative.
 
-Backup also writes `<archive>.restore-command.txt` beside the archive with the
-full `setup` command for replaying that specific backup on another computer.
+Archive creation reports size and elapsed time. Files changing while being read
+cause failure; stop writes and retry. A private `.partial` file replaces the
+destination only after success, preserving any previous completed archive on
+failure. If an interrupted run leaves `.partial`, confirm no backup is running
+before moving it aside and retrying.
 
-Keep the archive and generated sidecars together. Backup always writes the
-manifest, Git inventory, and restore-command sidecars; the browser sidecar is
-created when local profiles exist:
+Keep the archive and sidecars together:
 
-- `.tar.gz`: Archived user files.
-- `.restore-command.txt`: Copy-pasteable `setup` command for replaying the
-  paired archive.
-- `.browser-profiles.json`: Browser bookmarks plus sanitized non-secret
-  preferences for local inspection or manual recovery.
-- `.git-repositories.json`: Git remotes, branch, commit, and working-tree
-  status for discovered dev projects.
-- `.manifest.txt`: Timestamp, archive path, source paths, sidecars, and skipped
-  recovery categories.
+| File suffix              | Contents                                                 |
+| ------------------------ | -------------------------------------------------------- |
+| `.tar.gz`                | Archived user files                                      |
+| `.restore-command.txt`   | Setup command for this archive                           |
+| `.git-repositories.json` | Project remotes, branch, commit, and working-tree status |
+| `.manifest.txt`          | Sources, missing paths, sidecars, and skipped recovery   |
+| `.browser-profiles.json` | Bookmarks and sanitized non-secret preferences           |
 
-These files are **not encrypted**. Project files can contain secrets, the
-inventory contains paths and remote URLs, and bookmarks can reveal private
-services even when preferences are sanitized. Store them in a private destination;
-copying them off the computer is your responsibility.
+The browser sidecar is created when local profiles exist, including when browser
+recovery was skipped. It supports manual inspection or recovery; setup does not
+import it. Keys and other home directories are also outside the default archive.
+Setup restores keys from Bitwarden, applies Chezmoi, and uses Brave Sync.
 
-The Git inventory supports repositories with a physical `.git` directory.
-Discovery skips directories ignored by the enclosing project's Git rules before
-reading their contents, including ignored `node_modules/` and `tools/vendor/`
-trees and any checkouts inside them. Non-ignored nested projects remain in the
-inventory. An unreadable directory outside the ignored trees stops inventory
-collection. The inventory does not
-preserve Git history that exists only locally, stashes, reflogs, or the staging
-index. Push commits you need to recover before relying on this backup.
+These files are **not encrypted**. Projects can contain secrets; inventories and
+bookmarks can expose private paths, services, and remote URLs. Use a private
+destination and copy the backup off the computer yourself.
+
+Git inventory discovers repositories with a physical `.git` directory and skips
+Git-ignored directories and checkouts. Unreadable non-ignored directories stop
+inventory collection. It does not preserve locally exclusive Git history, stashes,
+reflogs, or the staging index. Push commits you need to recover before relying on
+this backup.
 
 ## Restore during setup
 
-Place the archive and its matching sidecars together, then run:
+Place the archive and matching sidecars together. Copy the command from
+`.restore-command.txt`, or supply the archive path:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | \
-  WORKSTATION_MANAGER_RESTORE_ARCHIVE=/media/backup/workstation/workstation-manager-backup-20260927T120000Z.tar.gz \
+  WORKSTATION_MANAGER_RESTORE_ARCHIVE=/path/to/workstation-manager-backup.tar.gz \
   sh -s -- setup
 ```
 
-If the archive was created by workstation-manager, you can copy the command from
-the matching `.restore-command.txt` sidecar instead of rebuilding it manually.
-
-Setup installs the managed baseline and applies Chezmoi before extracting files
-into your home. Existing files at archived paths can be overwritten. The browser
-sidecar is backup-only and is not consumed by setup; browser recovery still comes
-from Bitwarden and Sync. Check the archive layout first:
+Replace `/path/to/workstation-manager-backup.tar.gz` with your archive. Inspect
+its layout first:
 
 ```sh
 tar -tzf /path/to/workstation-manager-backup.tar.gz
 ```
 
-For the default sources, expect paths such as `Documents/dev-projects/...` and
-`.config/workstation-manager/...`, even when one source was missing at backup time.
-Setup also restores single-source archives containing `dev-projects/...` into
-`~/Documents`, or `workstation-manager/...` into `~/.config`. The matching manifest
-lets setup resolve a shortened archive root when extra source paths are present.
-Setup reports the extraction directory; inspect it when extra paths changed the
-archive root.
+Setup installs the baseline and applies Chezmoi before extracting into your home.
+**Existing files at archived paths can be overwritten.** Default archives contain
+`Documents/dev-projects/...` and `.config/workstation-manager/...`, even if one
+source was missing. Single-source roots `dev-projects/...` and
+`workstation-manager/...` restore into `~/Documents` and `~/.config` respectively.
+The matching manifest resolves shortened roots when extra sources are present;
+check the reported extraction directory.
 
-Setup validates the archive before extraction. It rejects absolute paths, path
-traversal, relative link paths that leave your home, absolute hard links, entries beneath
-archived symlinks, duplicate entries at symlink paths, and special files. Absolute
-symbolic links and relative aliases to them are preserved, including virtual
-environment interpreter links;
-their targets must exist on the restored workstation before you use them. This
-checks extraction safety, not whether the files are trustworthy.
+Before extraction, setup rejects absolute paths, traversal, relative links leaving
+your home, absolute hard links, entries beneath archived symlinks, duplicate
+symlink paths, and special files. Absolute symlinks and relative aliases to them
+are preserved, including virtual-environment interpreter links. Their targets
+must exist before use. This validates extraction safety, not file trustworthiness.
 
-When the Git inventory is present, setup clones each project's primary remote,
-fetches all its branches and the saved commit, recreates the recorded local branch
-at that commit, restores its additional remotes, then copies the archived files
-over the clone. Deleted remote branches can be recovered when the server still
-provides the saved commit. Existing remote branches retain their upstream
-tracking, and other branches remain available for commands such as `git switch main`.
-A recorded detached HEAD stays detached at the saved commit. If the server cannot
-provide that commit, Git recovery fails and preserves the restored project files.
-This overlay does not replay file deletions; inspect `git status` after recovery.
+### Git project recovery
 
-SSH remotes use the target user's restored keys and SSH configuration. Setup
-automatically records a host's key on first connection and rejects changes to
-known keys. A host-key verification error occurs before repository permissions
-are checked; verify the server's fingerprint and review the target user's
-`~/.ssh/known_hosts` before retrying.
+With a Git inventory, setup clones the primary remote, fetches its branches and
+the saved commit, recreates the saved branch or detached HEAD, restores additional
+remotes, and overlays archived files. Existing remote branches retain upstream
+tracking. Deleted branches are recoverable only if the server still provides the
+saved commit. The overlay does not replay deletions; inspect `git status` afterward.
 
-A project without a recorded remote remains a plain directory. If reattachment
-fails, its restored files are kept as a plain directory and the result is reported
-as `failed`; setup stops after reporting the repository results. Check the Git
-error, verify access as the target user, then retry setup with the same archive.
-An existing `.workstation-manager-restore-overlay` directory is preserved and
-stops reattachment; inspect its contents before moving it aside and retrying.
-Without the inventory, only files are restored.
+SSH remotes use restored user keys and configuration. First connections record
+host keys; changed known keys are rejected. For a host-key error, verify the
+server's fingerprint and review `~/.ssh/known_hosts` before retrying.
+
+A project without a recorded remote stays a plain directory. Failed Git recovery
+preserves restored files, reports `failed`, and stops setup after reporting results.
+Check access as the managed user, then retry with the same archive. An existing
+`.workstation-manager-restore-overlay` directory also stops reattachment; inspect
+it before moving it aside. Without an inventory, setup restores files only.
 
 ## Preview
 
-Add `--dry-run` to either command. Backup reports pending synchronization and
-archive work without creating an archive, changing vault records, or modifying
-Git source files and history. Restore validates the archive without
-extracting it or cloning projects.
+Append `--dry-run` to either command. Backup previews synchronization and archive
+work without creating an archive, changing vault records, or modifying Git source
+files and history. Restore validates the archive without extracting or cloning.
 
-A preview still bootstraps dependencies, downloads configuration, and can
-authenticate to Bitwarden and refresh its local cache. It does not certify remote
-Git freshness or live browser Sync completion.
+Bootstrap dependencies, configuration downloads, Bitwarden authentication, and
+cache refreshes can still occur. Previews do not certify remote Git freshness or
+live browser Sync completion.

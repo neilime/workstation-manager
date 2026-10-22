@@ -60,34 +60,70 @@ unless explicitly deferred. Browser Sync decisions still require interaction.
 
 ## Execution and credential safety
 
-All paths invoke `run_action`; `run_ansible_pull` selects the local or remote
-controller. Remote execution limits playbooks to `localhost` and ignores only
-unmatched checkout hostname aliases. Real task warnings and failures remain visible.
+Preserve these entrypoint contracts:
 
-The session helper forwards nonempty desktop, GPG terminal, and SSH agent values
-across sudo without changing the caller's environment. Empty values stay unset.
-Interactive Ansible capture uses `script` and assigns the terminal to the managed
-user without loosening its permissions. Piped capture fetches the configured
-entrypoint and validates its shell syntax. Cleanup traps remove temporary
-manifests, capture files, source copies, and credentials on success or failure.
+- Local and remote execution share `run_action`; remote playbooks target only
+  `localhost`. Suppress only unmatched checkout hostname aliases, not task warnings.
+- Forward nonempty desktop, GPG terminal, and SSH agent values across sudo
+  without changing the caller's environment.
+- Keep `/dev/tty` prompting usable during piped execution. Interactive capture
+  assigns the terminal to the managed user without loosening its permissions.
+- Validate downloaded shell source before capture and remove temporary manifests,
+  capture files, source copies, and credentials on success or failure.
 
-Exercise changes with entrypoint tests in `tests/unit/` and `tests/integration/`.
-Never put credential values in examples, overrides, or Git.
+Run the entrypoint coverage in `tests/unit/` and `tests/integration/` through the
+[development checks](README.md). Keep credentials out of examples, overrides and Git.
 
 ## Bitwarden integration
 
-Collection enumeration and key-backup reads use
-`community.general.bitwarden` from the shared
-[collection manifest](../../ansible/collections/requirements.yml).
-`query(...) | first` preserves collection results as a list; individual item reads
-require `result_count=1`. Missing records and lookup failures stop backup.
+Collection enumeration and key-backup reads use the setup collection's
+[Bitwarden lookup adapter](../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/lookup/bitwarden.py),
+which delegates to `community.general.bitwarden`. Use `query(...) | first` for
+collection lists and `result_count=1` for individual items. Missing records and
+lookup failures stop backup.
 
-Lookups run on the controller without task `become` or `environment`.
-The thin setup adapter selects the managed user's CLI cache for the call,
-restores controller state, and replaces upstream exception text with a safe
-failure. CLI stderr can contain secrets before Ansible applies `no_log`.
+Controller lookups do not inherit task `become` or `environment`. The adapter
+selects the managed user's CLI cache, restores controller state, and sanitizes
+upstream exceptions before Ansible applies `no_log`.
 
 Keep login, unlock, server selection, collection metadata, attachments, vault
 writes, and cache synchronization in managed-user CLI tasks. Browser recovery
 and post-write verification require fresh reads in their execution context;
 do not replace those reads with cached controller facts.
+
+## Recovery decisions
+
+`neilime.workstation_backup.recovery_decision` owns prompts, input retries,
+noninteractive and preview handling, aborts, and explicit skips for the manifest.
+Source roles inspect state, offer safe actions, execute the selected action, and
+verify its result. See [backup and restore](../usage/backup-and-restore.md) for
+the user workflow.
+
+Pass these variables at each decision point:
+
+- `workstation_backup_recovery_id`: stable lowercase identifier.
+- `workstation_backup_recovery_needed`: whether a decision is required; defaults
+  to `true`.
+- `workstation_backup_recovery_request`: `scope`, `summary`, `actions` (names
+  mapped to descriptions), `skip` (skipped coverage), and `abort_message`.
+  Include display metadata only, never complete secret records.
+
+Callers declare their actions; the role adds `skip` and `abort`. Use `save` to copy
+local values into recovery storage and `restore` for the reverse direction. Offer
+only directions with usable source data. Destructive actions and publication need
+their own approvals.
+
+Read the result from `workstation_backup_recovery_choices[id]`. Every invocation
+resets that entry, including previews and unnecessary checks, so an earlier
+approval cannot authorize another action. Previews report pending work without
+selecting an action or recording a skip. Required noninteractive decisions fail;
+unnecessary requests are not evaluated.
+
+Decision IDs distinguish stages such as `chezmoi-files`, `chezmoi-publish`,
+`browser-recovery`, and `browser-sync`; `key` is reset for each SSH/GPG item.
+Manifest scopes group coverage under `chezmoi`, `ssh-keys`, `gpg-keys`,
+`browser-recovery`, and `browser-sync`. Recording a skipped scope does not skip
+other decisions: callers control continuation, including later keys.
+
+A `retry` must reload and inspect state. A mutation must pass verification before
+continuing. Neither a retry nor an approved action counts as verified recovery.

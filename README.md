@@ -1,8 +1,8 @@
 # workstation-manager
 
-Set up, maintain, and recover an Ubuntu workstation with Ansible. Setup installs
-applications and developer tools, applies personal dotfiles, restores keys, and
-configures the desktop and Brave profiles.
+Set up, back up, and maintain an Ubuntu workstation. Setup installs applications
+and developer tools, applies your dotfiles, restores keys, and configures the
+desktop and Brave profiles.
 
 ## Before you start
 
@@ -11,10 +11,10 @@ You need the [supported Ubuntu release](ansible/ubuntu-version), internet access
 credentials. Prepare your [configuration and recovery sources](docs/usage/configuration.md)
 first.
 
-Run commands in your desktop session with its keyring unlocked. Complete GitHub,
-Bitwarden, and application sign-in when prompted. Close Brave before applying
-profile changes. Setup removes Snap; boot or encryption that depends on Snap
-requires a [supported installation](docs/usage/configuration.md#application-delivery).
+Run commands in your desktop session with its keyring unlocked. Complete sign-in
+when prompted and close Brave before applying profile changes. Setup removes
+Snap; check the [installation requirements](docs/usage/configuration.md#application-delivery)
+if your boot or encryption depends on it.
 
 ## Set up or update the workstation
 
@@ -22,10 +22,10 @@ requires a [supported installation](docs/usage/configuration.md#application-deli
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
 ```
 
-Rerun setup after publishing configuration changes. It applies the configured
-tools, dotfiles, desktop settings, keys, and browser recovery.
+Rerun setup after publishing configuration changes. To restore a backup during
+setup, follow [backup and restore](docs/usage/backup-and-restore.md).
 
-To preview an action, append `--dry-run`:
+Append `--dry-run` to preview an action:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup --dry-run
@@ -41,19 +41,19 @@ wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/wor
 ```
 
 Choose a destination and resolve synchronization differences when prompted.
-Read [backup and restore](docs/usage/backup-and-restore.md) for recovery checks,
-archive contents, and restoration onto another computer.
+See [backup and restore](docs/usage/backup-and-restore.md) for recovery checks,
+archive contents, and restoration.
 
 ## Clean up
 
-Preview cleanup, then apply it:
+Preview the changes, then apply them:
 
 ```sh
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup --dry-run
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- cleanup
 ```
 
-See [cleanup](docs/usage/cleanup.md) for changes, preserved data, and preview limits.
+See [cleanup](docs/usage/cleanup.md) for changes and preserved data.
 
 ## Help and documentation
 
