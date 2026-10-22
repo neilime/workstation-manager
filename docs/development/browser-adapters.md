@@ -1,243 +1,180 @@
 # Browser adapters
 
-`desktop.browser` selects a role named
-`neilime.workstation_setup.browser_<name>`. Brave is the implemented adapter.
-Keep package sources, signing keys, desktop entries, policies, and native profile
-formats inside the adapter. User configuration contains the scalar selector:
+`desktop.browser` selects `neilime.workstation_setup.browser_<name>`; Brave is the
+implemented adapter. Names must match `[a-z][a-z0-9_]*`.
+[Configuration resolution](../../ansible/tasks/resolve_workstation_config.yml)
+checks the required task files before setup, backup, or cleanup. Keep vendor
+packages, policies and native formats inside the adapter. Changing the selector
+does not migrate profiles or uninstall another browser.
 
-```yaml
-desktop:
-  browser: brave
-```
-
-Names must match `[a-z][a-z0-9_]*`. Configuration resolution checks the required
-task files before running setup, backup, or cleanup; there is no adapter registry.
-Changing the selector does not migrate data or uninstall the previous browser.
+See [browser profiles](../usage/browser.md) for user configuration and recovery.
 
 ## Role contract
 
-Add the role under
-`ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_<name>/`:
+Add `browser_<name>` under the setup collection's `roles/` directory with these
+entrypoints:
 
-- `tasks/main.yml`: install the browser, make it the default, keep Sync
-  available, and create declared profiles while preserving existing data. When the
-  browser is still running, an interactive run prompts to close it and retries;
-  a non-interactive run stops with the same instruction.
-  Publish `workstation_manager_browser_desktop_file`.
-- `tasks/backup.yml`: inspect profiles without mutation. Publish
-  `workstation_backup_browser_inspection` with `profiles`, `drift`, and
-  `sync_issues` for metadata and policy checks. The live entrypoint owns chain
-  enrollment diagnostics. Publish `workstation_backup_browser_recovery_report` as a short
-  text report grouping detected issues by action, with affected profile names and
-  directories. Keep vendor-specific instructions in the adapter. Publish
-  `workstation_backup_browser_sync_instructions` for the later live verification,
-  naming the inspected profiles and explaining the automatic operation. Publish
-  `workstation_backup_browser_user_data_dir` so backup can emit its browser-only
-  sidecar export without changing setup restore.
-- `tasks/reconcile.yml`: apply the explicitly selected `save` or
-  `restore` choice in `workstation_backup_recovery_choices['browser-recovery']`,
-  guard previews, and verify the changed metadata. Publish supported direction
-  descriptions in `workstation_backup_browser_sync_actions` during inspection.
-  New recovery-note creation requires a declared profile record. A closed-browser
-  precondition detected before any mutation can use the shared recovery decision
-  role for retry/skip/abort under `browser-recovery`. Retry returns to inspection
-  and a fresh direction choice; never reuse an earlier approval. Actual operation
-  and verification failures must still fail.
-- `tasks/sync.yml`: execute the explicit `sync`, `save`, or `restore` action in
-  `workstation_backup_recovery_choices['browser-sync']`. Publish
-  `workstation_backup_browser_live_verified` only after fresh native Sync and
-  matching recovery codes are verified. Publish a sanitized shared decision
-  request in `workstation_backup_browser_live_request` for remaining problems.
-  Never use a user's assertion as verification or launch the browser in previews.
-- `tasks/inspect_profiles.yml`: report undeclared profile paths in
-  `workstation_manager_cleanup_unmanaged_browser_profile_directories`, or `[]`.
-  Never delete profiles.
+| Task file              | Responsibility                                                                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.yml`             | Install the browser, select it as default, permit Sync, and create declared profiles while preserving data. Publish `workstation_manager_browser_desktop_file`. |
+| `backup.yml`           | Inspect metadata and policy drift without mutation. Publish the inspection and recovery instructions listed below.                                              |
+| `reconcile.yml`        | Apply the explicit `save` or `restore` choice in `workstation_backup_recovery_choices['browser-recovery']` and verify the result.                               |
+| `sync.yml`             | Apply the explicit `sync`, `save`, or `restore` choice in `workstation_backup_recovery_choices['browser-sync']` and verify live recovery.                       |
+| `inspect_profiles.yml` | Publish undeclared paths in `workstation_manager_cleanup_unmanaged_browser_profile_directories`, or `[]`. Never delete profiles.                                |
 
-Setup invokes `main.yml` after archive restoration and before GNOME preferences
-and editor sign-in. The special `browser` favorite resolves to the published
-desktop entry. Backup uses the shared recovery decision role for
-direction choices, retry/skip/abort, and automatic live Sync verification. It reloads and
-inspects profiles after an approved action or retry. Cleanup invokes only the inspection entrypoint.
+`backup.yml` publishes:
 
-Use `workstation_manager_resolved.user` for the target account and
-`workstation_manager_use_become` for privilege escalation. Namespace internal
-variables to the adapter role. Put reusable Python logic in `plugins/module_utils/`
-and expose it through thin modules or filters.
+- `workstation_backup_browser_inspection`: `profiles`, `drift`, and `sync_issues`
+  for metadata and policy checks. Live enrollment diagnostics belong to `sync.yml`.
+- `workstation_backup_browser_recovery_report`: issues grouped by action, with
+  affected profile names and directories.
+- `workstation_backup_browser_sync_instructions`: inspected profiles and the
+  automatic live verification to follow.
+- `workstation_backup_browser_sync_actions`: supported reconciliation directions.
+- `workstation_backup_browser_user_data_dir`: source for the browser export sidecar.
+
+`sync.yml` publishes `workstation_backup_browser_live_verified` only after fresh
+native Sync and matching recovery codes pass verification. Remaining problems go
+in a sanitized `workstation_backup_browser_live_request` for the shared
+[recovery decision role](automation.md#recovery-decisions). Never accept a user's
+assertion as verification or launch the browser in previews.
+
+Reconciliation requires a declared profile before creating a recovery note.
+A closed-browser precondition detected before mutation may offer retry/skip/abort.
+Retry reloads state and asks for a fresh direction; operation and verification
+failures still fail. Setup prompts to close a running browser and retries in an
+interactive session; unattended runs stop with that instruction.
+
+Setup runs the adapter after archive restoration and before GNOME preferences
+and editor sign-in. The `browser` favorite uses its published desktop entry.
+Backup reloads and inspects profiles after approved actions or retries. Cleanup
+calls only `inspect_profiles.yml`.
+
+Use `workstation_manager_resolved.user` and `workstation_manager_use_become` for
+the managed account. Namespace adapter variables, keep reusable Python in
+`plugins/module_utils/`, and expose thin modules or filters.
 
 ## Profile input
 
-Use `neilime.workstation_setup.browser_profile_collection` to load
-`workstation_manager_browser_profiles`. The loader authenticates Bitwarden as the
-resolved user with `HOME` and `XDG_CONFIG_HOME` pointing to that account. Use the
-same user and environment for avatar downloads and browser synchronization so
-session tokens refer to the same CLI account cache. Setup adapters and backup orchestration
-use its default entrypoint, which also downloads avatar attachments into memory.
-Failed avatar downloads are retried up to three times with a five-second delay.
-If recovery remains incomplete, the loader stops with an error that excludes
-attachment contents and CLI output.
-Cleanup loads `tasks_from: metadata` before calling the inspection entrypoint;
-profile-directory drift does not require avatar images.
+Use `neilime.workstation_setup.browser_profile_collection` to populate
+`workstation_manager_browser_profiles`. It reads
+`secrets.bitwarden.browser_profiles_collection_id`; an empty selector produces
+`[]`, while a configured collection must be accessible and nonempty.
+See the [vault record schema](../usage/browser.md#configure-recovery).
 
-Live recovery refreshes the Bitwarden vault before reading records and again
-before accepting recovery-code verification. Failed `bw sync` downloads receive
-up to three retries with a five-second delay, matching collection loading.
-Exhausted retries stop recovery; cached records cannot certify it. Vault writes
-are not retried, and failures report only the operation, exit status, and attempt
-count without CLI output or record identifiers.
+The default entrypoint loads metadata and avatar attachments into memory.
+Cleanup uses `tasks_from: metadata` because drift inspection needs no images.
+Run collection loading, avatar downloads, and live recovery as the same resolved
+user with its `HOME` and `XDG_CONFIG_HOME`, so they share the CLI account cache.
 
-The loader reads `secrets.bitwarden.browser_profiles_collection_id`. An empty
-selector produces `[]`; a configured collection must be accessible and nonempty.
-See the [user record schema](../usage/browser.md#configure-recovery).
+| Metadata key           | Meaning                                             |
+| ---------------------- | --------------------------------------------------- |
+| `id`                   | Stable profile identifier                           |
+| `label`                | Bitwarden note name                                 |
+| `directory`            | Native profile directory basename                   |
+| `item_id`              | Bitwarden note UUID                                 |
+| `theme_colors`         | Optional list of one to three normalized hex colors |
+| `avatar_attachment_id` | Optional attachment identifier                      |
+| `avatar_png`           | Optional base64 PNG held in memory                  |
+| `bookmark_bar`         | Optional `always`, `new_tab`, or `never` visibility |
+| `confirm_close_tabs`   | Optional boolean close-all-tabs confirmation        |
 
-| Metadata key           | Meaning                                                      |
-| ---------------------- | ------------------------------------------------------------ |
-| `id`                   | Stable profile identifier                                    |
-| `label`                | Bitwarden note name                                          |
-| `directory`            | Native profile directory basename                            |
-| `item_id`              | Bitwarden note UUID                                          |
-| `theme_colors`         | Optional list of one to three normalized hex colors          |
-| `avatar_attachment_id` | Optional attachment identifier                               |
-| `avatar_png`           | Optional base64 PNG, loaded into memory                      |
-| `bookmark_bar`         | Optional `always`, `new_tab`, or `never` visibility          |
-| `confirm_close_tabs`   | Optional boolean controlling the close-all-tabs confirmation |
+Recovery words are required but excluded from this inventory. The vault stores
+24 stable words; a supplied rotating 25th pairing word is excluded from private
+chain comparisons. Mark full records and image arguments `no_log`. Reports may
+contain selected metadata and drift, never notes, image data or CLI output.
 
-Recovery words are validated as present but are not exposed in this inventory.
-The canonical vault record stores only the stable first 24 words. If a copied
-25-word pairing code is present, the native adapter ignores the rotating 25th
-word and compares only the stable recovery code privately against the active
-Sync chain.
-Mark image module arguments and tasks handling full records `no_log`. Reports
-must contain only selected metadata and drift details, never notes or image data.
+Live recovery refreshes the vault before reading records and before accepting
+code verification. Download failures have bounded retries; exhausted retries
+stop recovery. Cached records cannot certify recovery, and vault writes are not
+retried. Errors identify the operation and status without record contents.
 
 ## Brave implementation
 
-The [Brave role](../../ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_brave)
-uses `~/.config/BraveSoftware/Brave-Browser` under the resolved user's home. Its
-managed policy permits Sync; it cannot enroll profiles. Seeding creates missing
-profiles and applies declared colors, bookmark-bar visibility, close-tabs confirmation, and avatars while preserving existing
-names and other preferences. Explicit `restore` reconciliation also replaces
-profile names and enables Sync everything for managed profiles; `save` updates
-existing vault metadata and avatars without changing recovery words. Approved
-operations close the managed user's matching Brave instance with a graceful
-exit request, preserve session tabs, and reopen it afterward if it was running.
-Locks are never removed and processes are never force-killed. Setup restores
-profile metadata, enables Sync everything, joins the stored chains, and requires
-verified live synchronization. Preview runs do not launch Brave.
+The [Brave role][brave-role] manages
+`~/.config/BraveSoftware/Brave-Browser` under the resolved home. Its policy permits
+Sync; enrollment requires native browser operations.
 
-Backup inspection also reports explicit local bookmark-bar and close-tabs choices
-that have no saved field, offering `save` without inventing a restore value.
-Saving changes only that profile's existing note. Setup leaves unspecified
-preferences unmanaged. The adapter keeps the native visibility enum, all-tabs
-flag, and Brave NTP flag consistent. After Sync, native settings readback verifies
-the saved choice; setup can reapply it through `chrome.settingsPrivate`, then
-requires another verified Sync cycle and readback. Backup never repairs a
-different choice locally. Only status booleans leave the settings page.
-The `confirm_close_tabs` field is a boolean in module arguments and the literal
-text `true` or `false` in the Bitwarden note. It maps to
-`brave.enable_window_closing_confirm`; an absent local preference uses Brave's
-default of enabled for drift checks, but is not captured as an explicit choice.
-Brave registers it as a local profile preference in
-[its preference definitions](https://github.com/brave/brave-core/blob/master/browser/brave_profile_prefs.cc),
-so native readback and flushed-file checks verify restoration independently of
-Sync. The browser's regular graceful-shutdown protections remain in place.
+Profile seeding preserves existing names and unspecified preferences. `restore`
+replaces declared metadata, enables Sync everything, joins stored chains, and
+requires live verification. Metadata `save` updates vault fields and avatars
+without changing recovery words; the separate live Sync action can save a code
+into an existing note and verify its readback. Backup's browser export sidecar
+contains local bookmarks and sanitized preferences; setup does not replay it.
 
-Live verification uses Brave's native WebUI APIs through inherited anonymous
-DevTools pipes. It opens no debugging port and does not copy profiles, bypass
-browser policies, disable the sandbox, or change password-storage backends.
-Only the selected profile's native code reaches the vault helper, in memory.
-Automation waits for the requested internal URL and a fully loaded document
-before calling that page's APIs. Profile identity awaits the version page's native
-`requestPathInfo` response; the displayed path can still be empty after document
-loading completes. Only an exact profile match permits access to Sync settings.
-Native module imports use canonical `chrome://`
-resource URLs independently of the page's `brave://` base URL.
-Settings requests use the page's existing native callbacks, preserving its own
-responses and listeners. Importing a separate `cr.js` into the bundled settings
-page would initialize Chromium's WebUI callbacks twice and fail.
-Diagnostic node contents are reduced inside Brave to boolean status; browsing
-data never reaches an Ansible result. Child environments exclude vault credentials.
-Native automation errors identify the failed operation without including scripts,
-arguments, recovery words, or raw browser errors.
-Before accessing recovery codes, the adapter waits for Brave's native OS encryption
-status because [desktop keyring initialization is asynchronous](https://github.com/brave/brave-core/blob/master/components/sync/service/brave_sync_service_impl.cc).
-Unavailable encryption
-or a saved-seed decryption error stops recovery without replacing the chain.
-Browser automation uses a desktop-session query that reads the managed user's live
-systemd environment. GNOME's initial `/proc` environment lacks the display variables
-created later by Wayland. Only allowed desktop variables reach application children;
-raw session-manager output is never returned in task results.
-The backup-only browser export sidecar is separate: it carries local bookmarks
-and sanitized non-secret preferences, and setup does not replay it automatically.
+Preserve these implementation contracts:
 
-Verification requires a new successful GetUpdates response after requesting a
-refresh, healthy Sync diagnostics, and two observations without unacknowledged
-entity sequences or pending tombstones. Required browser data types must be
-running. Stale success, errors, incomplete diagnostics, and timeouts cannot
-certify recovery. An active, idle engine retries refreshes until a fresh download
-succeeds and pending uploads and deletions are acknowledged. `save` updates only an existing note's
-code and verifies the readback. `restore` uses Brave's native leave/join handlers
-and current pairing suffix, enables Sync everything, and verifies the resulting
-chain.
-Native leave/join acknowledgements have a two-minute deadline because they wait
-for initial synchronization. Local recovery-code reads keep their shorter
-automation deadline; successful enrollment still requires full Sync verification.
-An existing seed is compared even when saved transport flags say setup is
-incomplete; a matching chain must not be rejoined. After successful Sync, the
-adapter removes other entries matching the current device's exact name or
-`desktop.browser_sync_disposable_device_names`. It requires one unambiguous
-native current device, protects that GUID, and rechecks the list before mutation.
-The additional-name list defaults to empty; test VMs use their actual current
-device name for duplicate cleanup and their fixture teardown for leaving Sync.
-Device Info must participate in verification. Each deletion needs a fresh
-successful server commit for its client tag and a device-list readback; native
-delete callbacks alone do not prove removal. Unrelated device names are preserved.
-The deletion observer is shared with VM teardown. Its DevTools Runtime domain
-stays enabled so bindings survive diagnostic-page navigation; only the fixed
-acknowledgement signal is retained from runtime events.
-The observer remains installed during a bounded wait for that signal, including
-events delivered after the native operation's callback.
-Each observation requests fresh native status and waits for asynchronous counts
-for every running data type. Status and node queries share one bounded deadline;
-a status replacement during node aggregation invalidates the observation.
-Missing replies remain unverified and are retried; replies arriving after an
-observation times out cannot complete that observation. Explicit native
-rejections and broken automation connections still stop recovery.
-Loss of diagnostic page state starts a new fresh-download check.
-Timeout errors list incomplete checks and allowlisted commit error categories
-from the same browser process. Only fixed categories, boolean results, and numeric
-protocol codes leave diagnostics; native error text, entity data, and recovery
-words remain private. Automation errors can include a fixed JavaScript error class,
-source coordinates, and allowlisted context-loss reasons without exposing arbitrary messages.
-Enrollment diagnostics also inspect numeric protocol metrics, which remain
-available while the engine is initializing. A throttled enrollment points to
-the [device-limit recovery procedure](../usage/browser.md#restore-on-another-computer).
+- Close only the managed user's matching browser through graceful shutdown,
+  preserve tabs, and reopen it if previously running. Preserve active and remote
+  profile locks; remove a stale local lock only after its recorded process exits.
+  Never force-kill processes.
+- Apply only declared profile preferences. Inspect explicit unsaved choices as
+  drift without inventing restore values. Verify bookmark-bar settings through
+  native readback after Sync; setup may reapply them and verify another cycle,
+  while backup does not repair local choices. Verify the local
+  `brave.enable_window_closing_confirm` preference independently of Sync.
+- Use native WebUI APIs over inherited anonymous DevTools pipes. Preserve the
+  browser sandbox, policy and password backend; open no debugging port. Keep
+  recovery words in memory and vault credentials out of browser environments.
+- Await the internal page, its native profile-path response, and an exact profile
+  match before accessing Sync. Use the settings page's existing callbacks and
+  canonical `chrome://` module URLs. Await OS encryption readiness and stop on
+  decryption failure without replacing the chain.
+- Read allowed desktop variables from the managed user's live systemd session.
+  Keep raw session output and arbitrary browser errors out of task results.
 
-The native interfaces follow
-[Brave's Sync handler](https://github.com/brave/brave-core/blob/master/browser/ui/webui/settings/brave_sync_handler.cc)
-and [Chromium's Sync diagnostics](https://github.com/chromium/chromium/blob/main/components/sync/service/sync_internals_util.cc).
-API changes fail closed. Saved preferences alone never prove server upload.
-Call-site Ansible Pylint exceptions allow the retained CDP process and detached
-desktop restart, which outlive a synchronous command, and the session query's
-sanitized child environment.
+The [native Sync helper][native-sync] owns enrollment and recovery;
+[profile synchronization][profile-sync] owns metadata reconciliation.
+
+### Verification and device removal
+
+Verification requires a fresh successful GetUpdates response, healthy native
+Sync diagnostics, required data types running, and two observations without
+unacknowledged entity sequences or pending tombstones. Stale success, partial
+responses, errors, and timeouts remain unverified. An existing matching seed must
+not be rejoined even when saved transport flags indicate incomplete setup.
+
+After verification, duplicate cleanup targets exact matches of the current device
+name or `desktop.browser_sync_disposable_device_names`. Protect the unambiguous
+current device GUID, recheck identities before mutation, and preserve unrelated
+devices. Each deletion requires a fresh successful server commit for its client
+tag and a device-list readback; a native callback alone is insufficient.
+
+The observer is shared with [VM teardown](e2e-tests.md#teardown-and-reuse).
+Keep it installed across diagnostic navigation and delayed acknowledgement events.
+Each observation must obtain fresh status and counts for every running data type
+within one deadline. Replaced status or lost page state invalidates the
+observation; late replies cannot complete it. Explicit native rejections and
+broken automation connections fail recovery.
+
+Reduce diagnostics inside the browser to booleans, numeric metrics and
+allowlisted error categories. Never return entity contents, scripts, recovery
+words or arbitrary native error messages. Upstream API changes fail closed;
+saved preferences alone cannot prove server upload. Throttled enrollment points
+to the [device-limit recovery procedure](../usage/browser.md#restore-on-another-computer).
 
 ## Validation
 
-Follow the [development checks](README.md). Cover configuration selection,
-idempotent profile creation, preservation of existing data, check mode, invalid
-input, sensitive-data redaction, and read-only drift inspection. For native
-profile writes, test running-browser and symlink protections. Exercise actual
-installation and restore behavior in the test VM, not on the developer's host.
+Follow the [development checks](README.md). Cover selection, idempotence,
+existing-data preservation, check mode, invalid input, redaction, and read-only
+drift inspection. Native profile writes need running-browser and symlink checks.
+Exercise installation and restore behavior in the test VM.
 
-The end-to-end setup assertions run the isolated native smoke test through SSH. To run it
-directly in the Lima VM after installing Brave:
+The setup assertions run this native smoke test through SSH. To run it directly
+after installing Brave in the VM:
 
 ```sh
 limactl shell --workdir /workspace workstation-manager-v1 -- \
   python3 /workspace/e2e-tests/browser_sync_smoke.py
 ```
 
-It uses a disposable profile and a disabled Sync endpoint. It exercises real
-native code access, private IPC, profile identity, tab preservation, callback
-routing, and production diagnostic JavaScript with synthetic success, error,
-stale, upload, deletion, and missing or late node-response states. It does not
-certify connectivity to the public Sync service.
+Replace the VM name if using a custom `VM_NAME`. The test uses a disposable
+profile and disabled Sync endpoint. It exercises native code access, private IPC,
+profile identity, tab preservation, callbacks, and production diagnostic
+JavaScript with synthetic success, failure, stale, upload, deletion and delayed
+response states. It does not certify public Sync connectivity; the
+[full VM flow](e2e-tests.md#run-the-flow) checks live recovery.
+
+[brave-role]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_brave
+[native-sync]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/browser_native_sync.py
+[profile-sync]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/browser_profile_sync.py

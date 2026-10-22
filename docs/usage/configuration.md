@@ -2,16 +2,13 @@
 
 ## Edit your private override
 
-[Public defaults](../../ansible/group_vars/all.yml) define the installed packages
-and workstation settings. Put personal overrides in
-`ansible/private.override.yml` in the private `neilime/workstation-config`
-repository, on its `main` branch.
+[Public defaults](../../ansible/group_vars/all.yml) define workstation settings
+and installed software. Put non-secret personal settings in
+`ansible/private.override.yml` on the `main` branch of the private
+`neilime/workstation-config` repository.
 
 Start from the [example override](../../ansible/vars/private.override.example.yml).
-The example contains `development`, `home_environment`, and `secrets`; do not wrap
-them in `workstation_manager`. General workstation settings inherit the public defaults.
-
-For example:
+Use its top-level sections directly; do not wrap them in `workstation_manager`:
 
 ```yaml
 development:
@@ -31,200 +28,97 @@ secrets:
     context7-api-key: "<your-context7-item-uuid>"
 ```
 
-Set your GitHub username and replace the item and collection placeholders with
-your Bitwarden UUIDs. Commit and push the file, then run `setup` using the
-[Readme command](../../README.md#set-up-or-update-the-workstation).
-Setup, backup, and cleanup fetch that published override.
-Nested mappings are merged with the defaults; lists replace the
-corresponding default list. See [AI tools](ai-tools.md) for AI application
-and extension configuration.
+Replace the placeholders, commit and push, then run
+[setup](../../README.md#set-up-or-update-the-workstation). Setup, backup, and
+cleanup fetch the published override. Nested mappings merge with defaults; lists
+replace the corresponding default list. Inherit software versions from public
+configuration instead of copying them into the override.
 
-The GitHub account is required: missing or blank `development.github.account`
-stops configuration validation before Ansible applies workstation roles. The
-username is not a secret; it identifies the account whose persistent login setup
-must verify.
+`development.github.account` must identify the GitHub account setup will verify.
+The Context7 item UUID is also required, including for dry runs; see
+[MCP credentials](ai-tools.md#mcp-servers). Passwords, tokens, private keys, and
+browser recovery words belong in Bitwarden, never Git.
 
-Keep passwords, tokens, private keys, and browser recovery words in Bitwarden. Only
-non-secret settings, item selectors, and collection identifiers belong in Git.
+Before downloading private configuration, bootstrap installs or updates GitHub CLI
+and reuses its saved login. If needed, approve the browser sign-in prompt. Keep
+your desktop keyring unlocked so the login can be saved. Each run downloads a
+fresh checkout of the configuration repository. An explicit
+`WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE` is used as provided; see
+[automation](../development/automation.md#automated-runs).
 
-`secrets.bitwarden.context7-api-key` is required, including for dry runs. Missing,
-blank, or invalid UUIDs stop configuration validation. Store the Context7 API key
-in its item's password field; see [MCP configuration](ai-tools.md#mcp-servers).
-
-GitHub authentication runs before downloading private configuration. Bootstrap
-installs or updates GitHub CLI from its official APT repository and reuses a valid login
-saved in your desktop keyring. If sign-in is needed, it starts
-[`gh auth login --web`](https://cli.github.com/manual/gh_auth_login); approve access
-in your browser. Keep your desktop keyring unlocked so the login can be saved.
-Git then uses this login to download the latest `main` revision of
-`workstation-config` into a fresh temporary checkout for each run. An explicitly
-supplied `WORKSTATION_MANAGER_PRIVATE_OVERRIDE_FILE` is used as provided.
-
-After downloading configuration, the entrypoint reuses an already-unlocked
-Bitwarden CLI session when one is available (for example after you run `bw unlock`
-and export `BW_SESSION`); otherwise it asks for your Bitwarden email and password.
-Bitwarden uses the configured server to retrieve keys and application
-secrets. Setup verifies that the GitHub login matches `development.github.account`
-after loading configuration and reuses it throughout installation. GitHub
-bootstrap authentication also runs when needed during `--dry-run`.
-
-Password and emailed verification-code input are hidden. If Bitwarden rejects
-the email, code, or password, the entrypoint asks again. Press Ctrl-C to cancel.
+The entrypoint then reuses an unlocked Bitwarden CLI session, including an
+exported `BW_SESSION`, or asks for your email and vault password. Password and
+verification-code input are hidden. Rejected credentials prompt again; Ctrl+C
+cancels. Bootstrap authentication can also occur during `--dry-run`.
 
 ## Application delivery
 
-Setup supports one Ubuntu release, recorded in
-[the baseline](../../ansible/ubuntu-version). Update Ubuntu before using a revision
-that selects a newer release. Setup uses the system Python for host modules and
-an isolated Ansible controller shared with the test image.
+Use the [supported Ubuntu release](../../ansible/ubuntu-version). Setup installs
+native APT applications and Flatpaks from the configured remote. GNOME Software
+manages application updates, with automatic downloads enabled. Failed Flatpak
+operations are retried; persistent errors stop setup. Rerun setup after resolving
+them to install missing applications.
 
-After installing the selected applications, setup removes all Snap applications,
-snapd, and residual Snap directories. Close Snap applications before running setup.
-Boot or encryption that depends on Snap blocks setup before removal; use a
-conventional Ubuntu installation for this workstation.
+Setup removes Snap applications, snapd, and residual Snap directories. Close Snap
+applications first. Snap-dependent boot or encryption blocks removal; use a
+conventional Ubuntu installation.
 
-Before removal, setup stops Snap services and saves application data, existing
-snapshots, and affected accounts' Snap directories in a root-only archive under
-`/var/backups/workstation-manager/snap`. It compares the archive with the originals
-before deleting them. The printed archive path is retained after setup. Copy it to
-protected external storage if needed; the normal project backup does not include
-this directory automatically. Restore individual application files into the
-replacement's data location; setup does not convert application profile formats.
-An archive failure, mounted data, or an unexpected package dependency stops
-removal. A dry run inventories the planned removal without stopping services or
-removing data; archive integrity is checked when setup applies the plan.
-An APT preference prevents automatic snapd reinstallation.
-
-GNOME Software and its Flatpak plugin manage applications and updates, with
-automatic downloads enabled for the managed account. Setup retries failed Flatpak
-remote configuration and application installation up to three times, waiting ten
-seconds between attempts. Persistent failures stop setup; rerunning setup resumes
-installation of missing applications. Setup installs Ptyxis and
-includes it in the default dock favorites while preserving existing terminal profiles.
+Before removal, setup saves application data, snapshots, and affected users' Snap
+directories to a root-only archive under `/var/backups/workstation-manager/snap`
+and verifies it against the originals. Keep the printed archive path and copy it
+to protected external storage if needed; the normal project backup does not
+include it. Restore individual application files into the replacement's data
+location yourself; setup does not convert profile formats. Archive failures,
+mounted data, or unexpected package dependencies stop removal. Dry runs inventory
+changes without stopping services, archiving, or deleting data.
 
 ## Prepare Bitwarden collections
 
-Setup, backup, and cleanup share the managed user's Bitwarden CLI cache at
-`~/.config/Bitwarden CLI`, including when launched through sudo. Authentication
-and vault synchronization happen before collection reads; a failed read stops
-the action.
+Choose your vault's server; the default is `https://vault.bitwarden.eu`. Setup
+requires nonempty, readable SSH and GPG collections. Backup also needs write
+access for approved key saves. All actions use the managed user's cache at
+`~/.config/Bitwarden CLI`, including under sudo. Failed vault reads stop the action.
 
-Choose the server that hosts your vault; the default is
-`https://vault.bitwarden.eu`. Setup requires nonempty SSH and GPG collections.
-Your account must be able to read them. Backup also needs write access when you
-approve adding or updating keys.
+A normal run switches a mismatched CLI server by logging out and authenticating
+again, invalidating existing CLI sessions. Dry runs stop on a server mismatch
+without changing it; run normally to select the configured server first.
 
-When the CLI uses a different server, normal runs check that login credentials
-are available, log out of the current CLI account, select the configured server,
-and authenticate again. This invalidates existing CLI sessions. Dry runs stop on
-a server mismatch without logging out or changing the server; run normally to
-select the configured server first.
+Create one item per SSH key:
 
-Create one item per SSH key. Use these fields:
+| Item property              | Value                                                   |
+| -------------------------- | ------------------------------------------------------- |
+| Name                       | Key filename, such as `id_ed25519`, without a directory |
+| Custom field `private_key` | Complete private key text                               |
+| Custom field `public_key`  | Complete matching public key text                       |
 
-| Item property              | Value                                                    |
-| -------------------------- | -------------------------------------------------------- |
-| Name                       | Key filename, such as `id_ed25519`, without a directory. |
-| Custom field `private_key` | Complete private key text.                               |
-| Custom field `public_key`  | Complete public key text.                                |
-
-Setup writes the pair to `~/.ssh/<name>` and `~/.ssh/<name>.pub`.
+Setup writes `~/.ssh/<name>` and `~/.ssh/<name>.pub`. Private-key material in a
+`public_key` field is rejected.
 
 The GPG collection must contain exactly one key for Git signing:
 
-| Item property              | Value                                   |
-| -------------------------- | --------------------------------------- |
-| Name                       | A descriptive key name.                 |
-| Custom field `private_key` | ASCII-armored secret key.               |
-| Custom field `public_key`  | ASCII-armored public key.               |
-| Custom field `fingerprint` | The key fingerprint.                    |
-| Optional `ownertrust`      | GPG ownertrust record.                  |
-| Optional `sub_private_key` | Additional ASCII-armored secret subkey. |
+| Item property                    | Value                                  |
+| -------------------------------- | -------------------------------------- |
+| Name                             | A descriptive key name                 |
+| Custom field `private_key`       | ASCII-armored secret key               |
+| Custom field `public_key`        | ASCII-armored public key               |
+| Custom field `fingerprint`       | The key fingerprint                    |
+| Optional field `ownertrust`      | GPG ownertrust record                  |
+| Optional field `sub_private_key` | Additional ASCII-armored secret subkey |
 
-The last two entries are custom fields. A fingerprint can also be read from an
-ownertrust record when no `fingerprint` field is provided. Setup imports the key
-and writes its Git signing fingerprint and OpenPGP format to
-`~/.config/git/config`, preserving other entries and the Chezmoi-managed
-`~/.gitconfig`. Choose automatic commit and tag signing in your Chezmoi Git
-configuration. Git reads both files; settings in `.gitconfig` take precedence.
-Keep `.config/git/config` outside Chezmoi's managed source.
+The fingerprint can instead come from the ownertrust record. Setup imports the
+key and writes the Git signing fingerprint and OpenPGP format to
+`~/.config/git/config`, preserving other entries. Keep this file outside Chezmoi;
+manage signing preferences in `~/.gitconfig`, whose settings take precedence.
 
 The browser collection is optional. Leave its selector empty to create no managed
-profiles, or follow [browser profiles](browser.md) to populate it. Backup reports
-local browser profiles missing from the collection as drift.
+profiles, or follow [browser profiles](browser.md). Backup reports local profiles
+missing from the collection as drift.
 
 ## Dotfiles and application settings
 
-`home_environment.chezmoi.source` selects the Git repository used to initialize
-`~/.local/share/chezmoi`. Use a full HTTPS or SSH Git URL. Every normal setup
-fetches the checkout's tracking branch and fast-forwards to its latest published
-revision before inspecting and applying dotfiles. When the source has local edits,
-interactive setup offers three actions:
-
-- `stash`: save tracked and untracked source edits in a Git stash, then update and
-  apply the published dotfiles. The stash remains available; setup prints its
-  recovery command and does not reapply it automatically. Ignored files stay in
-  place. Recovery can require resolving conflicts with published changes.
-- `skip`: preserve source edits and continue setup without updating the source or
-  applying Chezmoi dotfiles or scripts for this run.
-- `abort` (also an empty answer): stop setup so you can review, commit and publish,
-  or move source edits aside manually.
-
-A run without an interactive terminal stops with a command to inspect the source.
-Unpublished commits, rewritten upstream history, unfinished Git operations, or
-failed fetches still stop setup before dotfile application. Reconcile the checkout
-manually, then rerun setup. An existing checkout keeps its remote and tracking branch;
-changing the source setting does not switch its remote. Setup uses the managed source,
-configured `home_environment.chezmoi.config_path`, and target home explicitly,
-including when your terminal or IDE sets a different `XDG_DATA_HOME`. Existing
-baseline directory permissions are preserved, including private `.config`
-permissions applied by your dotfiles.
-The generated Chezmoi config uses permission mask `022`, keeping ordinary files
-at `0644` regardless of the calling shell's mask. Private source attributes retain
-their restricted permissions.
-
-Every normal setup checks pending changes with `chezmoi status` and applies them.
-Dry runs do not fetch, update the source checkout, or apply dotfiles. If local
-changes conflict with the source, setup lists the affected paths and prompts
-before replacing them.
-Choose `apply` to use the source versions and permissions for those paths,
-`skip` to keep your local changes and continue setup without applying any Chezmoi
-dotfiles or scripts for this run, or `abort` to stop setup and reconcile your
-changes with the printed interactive Chezmoi command. An empty answer aborts.
-Approved replacements are checked before setup applies the remaining dotfiles
-and runs their scripts. A run without an
-interactive terminal stops at conflicts without replacing them. If inspection or
-application fails, setup prints a command to diagnose the error locally as the
-target user. Command output stays private because templates and scripts may
-contain sensitive data. Application
-errors use an actual `apply` command for diagnosis: a dry run does not run scripts
-and can exit without an error message on conflicts.
-
-Setup installs [Oh My Zsh](https://github.com/ohmyzsh/ohmyzsh) into `~/.oh-my-zsh`
-before applying dotfiles. The framework revision is pinned in
-[public configuration](../../ansible/group_vars/all.yml) and maintained by
-Renovate. This is an internal setup dependency, with no private
-override setting. Setup updates the checkout to that revision and refuses to
-overwrite tracked local edits. Put personal plugins and themes in its `custom/`
-directory or manage them through Chezmoi.
-
-The companion shell files select Oh My Zsh plugins, activate mise, and use
-Starship for the prompt. Docker plugins load only when Docker is available;
-Yarn, Composer, AWS, pre-commit, and thefuck integrations also require their
-commands. These shell hooks do not install software. When `batcat` is available,
-`bat` invokes it directly and `cat` invokes `batcat -pp`.
-Setup preserves existing shell history.
-
-Setup owns the pinned framework updates; keep `zstyle ':omz:update' mode disabled`
-in `.zshrc`. Chezmoi owns shell preferences. Setup selects `/usr/bin/zsh` as the
-login shell; log out and back in to use it in new terminals. Existing terminals
-keep their current shell.
-
-Maintain dotfiles in that source repository. Before backup, review local changes;
-the [backup workflow](backup-and-restore.md) offers to capture or reapply managed
-files and requires the source checkout to be published to its Git remote.
-
-The companion repository can contain both configuration and dotfiles:
+`home_environment.chezmoi.source` is the HTTPS or SSH repository used to initialize
+`~/.local/share/chezmoi`. The companion repository can hold both overrides and
+dotfiles:
 
 ```text
 workstation-config/
@@ -235,218 +129,161 @@ workstation-config/
     └── dot_*
 ```
 
-Set `.chezmoiroot` to `home` for this layout. Application credentials belong in
-their secret manager; sign in to Visual Studio Code Settings Sync to recover editor settings
-and extensions. Brave recovery is covered in the [browser guide](browser.md).
+Set `.chezmoiroot` to `home` for this layout. Keep application credentials in their
+secret managers. Manage personal files in the source repository and publish changes
+before relying on [backup](backup-and-restore.md).
+
+Normal setup fetches and fast-forwards the checkout's tracking branch before
+applying dotfiles. For uncommitted source edits it offers:
+
+- `stash`: save tracked and untracked edits, update, and apply published dotfiles.
+  Ignored files stay in place. Setup prints the stash recovery command; it does
+  not reapply the stash automatically, and recovery can require conflict resolution.
+- `skip`: keep local edits and skip all Chezmoi updates, dotfiles, and scripts for
+  this run.
+- `abort`, also the empty answer: stop so you can reconcile the source manually.
+
+Unpublished commits, rewritten upstream history, unfinished Git operations, or
+failed fetches stop setup. An existing checkout keeps its remote and tracking
+branch; changing the source setting does not switch them.
+
+If local managed files conflict with source state, setup lists the paths and
+prompts separately: `apply` replaces them with source versions and permissions,
+`skip` skips all Chezmoi dotfiles and scripts, and `abort` stops. Empty answers
+abort. Unattended runs stop on either kind of conflict without replacing files.
+
+Dry runs do not fetch, update the checkout, apply dotfiles, or run their scripts.
+Failures print a diagnostic command to run as the managed user. Keep its output
+private because templates and scripts can contain sensitive data. Existing
+baseline directory permissions, including private `.config` permissions, are
+preserved; private Chezmoi attributes retain restricted permissions.
+
+Setup installs Oh My Zsh at `~/.oh-my-zsh` and selects `/usr/bin/zsh` as the login
+shell. Log out and back in to use it in new terminals. Chezmoi owns shell
+preferences; keep `zstyle ':omz:update' mode disabled` in `.zshrc` so setup owns
+framework updates. Tracked framework edits stop updates; keep personal plugins
+and themes in `custom/` or Chezmoi. Existing shell history is preserved.
 
 ## Developer tools and project files
 
-For Orca, Codex/Copilot CLIs, shared MCP servers, credentials and skills, see
-[AI tool configuration](ai-tools.md).
+[Public configuration](../../ansible/group_vars/all.yml) selects software and
+versions. Rerun setup after publishing pin updates; use APT for native vendor
+package updates. Project-specific runtimes belong in each project's `mise.toml`.
+See [AI tools](ai-tools.md) for Orca, Codex, Copilot, skills, and MCP servers.
 
-Manage Git preferences, including `gc.auto`, `commit.gpgsign`, and `tag.gpgsign`,
-in your Chezmoi `~/.gitconfig`. The companion repository enables automatic garbage
-collection with `gc.auto = 6700` and enables commit and tag signing. Repository-local
-settings and conditional includes can override those preferences.
+Setup installs PHP and Composer through mise. PHP compiles from source, so initial
+installation and upgrades can take several minutes. In other shell contexts use
+`mise exec -- php` and `mise exec -- composer`. Helm and Dive are also managed
+through mise; Helm requires separately provisioned cluster access. System Node,
+npm, and npx are available through `/usr/local/bin`; project mise versions can
+override them inside a project.
+
+Setup installs Skillshare and applies project `.skillshare/config.yaml` files
+under `user.projects_directory` after archive restoration and GitHub login. See
+[project skills](../development/project-skills.md) for declarations and updates.
+
+### Git and GitHub
+
+Setup requires a persistent GitHub CLI login matching `development.github.account`
+and verifies it again after applying dotfiles. An unavailable keyring or mismatched
+account stops setup. Unlock the keyring, inspect `gh auth status --active`, and
+rerun setup. AI provider sign-in does not replace this login. Bootstrap can still
+establish GitHub authentication during dry runs.
+
+Git credentials and restored signing settings use `~/.config/git/config`.
+Manage personal preferences, automatic commit/tag signing, and conditional
+includes in the Chezmoi-managed `~/.gitconfig`.
+
+`development.github.extensions` selects GitHub CLI extensions, including gh-act
+and gh-stack. Binary extensions require exact releases; script extensions can
+use full commit revisions. Modified script-extension checkouts stop updates.
+Unselected extensions are retained.
+
+### Visual Studio Code
 
 `development.editor_packages` selects native APT packages. The default `code`
-comes from [Microsoft's stable repository](https://code.visualstudio.com/docs/setup/linux),
-with `/usr/bin/code` available to terminals, Git, and agents:
+provides `/usr/bin/code`:
 
 ```sh
 code .
 code --wait path/to/file
 ```
 
-The integrated terminal uses native `/usr/bin/zsh`. Setup preserves unrelated
-JSONC settings and personal profiles. When run on the desktop, setup turns on
-Settings Sync, opens Visual Studio Code, and pauses for a one-time interactive
-sign-in (reusing an existing GitHub account from Copilot without re-entering
-credentials); it then continues automatically once sign-in completes. This
-sign-in cannot be automated. If it is skipped or times out, setup prints the
-manual sign-in steps. Project settings may override the selected terminal.
-Settings Sync uses the native configuration directory.
+Setup selects native `/usr/bin/zsh` for the integrated terminal and preserves
+unrelated JSONC settings and personal profiles. Project settings may override it.
+On the desktop, setup opens Visual Studio Code and waits for Settings Sync
+sign-in, reusing an available Copilot GitHub account. Complete any browser approval;
+if sign-in is skipped or times out, follow the printed manual steps.
 
-Public [development defaults](../../ansible/group_vars/all.yml) own software
-selection and release pins. AI applications and extensions are configured together
-in `development.ai_tools`; see [AI applications](ai-tools.md#applications).
+### Docker
 
-Setup installs Skillshare globally and applies each `.skillshare/config.yaml`
-under `user.projects_directory` after archive restoration and GitHub login.
-See [project skills](../development/project-skills.md) for the small
-per-project config and update commands.
+Setup installs Docker Engine, Compose, and Buildx, enables the service, and adds
+the managed user to the `docker` group. Log out and back in for group membership
+to take effect. Verify with `docker info`, `docker compose version`, and
+`docker buildx version`. Docker group access grants root-level control.
 
-Setup always installs PHP through mise's `vfox:jdx/vfox-php` backend. The exact PHP
-release lives in `development.mise.tools`; there is no PHP enable switch or APT
-runtime alternative. The backend compiles PHP, so setup installs its compiler and
-required library headers. Initial installation and PHP upgrades can take several
-minutes. Project PHP versions belong in each project's `mise.toml`.
+For `development.github.host: github.com`, setup logs Docker into `ghcr.io` using
+the GitHub CLI account and requests `write:packages` through browser authorization
+when needed. Package permissions and organization SSO still control access.
+Credentials use the desktop keyring; keep it unlocked and rerun setup after
+changing accounts or tokens. Dry runs do not authorize permissions or log in.
 
-Composer is also always installed through mise. Its `github:composer/composer`
-entry in `development.mise.tools` pins the official release; mise verifies the
-release asset checksum and exposes the `composer` command. Setup checks both
-executables through mise. Use `mise exec -- php` or `mise exec -- composer` from
-other shell contexts.
-Renovate maintains both release pins. Existing project files and PHP installations
-are preserved.
-
-Setup always installs Helm and Dive through `development.mise.tools`, and gh-act
-and gh-stack through `development.github.extensions`. Their versions remain in
-public configuration and are maintained by Renovate.
-
-Helm supplies neither kubectl nor cluster credentials.
-Check the [Helm/Kubernetes compatibility policy](https://helm.sh/docs/topics/version_skew/)
-against the target cluster and test project charts/plugins before using it.
-Project runtime overrides belong in each project's `mise.toml`. Global mise tools
-use exact releases and must not take ownership of system Node, GitHub CLI, or Docker.
-Renovate maintains the selected tool versions, including optional pins.
-
-`development.node.version` pins the complete system Node.js LTS distribution,
-including npm and npx, exposed through `/usr/local/bin`. Project-local mise
-versions may override it inside a project. Update native vendor packages through
-APT; cleanup only previews pending upgrades. Rerun setup after merging release
-pin updates.
-
-Setup requires a persistent GitHub CLI login matching `development.github.account`.
-It verifies the login again after applying dotfiles and ensures Git uses the saved
-credentials. An unavailable keyring, failed authentication, or unexpected account
-stops setup. See the [initial sign-in sequence](#edit-your-private-override)
-above. This verification does not log in or change credentials during a dry run.
-
-Git credential settings are stored alongside restored signing settings in
-`~/.config/git/config`; existing working helpers are reused. Token
-values stay out of configuration templates and logs. If authentication fails,
-unlock the desktop keyring, inspect `gh auth status --active`, and rerun setup.
-Agent product sign-in does not replace this GitHub CLI login.
-
-GitHub binary extensions, including gh-act and gh-stack, require exact release
-versions in the public configuration. Full commit revisions are supported only
-for script extensions. Setup verifies installed revisions and replaces outdated pins;
-modified script-extension checkouts stop the update for reconciliation. Unselected
-extensions are retained. `gh-act` remains a local CI debugging tool; its runner
-images and behavior do not replace hosted CI qualification.
-
-Docker Engine, its CLI, containerd, Compose, and Buildx come from Docker's official
-APT repository for the actual Ubuntu release. Setup enables `docker.service` and
-adds the managed user to the `docker` group. Log out and back in once if an existing
-desktop session does not yet have that group. Verify with `docker info`,
-`docker compose version`, and `docker buildx version`.
-Docker group access grants root-level control; see
-[Docker's post-installation guide](https://docs.docker.com/engine/install/linux-postinstall/).
-
-For `development.github.host: github.com`, setup also logs Docker into `ghcr.io`
-with the configured GitHub account. It reuses the GitHub CLI token and requests
-`write:packages` through browser authorization when that permission is missing.
-The authorization code and prompts appear in your terminal. Browser diagnostic
-output is suppressed; GitHub CLI still reports a browser launch failure and the
-URL to open manually.
-This supports pulling and pushing images allowed by your account's package and
-organization permissions; organization SSO authorization may also be required.
-
-The token is passed to Docker through standard input and stored by Docker's
-Secret Service helper in the desktop keyring. Setup preserves unrelated Docker
-settings, verifies login before replacing inline GHCR credentials, and refreshes
-Docker's saved credential when the GitHub token changes. Rerun setup after
-changing GitHub accounts or credentials. Dry runs inspect configuration and saved
-credentials without authorizing permissions or logging into the registry.
-
-Unattended setup requires a saved login with `write:packages` already granted,
-or a separate `WORKSTATION_MANAGER_GHCR_TOKEN` with pull/push permission. A separate
-registry token leaves the GitHub CLI login intact; see
-[automation credentials](../development/automation.md#automated-runs).
-To grant it interactively as the managed user, run
+Unattended setup needs a saved login with `write:packages`, or a separate
+`WORKSTATION_MANAGER_GHCR_TOKEN`; see
+[automation credentials](../development/automation.md#automated-runs). To grant
+the scope interactively, run
 `gh auth refresh --hostname github.com --scopes write:packages`, then rerun setup.
-Keep the desktop keyring unlocked. Setup does not publish or delete any images.
+
+### Projects and daily reports
 
 Setup creates `user.projects_directory` (`~/Documents/dev-projects` by default)
-and adds it to the Files sidebar bookmarks. Existing bookmarks and custom labels
-are preserved.
+and adds it to the Files sidebar, preserving existing bookmarks and labels.
+Changing this setting does not change the fixed default backup directory; add
+other locations through the [backup options](backup-and-restore.md).
 
-The default backup includes `~/Documents/dev-projects`. Keep project files there
-or include another location through the [backup options](backup-and-restore.md).
-Changing `user.projects_directory` changes setup paths; backup still uses its
-fixed default directory and any explicitly added paths.
-
-Setup also installs `workstation-manager-git-project-report`. Run it manually to
-print the Git repositories under `user.projects_directory` that still have local
-work in progress. Setup always enables daily desktop notifications. Click the
-notification or **Open full report** to open the latest complete report in your
-default text viewer, even after the scheduled job has finished. Run
-`workstation-manager-git-project-report --notify` to refresh it on demand.
-The report is saved privately in
+Setup enables daily notifications for repositories with local work in progress.
+Run `workstation-manager-git-project-report` for the full report or add `--notify`
+to refresh the notification. Clicking it opens the saved report at
 `~/.local/state/workstation-manager/git-project-report/latest.txt`, or under
-`$XDG_STATE_HOME` when set.
-The timer starts in the active user session, or at the next graphical login when
-no session is available.
+`$XDG_STATE_HOME` when set. The timer starts in the active session or at the next
+graphical login.
 
-Setup always enables dark mode and shows Trash in Ubuntu Dock. The
-[public defaults](../../ansible/group_vars/all.yml) select Brave and define the
-ordered dock favorites, including Orca (`orca-ide.desktop`). Set
-`desktop.gnome.favorites: null` to preserve existing
-favorites or `favorites: []` to clear the dock.
-Use `browser` in the favorites list for the selected browser adapter's desktop entry.
-Log out and back in after the first setup: the running GNOME session predates the
-Flatpak installation, so Flatpak favorites such as Bitwarden, Slack, and Spotify
-only appear in the dock once a fresh login searches their launcher directory.
+## Desktop preferences
 
-Manage the wallpaper through Chezmoi at
-`~/.local/share/backgrounds/wallpaper.jpg`. Setup selects that image for both light
-and dark modes with zoom scaling when it exists; it preserves the current
-wallpaper settings when the file is absent.
+Setup enables dark mode and Trash in the dock. Configure ordered favorites with
+`desktop.gnome.favorites`: `null` preserves the current list and `[]` clears it.
+Use `browser` for the selected browser's launcher. Log out and back in after the
+first setup so new Flatpak launchers appear in the dock.
 
-### Clipboard and personal-file backup
+Manage `~/.local/share/backgrounds/wallpaper.jpg` through Chezmoi. When present,
+setup uses it in light and dark modes with zoom scaling; otherwise it preserves
+the current wallpaper.
 
-Setup installs and enables Clipboard Indicator as the managed clipboard history
-extension. Inherit its version and checksum pins from public configuration.
-The companion repository owns `~/.config/clipboard-indicator/settings.ini`.
+### Clipboard
 
-Setup verifies the archive digest, identity, and detected GNOME version before
-installation and compiles missing settings schemas. It preserves unrelated
-extensions and keeps GNOME compatibility validation enabled. Log out and back in
-after installation or an update.
-The companion profile retains 200 entries, images, search, pins, whitespace, and
-`Super+Shift+V` as its only global shortcut. Select a history entry to make it the
-current clipboard value, then paste in the destination app. The profile disables
-automatic paste and the separate paste button so selecting history keeps that
-value current for subsequent pastes.
+Setup enables Clipboard Indicator and applies companion preferences from
+`~/.config/clipboard-indicator/settings.ini`. Use `Super+Shift+V` to select a
+history entry, then paste in the destination app. The companion profile disables
+automatic paste so the selected entry stays current for subsequent pastes.
 
-Setup maps `Ctrl+V`, `Ctrl+Shift+V`, and `Shift+Insert` to regular clipboard paste
-in Ptyxis. It adds `Ctrl+V` and `Shift+Insert` overrides for the native Visual Studio Code
-terminal; its existing `Ctrl+Shift+V` and Paste menu use the same clipboard.
-The terminal `Ctrl+V` binding takes precedence over the shell's literal-next-key
-function. Copy explicitly with `Ctrl+C` in desktop apps or `Ctrl+Shift+C` in a
-terminal. Highlighting text alone does not replace the copied value.
+Ptyxis and the native Visual Studio Code terminal use the regular clipboard for
+`Ctrl+V`, `Ctrl+Shift+V`, and `Shift+Insert`. This overrides the shell's literal-next-key
+binding for `Ctrl+V`. Copy explicitly with `Ctrl+C` in desktop apps or `Ctrl+Shift+C`
+in terminals; highlighting text alone does not replace the clipboard. Other apps
+and terminal profiles may need their own bindings. Middle-click can still use
+Linux's separate primary selection.
 
-These bindings cover the managed terminals. Other terminal emulators, editor
-profiles, and applications with custom shortcuts need their own regular-clipboard
-paste bindings. Linux's primary selection still exists; middle-click or a
-separate Paste Selection action can use it. Check clipboard consistency during the
-[Wayland acceptance checks](../development/adr/adr-0001-workstation-toolchain.md#gnome-clipboard-indicator).
+### System monitor and personal-file backups
 
-Setup preserves existing `~/.config` permissions, including Chezmoi's private mode.
+Setup enables Vitals in the GNOME top bar. Manage its preferences through
+`~/.config/vitals/settings.ini`, with a `[vitals]` section. Without that file,
+Vitals uses its defaults. Log out and back in after installing or updating GNOME
+extensions; setup preserves unrelated extensions.
 
-### Desktop system monitor
+Use Simple Scan for scanning. Verify actual device access with `scanimage -L` and
+a scan; package installation cannot establish hardware compatibility.
 
-Setup installs and enables the [Vitals](https://github.com/corecoding/Vitals)
-GNOME top-bar system monitor, showing live CPU, memory, temperature, network, and
-storage. Inherit its version and checksum pins from public configuration
-(`desktop.system_monitor`).
-
-Setup verifies the archive digest, identity, and detected GNOME version before
-installation, compiles missing settings schemas, preserves unrelated extensions,
-and keeps GNOME compatibility validation enabled. When the companion repository provides
-`~/.config/vitals/settings.ini` (a `[vitals]` section), setup applies those
-preferences through `dconf`; otherwise the indicator uses upstream defaults. Log
-out and back in after installation or an update. See
-[ADR 0003](../development/adr/adr-0003-desktop-system-monitor.md).
-
-Simple Scan uses Ubuntu's native `simple-scan` and `sane-utils` packages. Setup
-removes duplicate system and user Flatpak installations without deleting their
-data. Use `scanimage -L` and Simple Scan with the actual scanner to confirm device
-access; a package check cannot establish hardware compatibility.
-
-Setup installs Déjà Dup. Configure its destination, included folders,
-encryption, schedule, and retention before relying on routine personal-file
-backups. Keep the backup password in Bitwarden and complete a restore to a
-separate directory, comparing the restored files with their originals.
-Manager archives and application installation do not prove this coverage.
+Setup installs Déjà Dup. Configure its destination, included folders, encryption,
+schedule, and retention before relying on it. Store the password in Bitwarden and
+test restoration into a separate directory. Workstation-manager archives do not
+establish personal-file backup coverage.

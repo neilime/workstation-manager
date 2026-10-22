@@ -6,10 +6,11 @@ manifests. Workstation tool pins belong in
 Normalizers, scripts, roles, and templates consume configured values and reject
 missing or invalid required pins. Private examples inherit public pins.
 
-Use current stable releases compatible with the supported environment. Record a
-concrete compatibility blocker when an upgrade cannot proceed. Remove unused
-adapters, aliases, transitions, tests, and docs when replacing a dependency;
-preserve supported recovery and data-safety behavior.
+Verify stable releases, support status and migration requirements against official
+upstream sources. Use the latest stable release compatible with the supported
+environment; document a concrete blocker if an upgrade cannot proceed. Remove
+unused adapters, aliases, transitions, tests and docs while preserving supported
+recovery and data-safety behavior.
 
 ## Update ownership
 
@@ -33,10 +34,13 @@ Project skills use their [own update commands](project-skills.md).
 
 ## Coordinated and reviewed updates
 
-Ubuntu updates coordinate the baseline guard, tooling image, and Lima template.
+Ubuntu updates coordinate the [baseline guard](../../ansible/ubuntu-version),
+[tooling image](../../docker/tooling/Dockerfile), and
+[Lima template](../../e2e-tests/lima-ubuntu.yml).
 Renovate selects stable releases from Canonical's feed; Dependabot ignores that
-image to avoid competing proposals. Align Python, controller and collection
-requirements, Make commands, and CI with runtime changes.
+image to avoid competing proposals. Align Python across the tooling image,
+requirements, collection metadata, Make commands and CI. The test interpreter
+must match the tooling image.
 
 Clipboard Indicator and Vitals use custom GNOME Extensions datasources.
 Reviewers must download the proposed archive, refresh its SHA-256, verify GNOME
@@ -49,6 +53,8 @@ build prerequisites. The Docker Secret Service helper and Chezmoi use verified
 release checksums. Keep tests independent of current release literals by using
 synthetic versions or maintained configuration.
 
-Run affected compatibility checks after changing pins. Renovate branch-update
-errors fail the workflow; inspect its logs for the dependency and file.
-Architectural choices and supersession belong in [ADRs](adr/README.md).
+Run the affected [development checks](README.md) after changing pins, including
+extraction tests for moved or added handlers. Renovate branch-update errors fail
+the workflow; inspect its logs for the dependency and file. Keep guides focused
+on the supported configuration. Record decisions and dated upgrade evidence in
+[ADRs](adr/README.md).

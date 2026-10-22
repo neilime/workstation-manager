@@ -1,86 +1,53 @@
 # AI tools
 
-Setup installs Orca and the baseline Codex and Copilot CLIs and configures AI
-extensions from `workstation_manager.development.ai_tools` in
-[`ansible/group_vars/all.yml`](../../ansible/group_vars/all.yml). Configure
-applications, providers, skills and MCP servers there. The public configuration
-enables both providers with pinned Context7 and Playwright MCP packages. Apply
-configuration changes with `workstation.sh setup`.
+Setup installs Orca, Codex CLI, and Copilot CLI and configures shared skills and
+MCP servers. [Public defaults](../../ansible/group_vars/all.yml) live under
+`workstation_manager.development.ai_tools`. Use `development.ai_tools` in your
+[private override](configuration.md#edit-your-private-override), and rerun setup
+after publishing changes. Inherit maintained release pins from public defaults.
 
 ## Applications
 
-`development.ai_tools.providers` defines each provider once. Its name, such as
-`codex` or `copilot`, selects the adapter; its `npm`, `version`, and `command`
-fields define the CLI package, exact release and verification command. Setup
-installs that CLI with the system Node runtime, verifies it without shell
-activation, establishes its native account login, and configures its extensions.
-CLI packages belong to the managed user, allowing Copilot's automatic updates
-and `/update` command to replace its executable without administrator access.
-Setup installs the configured npm release; client updates can change the running
-version between setup runs.
+`providers` defines the selected CLIs. The provider name selects `codex` or
+`copilot`; `npm`, `version`, and `command` define its package, exact release, and
+executable. Setup installs the configured release for the managed user. Client
+updates can change the running version between setup runs.
 
-`development.ai_tools.orca` contains Orca's release `version` and initial
-`settings`. Setup checks the architecture-specific package digest and seeds only
-missing settings, preserving existing workspaces and preferences.
-
-Renovate maintains these public pins. An empty `providers` mapping skips provider
-installation and extension configuration; Orca remains managed separately.
+`orca.version` selects Orca's release. `orca.settings` seeds missing settings while
+preserving existing preferences and workspaces. An empty `providers` mapping skips
+CLI provisioning and extension configuration; Orca remains managed separately.
 
 ## Authentication
 
-Setup uses a ChatGPT account session for Codex and native OAuth sign-in for
-Copilot. It reuses the managed user's saved sessions. When a login is missing,
-interactive setup connects the native sign-in flow to your terminal.
-Complete the browser or device-code prompt there; codes and tokens are kept out
-of Ansible logs. Copilot must use the configured `development.github.account`
-and `development.github.host`.
+Setup requires a ChatGPT account session for Codex and native OAuth sign-in for
+Copilot. It reuses saved sessions or opens the client's sign-in flow in your
+terminal. Complete the browser or device-code prompt. Copilot must match
+`development.github.account` and `development.github.host`.
 
 For unattended setup, sign in beforehand as the managed user with `codex login`
-and `copilot login`. Complete the browser approval for each account. On a headless
-machine, use `codex login --device-auth` and `copilot login --device-code`, then
-open the displayed links in your browser. Bitwarden account passwords do not
-replace this approval step. A missing ChatGPT session or mismatched Copilot
-account stops setup. A Codex API-key login does not satisfy the ChatGPT requirement.
-Inherited automation tokens do not count as a persistent provider login.
-Credentials remain in each client's native credential store; setup does not copy
-OAuth tokens into configuration or Bitwarden. See the native
-[Codex authentication](https://learn.chatgpt.com/docs/auth) and
-[Copilot authentication](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli)
-guides for account options.
+and `copilot login`. On a headless machine, use `codex login --device-auth` and
+`copilot login --device-code`, then approve the displayed links in your browser.
+A Codex API-key login or inherited automation token does not satisfy the saved
+account-session requirement. Credentials remain in each client's native store.
 
-Provider authentication is required by default. For an installation-only run,
-explicitly set `development.ai_tools.authenticate: false` in your private
-override. Setup still installs and configures providers, skills and MCP servers,
-and verifies MCP startup and declared access checks. It reports provider sign-in
-as deferred and unverified; complete the native logins before using the clients.
+To defer provider sign-in, explicitly set `development.ai_tools.authenticate: false`.
+Setup still installs and configures providers, skills, and MCP servers and verifies
+MCP startup and declared access checks. It reports sign-in as deferred and
+unverified; complete native logins before using the clients.
 
-The login checks make no model requests. They establish that the client reports
-an available login; they do not prove subscription entitlement, remaining quota,
-or access to a particular model. Separate desktop application sign-in prompts
-still belong to those applications.
+Login checks make no model requests and do not prove subscription entitlement,
+quota, or model access. Desktop applications may require separate sign-in.
 
 ## MCP servers
 
-[MCP](https://modelcontextprotocol.io/docs/getting-started/intro) is the shared
-protocol for tools and services. The same server launches are rendered into each
-provider's native configuration by its adapter. Setup currently configures Codex
-and Copilot; adding another provider requires its installation, authentication
-and configuration adapter. Provider plugin packages are not required for the
-shared skills or MCP servers.
+The default configuration provides Context7 and Playwright. Each entry in
+`mcp_servers` defines a local stdio server with a unique lowercase `name`, `args`
+list, and optional `env` mapping. For an npm package, supply `npm`, an exact stable
+`version`, and its exported `binary`. For an already installed program, supply an
+absolute `command` instead. Setup installs packages in advance; client startup
+does not download them. Remote HTTP servers and their OAuth flows are unmanaged.
 
-Each entry in `development.ai_tools.mcp_servers` defines one server's installation
-and launch settings: a unique lowercase `name`, an `args` list and an optional
-`env` mapping. For npm installation, declare the `npm` package, exact stable
-`version`, and exported `binary` in that same entry. For a program already
-installed on the workstation, declare its absolute `command` instead. Managed
-servers use local stdio; remote HTTP servers and their OAuth flows are not managed.
-
-Keep maintained versions in `all.yml` with their Renovate annotations. Setup
-provisions npm packages under the managed user's home and configures installed
-executables; chat startup does not use `npx` or download missing packages.
-
-Context7 requires an API key stored in Bitwarden. Set its item UUID under
-`secrets.bitwarden`:
+Set the required Context7 item UUID in your private override:
 
 ```yaml
 secrets:
@@ -88,87 +55,61 @@ secrets:
     context7-api-key: "<item-uuid>"
 ```
 
-Store the API key in that item's password field. Setup supplies it as
-`CONTEXT7_API_KEY` through the public MCP declaration. A missing, blank, or invalid
-item UUID fails configuration validation, including during dry runs. A missing,
-empty, or inaccessible item password fails setup.
+Store the API key in the item's password field. Setup supplies it as
+`CONTEXT7_API_KEY`. Missing, blank, or invalid UUIDs fail validation, including
+dry runs. An empty or inaccessible password fails normal setup.
 
 Other MCP `env` credentials can use `bitwarden_item_id` directly or
-`bitwarden_secret` to reference a selector in `secrets.bitwarden`. Unknown
-selector names and empty selectors fail validation. Credential fields support `login.password` (the default),
-`login.username`, `notes`, and `fields.NAME`. An optional
-`bitwarden_collection_id` restricts the item to the expected collection.
-Missing, empty, ambiguous or inaccessible credentials fail setup. Literal `env`
-strings are for non-secret values. Setup reuses the managed user's Bitwarden
-session and cache; see [Bitwarden authentication](configuration.md#prepare-bitwarden-collections).
+`bitwarden_secret` to reference `secrets.bitwarden`. Credential fields support
+`login.password` (the default), `login.username`, `notes`, and `fields.NAME`.
+Optional `bitwarden_collection_id` restricts the item to a collection. Unknown
+selectors and missing, empty, ambiguous, or inaccessible credentials fail setup.
+Use literal `env` strings only for non-secret values. See
+[Bitwarden authentication](configuration.md#prepare-bitwarden-collections).
 
-An optional `auth_check` declares a read-only MCP tool call to verify service
-access after startup. Set its `tool`, optional `arguments` mapping, and optional
-`expect_text` substring. Use a harmless identity or public lookup operation and
-keep its arguments free of secrets. A failed call or missing expected response
-stops setup without logging the server response. Servers without this declaration
-receive startup and tool-discovery checks only.
+Optional `auth_check` declares a read-only MCP tool call after startup. Supply its
+`tool`, optional `arguments` mapping, and optional `expect_text` substring. Use a
+harmless operation with no secret arguments. Failed access or a missing expected
+response stops setup without logging the server response. Without `auth_check`,
+setup checks startup and tool discovery only.
 
-The default Context7 check resolves a public library and validates access with
-any configured key. Invalid keys, quota limits and network failures stop setup.
-Local Playwright needs no server login.
-
-For `@playwright/mcp`, `playwright.browser` selects `chromium`, `firefox` or
-`webkit`. Setup uses the Playwright dependency shipped with the pinned MCP package
-to install the matching browser and Ubuntu libraries. Browser caches are separate
-for each server version. The default arguments use a headless, isolated profile.
-Browser selection flags and external browser connections cannot override this
-managed selection; omit `playwright` only when you provision prerequisites yourself.
+The default Context7 check resolves a public library; invalid credentials, quota
+limits, and network errors stop setup. Local Playwright needs no server login.
+For `@playwright/mcp`, set `playwright.browser` to `chromium`, `firefox`, or `webkit`.
+Setup installs the matching browser and Ubuntu libraries. The default launch uses
+a headless, isolated profile. Omit `playwright` only if you provision prerequisites
+yourself; browser flags and external connections cannot override a managed selection.
 
 ## Skills
 
-Skills use the open [Agent Skills](https://agentskills.io/home) format: a directory
-with `SKILL.md` and optional scripts or references. Codex, Copilot and Claude Code
-support this format. Skillshare handles installation and synchronization; its
-`name` and `source` declarations select the content without changing its format.
-Use shared command-line tools such as `gh` and portable skill instructions. Check
-upstream requirements before selecting skills that depend on a provider-specific
-connector, tool name or extension.
+Skills contain `SKILL.md` and optional scripts or references. Select content that
+works with your providers; a skill may require a provider-specific connector or
+tool. Skillshare installs sources and exposes them to the selected clients.
 
-The default declaration exposes `review-loop` and `migrate-lib`, supplied by
-`workstation-config` through Chezmoi, to both providers. `review-loop` runs an
-explicitly requested review and fix workflow; `migrate-lib` guides dependency
-migrations. Their source files live in `home/dot_agents/skills/` in the companion
-repository.
-
-Each skill uses Skillshare's `name` and `source` fields. Local sources start with
-`~/`, relative to the managed user's home. Remote sources use a GitHub skill URL
-with a full 40-character commit SHA, either as `owner/repo/tree/<sha>/<path>` or
-with the `https://github.com/` prefix. Each source directory must contain `SKILL.md`.
-
-For example, in `all.yml`, replace the remote placeholders with a reviewed source:
+Defaults select `review-loop` and `migrate-lib` from the companion repository's
+`home/dot_agents/skills/`, applied through Chezmoi. For additional skills, declare
+`name` and `source`. Local sources begin with `~/`, relative to the managed user's
+home. Remote sources use a GitHub skill URL pinned to a full commit SHA:
 
 ```yaml
-workstation_manager:
-  development:
-    ai_tools:
-      skills:
-        - name: commit-messages
-          source: ~/.agents/skills/commit-messages
-        - name: review-checklist
-          # renovate: datasource=git-refs depName=<owner>/<repository> branch=main
-          source: "<owner>/<repository>/tree/<full-commit-sha>/skills/review-checklist"
+development:
+  ai_tools:
+    skills:
+      - name: commit-messages
+        source: ~/.agents/skills/commit-messages
+      - name: review-checklist
+        source: "<owner>/<repository>/tree/<full-commit-sha>/skills/review-checklist"
 ```
 
-Chezmoi applies before AI setup. Local sources are linked directly; a missing
-selected skill fails setup. Setup installs remote sources with the configured
-Skillshare release and exposes them through the provider adapters. Reruns reuse
-installed sources; changing a source pin installs the selected revision and
-updates managed provider links. Skillshare's download configuration is private to
-setup, so a personal global Skillshare configuration remains untouched.
+Replace the placeholders with a reviewed source containing `SKILL.md`. Local
+sources must exist after Chezmoi applies. Remote URLs also accept the
+`https://github.com/` prefix. Reruns reuse sources; changing a pin installs the
+selected revision and updates managed links. Personal global Skillshare
+configuration is preserved.
 
-Renovate proposes commit updates for sources annotated with `datasource=git-refs`,
-`depName` and `branch`, as shown above. Choose a maintained upstream skill and
-review its dependencies before adding it. Review upstream changes before
-accepting a new pin.
-
-For skills scoped to a repository, use its `.skillshare/config.yaml` as described
-in [project skills](../development/project-skills.md).
+Public remote pins need update coverage; see
+[dependency updates](../development/dependencies.md). For repository-scoped skills,
+use [project skills](../development/project-skills.md).
 
 ## Configuration ownership and reruns
 
@@ -178,49 +119,42 @@ in [project skills](../development/project-skills.md).
 | Copilot            | `~/.copilot/mcp-config.json`, `mcpServers` |
 | Visual Studio Code | `~/.config/Code/User/mcp.json`, `servers`  |
 
-Copilot's portable file serves CLI and Agent Host. The native Visual Studio Code file is
-configured when `code` is selected in `editor_packages`. Codex reads skills from
-`~/.agents/skills`; Copilot clients read `~/.copilot/skills`.
+Copilot's file serves CLI and Agent Host. Visual Studio Code is configured when
+`code` is selected in `development.editor_packages`. Codex reads skills from
+`~/.agents/skills`; Copilot reads `~/.copilot/skills`.
 
-Setup requires selected clients to exist after application provisioning. It
-preserves unrelated configuration and comments. Codex entries live in a marked
-TOML block; JSON entries are merged individually. Private native files have mode
-`0600`, including any credentials resolved from Bitwarden. Exclude generated MCP
-settings and credentials from Chezmoi source files and application settings
-synchronization. Personal Codex preferences may use a Chezmoi modify template
-that preserves the current MCP tables and their ownership markers. It must leave
-the existing file unchanged when personal preferences already match, so setup's
-updates do not create dotfile drift. Do not track the rendered configuration as a
-regular dotfile or use `chezmoi add` to capture its credentials. Setup refuses
-symlinked configuration paths so it cannot write credentials into a dotfile source.
+Setup preserves unrelated configuration and comments. Codex entries use a marked
+TOML block; JSON entries merge individually. Native files use mode `0600` and can
+contain credentials. Exclude generated MCP settings from Chezmoi and application
+settings synchronization. Never capture them with `chezmoi add`.
 
-Ownership fingerprints and link targets live in
-`~/.local/state/workstation-manager/ai-tools`. Reruns update or remove only
-unchanged, setup-owned entries and symlinks. Personal files, custom skill
-directories, and edits to managed entries are preserved; conflicting names fail
-setup. Move or rename conflicting native entries before adopting a name into the
-declaration. Keep personal Codex tables outside the managed block. Codex can insert
-project tables before its closing marker; setup refuses to replace that block
-until those personal tables are moved outside it.
+For personal Codex settings, a Chezmoi modify template must preserve existing MCP
+tables and ownership markers and leave matching files unchanged. Keep personal
+tables outside the managed block, including any project tables Codex inserted
+before its closing marker. Setup refuses symlinked configuration paths to keep
+credentials out of dotfile sources.
 
-Remove a server or skill from the declaration and rerun setup while its provider
-is still enabled to remove the managed entry or link. Disabling a provider
-preserves its installed CLI and existing files. Cached packages, browser binaries and Git checkouts
-are retained; removing an extension does not erase its source content.
+Reruns update or remove only unchanged, setup-owned entries and links. Personal
+files, custom skill directories, and edits to managed entries are preserved;
+conflicting names stop setup. Move or rename conflicting entries before managing
+them through declarations.
+
+To remove a server or skill, remove its declaration and rerun setup while its
+provider remains enabled. Disabling a provider preserves its CLI and files. Cached
+packages, browser binaries, and source checkouts are retained.
 
 ## Verification and troubleshooting
 
-Normal setup starts each declared MCP command as the managed user with explicit
-runtime paths, checks protocol initialization and tool discovery, and runs any
-declared authentication/access check. Failures stop setup and server output stays
-private. These checks do not establish that a desktop client starts the same
-server successfully or that a browser can launch.
+Normal setup starts each server as the managed user, checks protocol initialization
+and tool discovery, and runs declared access checks. Failures stop setup and server
+output stays private. These checks do not prove that a desktop client starts the
+server successfully or that its browser can launch.
 
 `workstation.sh setup --dry-run` validates declarations and provider availability
-where possible. Downloads, provider sign-in, credentials, MCP execution and configuration changes are
-reported as deferred; a preview does not prove startup readiness.
+where possible. Downloads, sign-in, credential reads, MCP execution, and configuration
+changes are deferred; a preview does not prove startup readiness.
 
-After setup, restart the clients. In Copilot CLI use `/mcp`; in Codex use `/mcp`
-and `codex mcp list`; in Visual Studio Code use **MCP: List Servers** and each server's output
-log. Resolve existing workspace or profile entries that override the same names.
-Keep logs private: server diagnostics may contain credentials.
+Restart clients after setup. Inspect servers with `/mcp` in Copilot CLI, `/mcp` or
+`codex mcp list` in Codex, or **MCP: List Servers** in Visual Studio Code. Resolve
+workspace or profile entries that override the same names. Keep diagnostic logs
+private; they may contain credentials.

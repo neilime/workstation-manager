@@ -69,22 +69,17 @@ captured test devices to leave their Sync chains, verifies deletion, then remove
 the VM. Failed browser teardown retains the VM and its recorded identities for
 diagnosis; hosted CI runners still expire after the job.
 
-Teardown requires fresh Sync download/readiness evidence, native leave
-acknowledgement, and a successful server commit for the captured device's deletion.
-A local leave callback alone cannot authorize VM deletion. Preexisting profiles
-and profiles introduced after identity capture are excluded. Recovery words,
-device identities, and raw protocol data stay out of diagnostics.
-The settings tab must identify the captured device before requesting leave.
-Fixture browsers use Chromium's `--sync-short-nudge-delay-for-test` option to
-schedule deletion promptly. The observer avoids refresh downloads during native
-leave, which has a short upload deadline; server acknowledgement remains required.
-Before leaving, teardown checkpoints the captured profile in a private temporary
-directory. If native leave succeeds without a server acknowledgement, it closes
-the browser, restores the same device identity and Sync tracker, and retries up to
-three attempts. Exhausting those attempts restores the profile and retains its
-manifest entry so teardown remains retryable. Other failures stop immediately.
-The shared [browser observer contract](browser-adapters.md#brave-implementation)
-defines callback, navigation, and server-acknowledgement handling.
+Teardown follows the shared
+[Sync verification and deletion contract](browser-adapters.md#verification-and-device-removal).
+Only captured fixture identities can leave; preexisting and subsequently added
+profiles are excluded. A local leave callback alone cannot authorize VM deletion.
+
+The [fixture helper](../../e2e-tests/browser_sync_fixture.py) checkpoints each
+captured profile privately before leaving. If native leave succeeds without a
+server acknowledgement, it restores that identity and Sync tracker and retries
+up to three attempts. Exhausted retries preserve the profile and manifest entry
+for another teardown attempt. Other failures stop immediately. Keep recovery
+words, device identities and raw protocol data out of diagnostics.
 
 Use separate Sync chains for concurrent runs. Setup removes duplicate devices
 matching its own name, so shared names and chains can interfere with another run.

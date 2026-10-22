@@ -1,8 +1,10 @@
 # Development
 
 Use Git, Make, and Docker Engine. Run workstation-changing tests in the Lima VM.
-Read [AGENTS.md](../../AGENTS.md) and the
-[documentation rules](documentation.md) before editing.
+Read [AGENTS.md](../../AGENTS.md) and apply the
+[documentation review](documentation.md#review-each-change) before completing
+each change. Keep guides current and decision history in ADRs; regenerate
+GitHub Actions and workflow readmes from their sources.
 
 ## Repository layout
 
@@ -27,9 +29,7 @@ and baseline markers in `workstation_state`. Configuration changes update defaul
 normalizers, the private override example, tests, and the relevant guide together.
 
 Backup source roles use the shared
-[recovery decision contract](../../ansible/collections/ansible_collections/neilime/workstation_backup/roles/recovery_decision/README.md).
-Source inspection, approved mutations, and verification stay with the owning
-role. Start each decision with an empty result and verify the approved action.
+[recovery decision contract](automation.md#recovery-decisions).
 
 ## Local checks
 

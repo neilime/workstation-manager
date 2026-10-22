@@ -1,135 +1,117 @@
 # AI provider adapters
 
-The setup collection owns the implementation of
-[ADR 0002](adr/adr-0002-ai-tools-setup-and-management.md).
-[AI tool configuration](../usage/ai-tools.md) is the canonical user contract.
+The setup collection implements [ADR 0002](adr/adr-0002-ai-tools-setup-and-management.md).
+[AI tool configuration](../usage/ai-tools.md) defines the user contract.
 
 ## Adapter contract
 
-AI defaults live in `ansible/group_vars/all.yml`.
-`desired_state_ai_tools.py` validates configuration metadata without inspecting the host
-or retrieving secrets. The secrets normalizer validates Bitwarden item selectors
-before the AI normalizer binds `bitwarden_secret` references to item UUIDs.
-Required GitHub and Context7 item selectors and declared MCP credential references
-reject empty values; actual vault reads remain in setup's private credential phase. `resolve_workstation_config.yml` requires `main.yml`,
-`preflight.yml` and `authenticate.yml` for every key in the `providers` mapping. Each entry's `npm`,
-`version`, and `command` fields provision its CLI, and its key selects the
-`ai_tool_<provider>` role. New providers need no shared registry or caller changes.
+Defaults belong in [`ansible/group_vars/all.yml`](../../ansible/group_vars/all.yml).
+The [AI normalizer][normalizer] validates metadata without host inspection or vault
+reads. The secrets normalizer validates selectors before binding
+`bitwarden_secret` references to item UUIDs. Retrieve credentials only in setup's
+private credential phase.
 
-The shared `ai_tools` role runs after restoration, Chezmoi, development tooling
-and persistent GitHub authentication. It installs the declared provider CLIs and Orca
-before checking selected clients, establishing native provider logins, provisioning
-extension resources, resolving credentials and probing stdio servers. An empty provider mapping skips CLI and
-extension provisioning while keeping Orca managed. Extension tasks run as the resolved user
-with explicit `HOME`, `XDG_CONFIG_HOME` and `PATH`. System application installation
-and Playwright's Ubuntu dependency installation use root.
+Each `development.ai_tools.providers.<name>` entry declares its CLI's `npm`,
+`version`, and `command`. Add an `ai_tool_<name>` role with:
 
-Provider npm packages install as the resolved user under
-`~/.local/share/workstation-manager/ai-tools/cli`, with an explicit home, prefix
-and cache. Root owns only their `/usr/local/bin/<command>` links, so clients can
-replace their own binaries while commands remain available without shell
-activation. Setup selects the configured npm package release; native client
-updates may change its executable independently of npm package metadata.
+| Task file          | Responsibility                                                                  |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `preflight.yml`    | Check selected clients, tolerating pending installations in check mode.         |
+| `authenticate.yml` | Establish and verify the provider's native account session.                     |
+| `main.yml`         | Translate shared resources into native configuration and reconcile owned links. |
 
-An adapter consumes:
+[Configuration resolution](../../ansible/tasks/resolve_workstation_config.yml)
+requires all three files. Provider keys select roles directly; adding a provider
+requires no shared registry.
 
-- `workstation_ai_servers`: native common `command`, `args`, and string-valued
-  `env` mappings keyed by name. These contain secrets: use `no_log: true` on
-  every task that consumes or copies them and clear temporary maps.
+The [shared role][shared-role] installs provider CLIs and Orca, then runs
+preflight, native authentication, resource provisioning, credential resolution,
+MCP probes and adapter configuration. It follows restoration, Chezmoi, development
+tooling and GitHub authentication. An empty provider mapping skips provider and
+extension provisioning while keeping Orca managed.
+
+Run extensions as the resolved user with explicit `HOME`, `XDG_CONFIG_HOME` and
+`PATH`. CLI packages belong to that user under
+`~/.local/share/workstation-manager/ai-tools/cli`; root owns their
+`/usr/local/bin/<command>` links. System applications and Playwright's Ubuntu
+dependencies install as root. Native client updates may change executable versions
+independently of npm metadata.
+
+Adapters consume:
+
+- `workstation_ai_servers`: MCP `command`, `args`, and string-valued `env` mappings
+  keyed by name. These contain secrets: mark every consuming task `no_log: true`
+  and clear temporary maps.
 - `workstation_ai_skills`: verified source roots, relative directories and names.
-- `workstation_ai_state`: private directory for adapter ownership files.
+- `workstation_ai_state`: private directory for adapter ownership records.
 
-Keep shared resources in Agent Skills and MCP formats. Do not make common
-workflows depend on a provider's plugin runtime or connector-specific tool names.
-A skill's frontmatter and instructions must also be portable; support for the
-`SKILL.md` container alone does not guarantee support for provider extensions.
+Keep common resources in portable Agent Skills and MCP formats, including skill
+frontmatter and instructions. Keep provider-specific translation inside adapters.
+Use `ai_provider_config` for JSONC merges or owned TOML blocks and `ai_skill_links`
+for owned symlinks. They must reject conflicts before mutation, preserve user
+content and plan without writing in check mode.
 
-Keep native schema translation in the adapter. Use `ai_provider_config` to merge
-JSONC entries or the owned TOML block; use `ai_skill_links` for owned symlinks.
-Both modules plan without writing in check mode and reject user conflicts before
-mutating their file or link set. The shared role defers the provisioning/configuring
-phase in check mode because its source paths and credentials can depend on pending
-installations. Preflight must tolerate those pending installations in previews.
+The shared role defers downloads, authentication, credential resolution, MCP
+launches and native configuration in check mode; pending installations can supply
+required paths. Do not report these deferred operations as verified.
 
-`authenticate.yml` establishes the provider's native account session. The Codex
-and Copilot adapters use `ai_provider_auth`, whose helper strips ambient provider
-tokens, selects the managed home and checks native login status. Codex requires
-`login status` to report a ChatGPT session; Copilot uses the SDK's `auth.getStatus` JSON-RPC request over the
-CLI's stdio transport. It checks Copilot's returned account and host against the
-GitHub declaration. Interactive login uses the bootstrap terminal directly so
-codes and credentials bypass Ansible's captured output. Check mode starts no
-clients; unattended missing login fails. No model request or OAuth cache editing
-is involved. `development.ai_tools.authenticate` defaults to true. An explicit
-false defers only provider authentication; installation, configuration and MCP
-verification still run, and the final report identifies unverified provider logins.
-Recheck these native contracts when upgrading provider pins:
-[Codex login](https://learn.chatgpt.com/docs/cli/reference) and
-[Copilot SDK authentication](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/authenticate).
+## Authentication and MCP verification
 
-`mcp_stdio.py` implements the bounded initialize/discover/call subset used by setup.
-It starts a separate process group, discards stderr, bounds
-response size and time, and closes the group on completion or failure. It never
-logs protocol payloads. The setup probe checks discovery and each declared
-`auth_check` tool call. Bitwarden credentials enter only the private server
-environment. Select read-only checks; use `expect_text` when a server reports
-upstream failures as text without MCP's `isError` flag, as Context7 can.
+[Provider authentication][provider-auth] strips ambient provider tokens and checks
+native login status in the managed home. Codex requires a ChatGPT session; Copilot
+uses `auth.getStatus` over its CLI's SDK transport and checks the returned account
+and host against the GitHub declaration. Interactive login uses the bootstrap
+terminal so credentials bypass captured Ansible output. Missing unattended login
+fails. Authentication sends no model request and does not edit OAuth caches.
+
+`development.ai_tools.authenticate: false` defers only provider login. Installation,
+configuration and MCP verification still run; the final report identifies logins
+as unverified. Check mode starts no clients.
+
+The [stdio helper][mcp-stdio] bounds protocol responses and deadlines, discards
+stderr, and closes its process group on completion or failure. It never logs
+payloads. Probes verify discovery and each declared `auth_check`. Keep credentials
+in the private server environment and select read-only tools. Use `expect_text`
+for tools that report upstream failures as text without MCP's `isError` flag.
 
 ## Updating resources
 
-Orca's release lives in `development.ai_tools.orca.version`; each CLI package,
-version and command lives in `development.ai_tools.providers.<name>`. Each entry
-in `development.ai_tools.mcp_servers` owns its package, version, binary and launch
-settings. The annotated Renovate manager in
-`.github/renovate/renovate-config.json5` extracts these pins;
-`tests/unit/test_ai_tools_pins.py` checks the actual expression against every
-public AI package and GitHub-backed mise tool. Global skills use Skillshare's
-`name` and `source` fields. GitHub skill URLs contain immutable full commit SHAs;
-the separate `git-refs` manager follows the `depName` and `branch` annotation on
-each `source` and proposes updated digests. The extraction tests cover these pins.
+Follow [dependency updates](dependencies.md) for pin ownership and extraction
+checks. Recheck native authentication, configuration schemas, Node requirements,
+exported binaries and credential handling when upgrading a provider or MCP server.
 
-Local skill paths resolve in the managed home. For remote skills, the shared role
-runs the pinned Skillshare CLI against an isolated configuration and a source-hashed
-download directory. Existing installations are reused; changing a source creates a
-new installation before provider links are reconciled. Native installation audit
-failures propagate. Provider adapters retain ownership of links and preserve
-user-authored skill directories. Repository-scoped skills use their native
-Skillshare configuration and lockfile through the development tooling role.
+Global remote skills install through pinned Skillshare into isolated configuration
+and source-hashed download directories. Reuse existing installations; a changed
+source installs before provider links are reconciled. Audit failures propagate.
+Preserve user-authored skill directories. Repository skills use the separate
+[project skill workflow](project-skills.md).
 
-Review Node requirements, exported binaries, credential handling and browser
-selection when updating MCP versions. Setup uses the Playwright CLI from the
-installed MCP dependency tree, including upstream's exactly pinned prerelease
-Playwright dependency when a stable MCP release uses one. Do not replace that
-dependency independently or run an unrelated global Playwright installer.
-
-Upstream contracts: [Copilot configuration](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers),
-[Visual Studio Code MCP](https://code.visualstudio.com/docs/agents/reference/mcp-configuration),
-[Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli),
-[Skillshare installation](https://skillshare.runkids.cc/docs/reference/commands/install/),
-[Context7](https://github.com/upstash/context7), and
-[Playwright MCP](https://github.com/microsoft/playwright-mcp).
+Use Playwright's CLI from the installed MCP dependency tree, including its exact
+upstream Playwright dependency. Do not replace it independently or use a global
+installer: MCP's selected release owns that compatibility contract.
 
 ## Testing
 
-AI coverage uses unit and isolated integration tests. Run them through the normal
-[development checks](README.md):
+Run the [unit and integration checks](README.md):
 
 ```sh
 make test-unit
 make test-integration
 ```
 
-Collection unit tests cover normalization, native configuration merging, skill
-ownership, and authentication status handling using synthetic inputs. Pin tests
-verify the active Renovate expressions. Integration tests exercise MCP protocol
-failures and terminal authentication with disposable processes.
+Unit tests cover normalization, native merges, skill ownership, authentication
+status and Renovate extraction with synthetic inputs. Integration tests use
+isolated homes, real Ansible, disposable client processes, and local HTTP/MCP
+fixtures. They cover provisioning, authentication terminals, protocol failures,
+idempotence, permissions, reconciliation, previews and credential redaction.
 
-Integration tests under `tests/integration/` run real Ansible against isolated homes,
-synthetic client executables and local HTTP/MCP fixtures. They cover provider
-installation orchestration, Orca release authentication, adapter idempotence,
-permissions, skill reconciliation, check mode and credential redaction.
+These checks require no provider accounts or live AI services. They do not verify
+live OAuth sessions, desktop startup or browser operations. The Lima fixture
+explicitly defers provider sign-in and checks command availability and user write
+access to installed packages. Normal setup still requires provider login unless
+the configuration explicitly defers it.
 
-These tests require no provider accounts or live AI services. Live OAuth sessions,
-desktop client startup and browser operations are outside their scope. The shared
-Lima setup fixture defers provider sign-in with
-`development.ai_tools.authenticate: false`. Development-tool assertions verify
-provider command availability and user write access to installed package trees.
+[normalizer]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/desired_state_ai_tools.py
+[shared-role]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/roles/ai_tools
+[provider-auth]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/modules/ai_provider_auth.py
+[mcp-stdio]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/mcp_stdio.py
