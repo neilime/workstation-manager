@@ -20,6 +20,8 @@ from entrypoint_test_helpers import (
     entrypoint_source_with_mock_controller,
     sudo_passthrough_script,
     terminal_command,
+    write_entrypoint_definitions,
+    write_mock_commands,
 )
 
 ENTRYPOINT_PATH = pathlib.Path(__file__).parents[2] / "workstation.sh"
@@ -40,10 +42,7 @@ class TerminalPromptTests(unittest.TestCase):
         return output
 
     def _write_prompt_fixture(self, fixture: pathlib.Path) -> pathlib.Path:
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
-        wrapper = fixture / "wrapper-definitions.sh"
-        wrapper.write_text("\n".join(definitions) + "\n")
+        wrapper = write_entrypoint_definitions(fixture / "wrapper-definitions.sh")
         # Reproduce uutils 0.2.2's rejected saved state even with GNU stty.
         stty = fixture / "stty"
         stty.write_text(
@@ -180,12 +179,9 @@ class TerminalContextTests(unittest.TestCase):
     def test_script_capture_uses_one_outer_sudo_and_marks_runner_to_skip_nested_sudo(self) -> None:
         """Interactive capture must elevate before allocating its relay terminal."""
 
-        definitions = entrypoint_source_with_mock_controller().splitlines()
-        self.assertEqual(definitions.pop(), 'main "$@"')
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
-            wrapper = fixture / "wrapper-definitions.sh"
-            wrapper.write_text("\n".join(definitions) + "\n")
+            wrapper = write_entrypoint_definitions(fixture / "wrapper-definitions.sh")
             script_command_file = fixture / "script-command.txt"
             runner_content_file = fixture / "runner-content.txt"
             sudo_log_file = fixture / "sudo-log.txt"
@@ -225,10 +221,7 @@ class TerminalContextTests(unittest.TestCase):
                     'cat "$output_file"\n'
                 ),
             }
-            for name, content in commands.items():
-                command = fixture / name
-                command.write_text(content)
-                command.chmod(0o700)
+            write_mock_commands(fixture, commands)
 
             result = subprocess.run(
                 terminal_command(
