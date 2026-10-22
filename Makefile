@@ -15,6 +15,8 @@ FIRST_PARTY_COLLECTION_DIRS := \
 	ansible/collections/ansible_collections/neilime/workstation_restore \
 	ansible/collections/ansible_collections/neilime/workstation_cleanup \
 	ansible/collections/ansible_collections/neilime/workstation_state
+COLLECTION_UNIT_TEST_DIRS := $(wildcard $(addsuffix /tests/unit,$(FIRST_PARTY_COLLECTION_DIRS)))
+UNIT_TEST_DIRS := tests/unit $(COLLECTION_UNIT_TEST_DIRS)
 
 .PHONY: help setup tool-shell lint lint-fix check-ansible check-collections test test-unit test-integration test-host test-collections ci
 .PHONY: e2e-prepare
@@ -65,16 +67,16 @@ check-ansible: ## Run syntax checks inside the tooling container
 test: test-unit test-integration ## Run unit and isolated integration tests
 
 test-unit: ## Run fast host and collection unit tests in one pytest process
-	$(call tooling,$(call pytest_command,unit,-m "not integration"))
+	$(call tooling,$(call pytest_command,unit,$(addprefix /workspace/,$(UNIT_TEST_DIRS))))
 
 test-integration: ## Run isolated Ansible and terminal integration tests
-	$(call tooling,$(call pytest_command,integration,-n "$(HOST_TEST_WORKERS)" -m integration /workspace/e2e-tests/unit))
+	$(call tooling,$(call pytest_command,integration,-n "$(HOST_TEST_WORKERS)" /workspace/tests/integration))
 
 test-host: ## Run isolated host-tool tests with bounded parallelism
-	$(call tooling,$(call pytest_command,host,-n "$(HOST_TEST_WORKERS)" /workspace/e2e-tests/unit))
+	$(call tooling,$(call pytest_command,host,-n "$(HOST_TEST_WORKERS)" /workspace/tests/unit /workspace/tests/integration))
 
 test-collections: check-collections ## Run collection sanity and unit checks
-	$(call tooling,$(call pytest_command,collections,$(addprefix /workspace/,$(wildcard $(addsuffix /tests/unit,$(FIRST_PARTY_COLLECTION_DIRS))))))
+	$(call tooling,$(call pytest_command,collections,$(addprefix /workspace/,$(COLLECTION_UNIT_TEST_DIRS))))
 
 check-collections: ## Run Ansible plugin and collection sanity checks
 	$(if $(strip $(ANSIBLE_TEST_CACHE_DIR)),@mkdir -p "$(ANSIBLE_TEST_CACHE_DIR)")

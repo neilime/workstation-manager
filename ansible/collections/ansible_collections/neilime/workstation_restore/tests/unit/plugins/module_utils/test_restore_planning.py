@@ -33,6 +33,25 @@ def make_plan(tmp_path, names, manifest=None):
     )
 
 
+@pytest.mark.parametrize(
+    "parent,source,label",
+    [
+        ("Documents", "dev-projects", "dev-projects"),
+        (".config", "workstation-manager", "workstation-manager-user-config"),
+    ],
+)
+@pytest.mark.parametrize("with_manifest", [False, True], ids=["without-manifest", "with-manifest"])
+def test_default_single_source_archives_recover_their_home_parent(tmp_path, parent, source, label, with_manifest):
+    """Both default source layouts restore beneath the target home with or without a sidecar."""
+    manifest = f"include\t{label}\t/home/source-user/{parent}/{source}\n" if with_manifest else None
+
+    result = make_plan(tmp_path, [f"{source}/", f"{source}/note.txt"], manifest)
+
+    assert result["destination"] == str(tmp_path / "home" / parent)
+    assert result["members"] == 2
+    assert result["destination_exists"] is False
+
+
 @pytest.mark.parametrize("prefix", ["", "Documents/"])
 def test_manifest_distinguishes_shortened_and_home_relative_project_archives(tmp_path, prefix):
     """Missing source records identify the source home without changing a correct archive layout."""

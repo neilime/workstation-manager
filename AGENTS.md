@@ -198,9 +198,10 @@ more specific `AGENTS.md` files when working in their directories.
   `make test-unit` or `make test-integration` and a focused `TEST_ARGS="-k ..."`
   selection during development. CI runs each layer once.
 - Add regression coverage at the cheapest layer that can detect the failure.
-  Keep parsing and normalization cases in collection unit tests. Mark tests that
-  run real Ansible as `integration`; reuse the isolated playbook and environment
-  helpers in `e2e-tests/unit/ansible_test_helpers.py`. Reserve VM assertions for
+  Keep parsing and normalization cases in collection unit tests. Put tests that
+  run real Ansible, terminals, or subprocess protocols in `tests/integration/`;
+  reuse the isolated playbook and environment helpers in
+  `tests/support/ansible_test_helpers.py`. Reserve VM assertions for
   installed behavior and external integration.
 - Every test must protect a currently supported contract. Describe that contract
   in its name and docstring; do not encode removed implementations, one-time

@@ -1,22 +1,6 @@
 """End-to-end checks for the setup bootstrap tests."""
 
 
-def test_setup_bootstrap_tools_are_available(host) -> None:
-    """The bootstrapped machine should have the setup tools available."""
-
-    # Arrange
-    chezmoi_command = "command -v chezmoi"
-    git_command = "command -v git"
-
-    # Act
-    chezmoi_result = host.run(chezmoi_command)
-    git_result = host.run(git_command)
-
-    # Assert
-    assert chezmoi_result.succeeded
-    assert git_result.succeeded
-
-
 def test_setup_enables_weekly_bleachbit_cleanup(host) -> None:
     """The weekly user timer is enabled and active while the manual command remains available."""
 

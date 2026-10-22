@@ -6,15 +6,16 @@ Read [AGENTS.md](../../AGENTS.md) and the
 
 ## Repository layout
 
-| Path                                                                              | Responsibility                                          |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| [`workstation.sh`](../../workstation.sh)                                          | Public setup, backup, cleanup, and help commands.       |
-| [`ansible/group_vars/all.yml`](../../ansible/group_vars/all.yml)                  | Public defaults and workstation tool pins.              |
-| [`ansible/tasks/`](../../ansible/tasks/)                                          | Configuration resolution and orchestration.             |
-| [First-party collections](../../ansible/collections/ansible_collections/neilime/) | Setup, backup, restore, cleanup, and shared state.      |
-| [`docker/tooling/`](../../docker/tooling/)                                        | Ansible and Python validation environment.              |
-| [`e2e-tests/`](../../e2e-tests/)                                                  | Isolated host tests, Lima workflows, and VM assertions. |
-| [`ci/`](../../ci/)                                                                | Tooling launchers and report helpers.                   |
+| Path                                                                              | Responsibility                                                    |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [`workstation.sh`](../../workstation.sh)                                          | Public setup, backup, cleanup, and help commands.                 |
+| [`ansible/group_vars/all.yml`](../../ansible/group_vars/all.yml)                  | Public defaults and workstation tool pins.                        |
+| [`ansible/tasks/`](../../ansible/tasks/)                                          | Configuration resolution and orchestration.                       |
+| [First-party collections](../../ansible/collections/ansible_collections/neilime/) | Setup, backup, restore, cleanup, and shared state.                |
+| [`docker/tooling/`](../../docker/tooling/)                                        | Ansible and Python validation environment.                        |
+| [`tests/`](../../tests/)                                                          | Local unit tests, isolated integration tests, and shared helpers. |
+| [`e2e-tests/`](../../e2e-tests/)                                                  | Lima workflows and VM assertions.                                 |
+| [`ci/`](../../ci/)                                                                | Tooling launchers and report helpers.                             |
 
 Keep orchestration in roles and playbooks, reusable Python in
 `plugins/module_utils/`, and thin Ansible adapters in `plugins/modules/` and
@@ -52,14 +53,36 @@ make test
 
 Select tests with `TEST_ARGS="-k desired_state"`. Integration tests use two
 workers; set `HOST_TEST_WORKERS=1` for sequential runs. `make test-host` selects
-`e2e-tests/unit/`; `make test-collections` selects collection sanity and unit checks.
+`tests/unit/` and `tests/integration/`; `make test-collections` selects collection
+sanity and unit checks. These convenience targets overlap `make test`; CI runs
+`make check-collections` and `make test` once each.
 VM tests use the separate [end-to-end workflow](e2e-tests.md).
 
-Use unit tests for parsing and normalization, isolated integration tests for
-Ansible wiring and check mode, and VM assertions for installed behavior.
-Reuse `e2e-tests/unit/ansible_test_helpers.py`. Use synthetic inputs and maintained
-configuration; preserve archive-safety, recovery, permissions, credential-redaction,
-and user-data checks.
+### Coverage ownership
+
+| Location                 | Responsibility                                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Collection `tests/unit/` | Parsing, normalization, planning, and recovery decisions in the owning Python helpers. Temporary files and local Git fixtures are allowed. |
+| `tests/unit/`            | Bootstrap and CI helpers with isolated command stand-ins; public configuration and dependency-update contracts.                            |
+| `tests/integration/`     | Real Ansible wiring, terminal interaction, subprocess protocols, and process lifecycle. No live credentials or workstation changes.        |
+| `e2e-tests/`             | Installed behavior, desktop sessions, and recovery against live services in the Lima VM.                                                   |
+
+Directory selection defines the local layers; no marker is needed to keep a new
+integration test out of `make test-unit`. Plain `pytest` collects both local
+layers and collection units, excluding VM assertions. The Make targets collect
+only their selected directories and report the slowest tests.
+
+Cover exhaustive input combinations in unit tests. Integration tests should
+prove representative wiring, reruns, previews, and failure propagation without
+repeating the same input matrix. Preserve distinct archive-safety, recovery,
+permissions, credential-redaction, and user-data checks. VM assertions verify
+the resulting installation rather than repeating normalization checks.
+
+Reuse `tests/support/ansible_test_helpers.py` for bounded playbook runs and isolated
+controller state, and the adjacent entrypoint helpers for terminal fixtures.
+Keep mutable homes and process state local to each test; share setup only when
+the fixture is immutable. Use synthetic inputs and maintained configuration
+instead of release snapshots or assertions about source layout.
 
 `make setup` consumes the [controller requirements](../../ansible/requirements.txt),
 [collection manifest](../../ansible/collections/requirements.yml), and tooling/test
