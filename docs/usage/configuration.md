@@ -242,8 +242,11 @@ Changing this setting does not change the fixed default backup directory; add
 other locations through the [backup options](backup-and-restore.md).
 
 Setup enables daily notifications for repositories with local work in progress.
-Run `workstation-manager-git-project-report` for the full report or add `--notify`
-to refresh the notification. Clicking it opens the saved report at
+Run `workstation-manager-git-project-report` for a summary: one line per repository
+with local changes, showing its path, branch, and number of changed files. Use
+`git -C /path/to/repository status --short` for file details.
+
+Add `--notify` to refresh the notification. Clicking it opens the saved summary at
 `~/.local/state/workstation-manager/git-project-report/latest.txt`, or under
 `$XDG_STATE_HOME` when set. The timer starts in the active session or at the next
 graphical login.

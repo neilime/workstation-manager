@@ -16,7 +16,7 @@ from ansible_test_helpers import (
 )
 
 
-def test_notifications_install_converge_and_open_full_report(tmp_path):
+def test_notifications_install_converge_and_open_saved_report(tmp_path):
     """Setup preserves previews, converges, and makes notification clicks open the complete report."""
     role = tmp_path / "development_tooling"
     shutil.copytree(SETUP_ROLES / role.name, role)
