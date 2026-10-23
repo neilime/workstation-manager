@@ -165,7 +165,8 @@ jobs:
     name: E2E validation
     needs: [build-tooling-image]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Leave time for VM preparation and verified teardown.
+    timeout-minutes: 60
     environment: ci
     permissions:
       contents: read

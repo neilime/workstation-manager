@@ -99,8 +99,9 @@ identities and raw protocol data out of diagnostics. See
 Each device's Sync waits and retries are bounded. Teardown lets these
 finish for every captured profile; its total duration grows with the number of
 devices and retries. The SSH wrapper detects an unresponsive connection, and CI
-retains its job timeout. Connection failures and native operation failures retain
-the VM.
+allows 60 minutes for the full job, including VM preparation and verified
+teardown, while the assertion step remains limited to 35 minutes. Connection
+failures and native operation failures retain the VM.
 
 Use separate Sync chains for concurrent runs. Setup removes duplicate devices
 matching its own name, so shared names and chains can interfere with another run.
