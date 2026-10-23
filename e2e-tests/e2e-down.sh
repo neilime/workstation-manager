@@ -17,7 +17,9 @@ if [[ "$status" != "Running" ]]; then
 	limactl start --timeout=2m "$E2E_VM_NAME"
 fi
 
-if ! run_e2e_timed_command browser-teardown run_e2e_lima_control_command 300 \
+# Sync waits and retries are bounded per device. Let every captured profile
+# finish instead of interrupting the whole fixture during a leave or restoration.
+if ! run_e2e_timed_command browser-teardown run_e2e_lima_shell \
 	env PYTHONPATH=/workspace/ansible/collections \
 	python3 /workspace/e2e-tests/browser_sync_fixture.py leave; then
 	printf '%s\n' 'Browser fixture teardown failed; the VM and recorded device identities were retained for diagnosis.' >&2
