@@ -45,6 +45,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_
 )
 from browser_sync_fixture import (  # noqa: E402
     _LEAVE_DEVICE,
+    _PROTOCOL_BINDING,
     _START_TEARDOWN,
     _TEARDOWN_CHECKS,
     _TEARDOWN_STATE,
@@ -607,7 +608,9 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
     assert acknowledged() is True
     pipe.call("Network.setBlockedURLs", {"urlPatterns": []}, page)
     navigate_teardown_page(pipe, page, "chrome://sync-internals/")
-    assert teardown_snapshot() == pending
+    # This short snapshot can remain pending or receive fresh Disabled status.
+    # Both must recover the page without certifying an active device for removal.
+    assert {**teardown_snapshot(), "stopped": False} == pending
     print(
         "Teardown retains confirmed removal across navigation, and recovers lost pages with fresh evidence.",
         flush=True,
@@ -705,7 +708,13 @@ def retry_native_fixture_leave(arguments: list[str], environment: dict[str, str]
         assert native.code() == code, "The copied profile could not decrypt the original recovery code"
         # This smoke chain is offline. Native reset still exercises destructive
         # local clearing without contacting any saved recovery chain.
-        assert network is not None
+        assert not network.released.is_set()
+        diagnostic = pipe.page("brave://sync-internals")
+        pipe.watch_acknowledgement(diagnostic, _PROTOCOL_BINDING)
+        assert pipe.evaluate(diagnostic, _START_TEARDOWN) is True
+        assert pipe.wait_for_acknowledgement(diagnostic, _PROTOCOL_BINDING) is True, (
+            "Native protocol forwarding did not activate while server access was blocked"
+        )
         assert (
             pipe.evaluate(native.settings, "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')") is True
         )

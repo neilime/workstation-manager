@@ -32,6 +32,7 @@ from browser_sync_network_gate import SyncNetworkGate
 from browser_sync_teardown_state import teardown_profile, write_private_json
 
 _COMMIT_BINDING = "workstationDeviceRemovedCommit"
+_PROTOCOL_BINDING = "workstationSyncProtocolForwarding"
 
 _TEARDOWN_CHECKS = (
     "Diagnostic Page",
@@ -58,7 +59,14 @@ _START_TEARDOWN = r"""(() => {
   if (!SETTINGS_BRIDGE) return false;
   const {addWebUiListener} = window.workstationSyncSettings;
   const state = window.workstationSync = {since: Date.now(), downloaded: false, about: {}};
+  let forwarding = false;
   addWebUiListener('onProtocolEvent', event => {
+    // Even a buffered event proves that the Sync thread enabled forwarding.
+    // Its timestamp must still be fresh to count as deletion/readiness proof.
+    if (!forwarding && typeof window[PROTOCOL_BINDING] === 'function') {
+      forwarding = true;
+      window[PROTOCOL_BINDING]('true');
+    }
     if (typeof event.time !== 'number' || event.time < state.since) return;
     if (event.type === 'GetUpdates Response') {
       state.downloaded = /^Received \d+ update\(s\)\.$/.test(event.details);
@@ -69,7 +77,7 @@ _START_TEARDOWN = r"""(() => {
   chrome.send('requestDataAndRegisterForUpdates');
   chrome.send('triggerRefresh');
   return true;
-})()""".replace("SETTINGS_BRIDGE", _SETTINGS_BRIDGE)
+})()""".replace("SETTINGS_BRIDGE", _SETTINGS_BRIDGE).replace("PROTOCOL_BINDING", json.dumps(_PROTOCOL_BINDING))
 
 _TEARDOWN_STATE = (
     r"""(async (identity, timeoutMs) => {
@@ -255,15 +263,19 @@ def leave_device(
 
     native = NativeSync(pipe, str(profile))
     session = pipe.page("brave://sync-internals")
+    pipe.watch_acknowledgement(session, _PROTOCOL_BINDING)
     acknowledged = pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
     if (
         pipe.evaluate(session, _START_TEARDOWN) is not True
         or pipe.evaluate(session, f"{_WATCH_TEARDOWN_REMOVAL}({json.dumps([identity])})", timeout=15) is not True
     ):
         raise BrowserProtocolError("Brave could not observe device removal; the test identity was retained")
-    # A retry can receive its own server tombstone and immediately stop Sync.
-    # Install the observer before allowing any server contact, so that deletion
-    # is proved even when no active tracker remains to satisfy readiness.
+    # WebUI registration queues forwarding on the Sync thread. Reject initial
+    # connections promptly so that thread can finish its request and register;
+    # a held connection would block it until a self-tombstone can erase the log.
+    if pipe.wait_for_acknowledgement(session, _PROTOCOL_BINDING, timeout=min(30, timeout)) is not True:
+        raise BrowserProtocolError("Brave did not enable native protocol forwarding; the test identity was retained")
+    # A retry can now observe its own server tombstone before Sync stops.
     network.release()
     if wait_for_removal_readiness(pipe, session, identity, acknowledged, timeout):
         return
@@ -361,6 +373,7 @@ class BrowserSyncFixture:
                         [
                             *arguments,
                             "--sync-short-nudge-delay-for-test",
+                            "--sync-short-initial-retry-override",
                             f"--proxy-server={network.proxy_url}",
                             "--disable-quic",
                             "--disable-extensions",

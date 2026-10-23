@@ -140,8 +140,10 @@ current device GUID, recheck identities before mutation, and preserve unrelated
 devices. Each deletion requires a fresh successful server commit for its client
 tag and a device-list readback; a native callback alone is insufficient.
 
-The observer is shared with [VM teardown](e2e-tests.md#teardown-and-reuse), which
-explicitly enables an additional proof: a fresh successful GetUpdates response
+The observer is shared with [VM teardown](e2e-tests.md#teardown-and-reuse). Teardown
+requires a native protocol event proving backend forwarding is active before
+allowing server contact; WebUI listener registration alone is insufficient.
+It explicitly enables an additional proof: a fresh successful GetUpdates response
 containing the exact captured device's tombstone, server ID, and positive version.
 Readback also requires a fresh native transport state of `Disabled`. If the client
 remains active, rearm the observer for commit acknowledgements only, request

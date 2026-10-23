@@ -17,9 +17,20 @@ device's tombstone can [reset Sync immediately][self-deletion], before an
 observer attached after startup sees it. Waiting longer for active Sync does not
 resolve that observation race.
 
+Chromium's [HTTP bridge blocks the Sync thread][http-bridge] until a request
+finishes. [Enabling protocol event forwarding][sync-engine] queues work on that
+same thread. Holding a CONNECT response can therefore prevent registration
+from completing. The [backend enables forwarding before replaying buffered
+events][sync-backend], so receiving a native protocol event proves that the
+registration task ran; WebUI listener setup alone does not.
+
 Chromium can [prefer a pending local update over a remote deletion][conflict].
 An active client can therefore recreate its device after receiving a tombstone;
 that readback requires confirmation that native Sync has stopped.
+
+The 2026-10-23 [CI run][failed-run] failed after three confirmed removals: an
+unacknowledged commit was followed by an inactive retry. It did not establish
+that backend forwarding was active before the server response.
 
 These upstream sources were inspected on 2026-10-23. They explain the design;
 they are not evidence of a successful current VM test.
@@ -30,9 +41,16 @@ Run native leave in a private copy of only the captured profile and its root
 encryption state. Keep the original closed and unchanged as the retry source.
 Do not rejoin a chain or manufacture a replacement identity.
 
-Hold browser HTTPS connections through a loopback CONNECT proxy until deletion
-observers are ready. Forward opaque TLS traffic without inspecting payloads or
-changing certificate verification, following [Chromium's proxy contract][proxy].
+Before observer activation, immediately reject CONNECT requests with HTTP 503
+without opening an upstream connection. Native requests can then finish and
+release the Sync thread to register protocol forwarding. Wait for a native
+protocol event before allowing server contact. Buffered events can prove
+registration, but deletion evidence must still satisfy its freshness checks.
+
+Use Chromium's [short initial retry override][retry-switch] for this controlled
+test failure; normal exponential backoff remains. After release, forward opaque
+TLS traffic without inspecting payloads or changing certificate verification, following
+[Chromium's proxy contract][proxy].
 
 Accept either the existing matched commit acknowledgement or, explicitly for
 teardown, a fresh successful GetUpdates response containing the captured
@@ -56,6 +74,7 @@ and [browser adapter guide](../browser-adapters.md#verification-and-device-remov
 ## Alternatives
 
 - Longer timeouts or additional blind retries do not recover a missed tombstone.
+- Holding a CONNECT response can block the backend observer's registration task.
 - Resetting and restoring the original profile creates interruption windows that
   can destroy the identity and tracker needed for another attempt.
 - Treating an inactive client as removed could discard unverified remote devices.
@@ -75,3 +94,8 @@ and interruption safety. Live server behavior still requires the complete VM flo
 [proxy]: https://github.com/chromium/chromium/blob/main/net/docs/proxy.md#http-proxy-scheme
 [server]: https://github.com/brave/go-sync/blob/master/datastore/sync_entity.go
 [conflict]: https://github.com/chromium/chromium/blob/main/components/sync/model/data_type_sync_bridge.cc
+[http-bridge]: https://github.com/chromium/chromium/blob/main/components/sync/engine/net/http_bridge.cc
+[sync-engine]: https://github.com/chromium/chromium/blob/main/components/sync/service/glue/sync_engine_impl.cc
+[sync-backend]: https://github.com/chromium/chromium/blob/main/components/sync/service/glue/sync_engine_backend.cc
+[retry-switch]: https://github.com/chromium/chromium/blob/main/components/sync/base/command_line_switches.h
+[failed-run]: https://github.com/neilime/workstation-manager/actions/runs/40007078267

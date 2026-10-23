@@ -1,4 +1,4 @@
-"""Hold native browser HTTPS connections until the E2E Sync observer is installed."""
+"""Reject native browser HTTPS connections until the E2E Sync observer is installed."""
 
 from __future__ import annotations
 
@@ -88,7 +88,13 @@ class _ConnectHandler(socketserver.BaseRequestHandler):
                 client.sendall(b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
                 return
             client.settimeout(_IO_TIMEOUT)
-            if not gate.released.wait(120) or gate.stopped.is_set():
+            if gate.stopped.is_set():
+                return
+            if not gate.released.is_set():
+                # A held CONNECT blocks Sync's network thread and prevents the
+                # queued protocol observer from registering. Fail promptly so
+                # the native request completes before the caller opens the gate.
+                client.sendall(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                 return
             with gate.connect(host) as upstream:
                 if not gate.track(upstream):
@@ -174,7 +180,6 @@ class SyncNetworkGate:
         self, _kind: type[BaseException] | None, _error: BaseException | None, _traceback: TracebackType | None
     ) -> None:
         self.stopped.set()
-        self.released.set()
         self._server.shutdown()
         with self.lock:
             for connection in self._connections:
