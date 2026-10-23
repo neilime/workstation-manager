@@ -74,11 +74,16 @@ _REMOVAL_CHECKS = (
 # Device payloads and server IDs stay inside the diagnostic page. Only fixed
 # boolean checks cross the pipe. A native leave callback alone can
 # succeed after its short upload deadline even when deletion was not committed.
-_WATCH_REMOVAL = r"""(async (identities, readBack = false) => {
-  const {addWebUiListener} = window.workstationSyncSettings;
+_WATCH_REMOVAL = r"""(async (identities, readBack = false, binding = REMOVAL_BINDING) => {
+  const {addWebUiListener, removeWebUiListener} = window.workstationSyncSettings;
   if (!Array.isArray(identities) || !identities.length
     || identities.some(identity => typeof identity !== 'string' || !identity)
-    || typeof window[REMOVAL_BINDING] !== 'function') return false;
+    || typeof binding !== 'string' || !binding || typeof window[binding] !== 'function') return false;
+  const previous = window.workstationDeviceRemoval;
+  if (previous) {
+    clearInterval(previous.timer);
+    if (previous.listener !== undefined) removeWebUiListener(previous.listener);
+  }
   // Chromium's ClientTagHash hashes the empty DeviceInfoSpecifics field
   // (EntitySpecifics field 154522, length-delimited) followed by DeviceInfo_<GUID>.
   // Tombstone commits retain this tag, so no all-data node query is needed.
@@ -99,10 +104,10 @@ _WATCH_REMOVAL = r"""(async (identities, readBack = false) => {
     state.checks['Server Acknowledgement'] = state.acknowledged;
     if (state.acknowledged) {
       clearInterval(state.timer);
-      window[REMOVAL_BINDING]('true');
+      window[binding]('true');
     }
   };
-  addWebUiListener('onProtocolEvent', event => {
+  state.listener = addWebUiListener('onProtocolEvent', event => {
     if (state.acknowledged || !Number.isFinite(event.time) || event.time < state.since) return;
     if (readBack === true && event.type === 'GetUpdates Response'
       && event.proto?.error_code === 'SUCCESS') {

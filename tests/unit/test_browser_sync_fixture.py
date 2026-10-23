@@ -248,12 +248,13 @@ def test_teardown_cannot_overlap_a_retained_browser(captured_fixture, monkeypatc
     assert fixture.load()["devices"] == {"Default": "captured-device"}
 
 
-def teardown_state(*, matches=True, failed=(), needs_navigation=False):
+def teardown_state(*, matches=True, failed=(), needs_navigation=False, stopped=False):
     """Build a synthetic atomic status observation with the fixed diagnostic allowlist."""
 
     checks = {**dict.fromkeys(TEARDOWN_CHECKS, True), **dict.fromkeys(failed, False)}
     return {
-        "active": not needs_navigation and checks["Transport State"],
+        "active": not stopped and not needs_navigation and checks["Transport State"],
+        "stopped": stopped,
         "ready": not needs_navigation and all(checks.values()),
         "matches": matches,
         "needsNavigation": needs_navigation,
@@ -267,7 +268,11 @@ def make_native_pipe(monkeypatch):
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
-    pipe.watch_acknowledgement.return_value = mock.Mock(return_value=False)
+    pipe.readback = mock.Mock(return_value=False)
+    pipe.committed = mock.Mock(return_value=False)
+    pipe.watch_acknowledgement.side_effect = lambda _session, binding: (
+        pipe.readback if binding == "workstationDeviceRemoved" else pipe.committed
+    )
     pipe.wait_for_acknowledgement.return_value = True
     return pipe
 
@@ -284,8 +289,12 @@ def test_observer_is_installed_before_sync_can_receive_a_server_tombstone(native
     """A retry observes its own server deletion even when Brave then disables its tracker."""
 
     pipe = native_pipe
-    pipe.evaluate.side_effect = [True, True, teardown_state(failed=("Transport State", "Device Info State"))]
-    acknowledged = pipe.watch_acknowledgement.return_value
+    pipe.evaluate.side_effect = [
+        True,
+        True,
+        teardown_state(stopped=True, failed=("Transport State", "Device Info State")),
+    ]
+    acknowledged = pipe.readback
     network = mock.Mock()
 
     def release():
@@ -300,6 +309,39 @@ def test_observer_is_installed_before_sync_can_receive_a_server_tombstone(native
     assert all("SyncSetupReset" not in call.args[1] for call in pipe.evaluate.call_args_list)
 
 
+@pytest.mark.parametrize("committed", [False, True])
+def test_active_client_requires_new_commit_proof_after_downloading_its_tombstone(native_pipe, committed) -> None:
+    """A pending local update can recreate a deleted device, invalidating its earlier readback."""
+
+    pipe = native_pipe
+    pipe.readback.return_value = True
+    pipe.evaluate.side_effect = [True, True, teardown_state(), True, True, dict.fromkeys(REMOVAL_CHECKS, False)]
+    pipe.wait_for_acknowledgement.return_value = committed
+    if committed:
+        leave_device(pipe)
+    else:
+        with pytest.raises(browser_fixture.UnconfirmedDeviceRemoval, match="did not confirm removal"):
+            leave_device(pipe)
+    bindings = [call.args[1] for call in pipe.watch_acknowledgement.call_args_list]
+    assert bindings == ["workstationDeviceRemoved", "workstationDeviceRemovedCommit"]
+    pipe.wait_for_acknowledgement.assert_called_once_with(pipe.page.return_value, bindings[-1])
+    assert "SyncSetupReset" in pipe.evaluate.call_args_list[4].args[1]
+
+
+def test_server_tombstone_requires_a_fresh_disabled_transport(native_pipe, monkeypatch) -> None:
+    """A missing or stale status response cannot rule out a pending device update."""
+
+    clock = [0.0]
+    monkeypatch.setattr(browser_fixture.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(browser_fixture.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    pipe = native_pipe
+    pipe.readback.return_value = True
+    pipe.evaluate.side_effect = [True, True, teardown_state(stopped=True, failed=("Status Response",))]
+    with pytest.raises(ValueError, match="could not verify Sync readiness"):
+        leave_device(pipe, timeout=1)
+    pipe.wait_for_acknowledgement.assert_not_called()
+
+
 @pytest.mark.parametrize("acknowledged", [False, True])
 @pytest.mark.parametrize("operation", ["readiness", "reset"])
 def test_server_proof_survives_protocol_loss_during_teardown(native_pipe, acknowledged, operation) -> None:
@@ -308,16 +350,17 @@ def test_server_proof_survives_protocol_loss_during_teardown(native_pipe, acknow
     pipe = native_pipe
     responses = [True, True]
     if operation == "reset":
-        responses.append(teardown_state())
+        responses.extend([teardown_state(), True])
 
     def evaluate(*_args, **_kwargs):
         if responses:
             return responses.pop(0)
-        pipe.watch_acknowledgement.return_value.return_value = acknowledged
+        pipe.readback.return_value = acknowledged
+        pipe.committed.return_value = acknowledged
         raise browser_fixture.BrowserProtocolError("Execution context was destroyed")
 
     pipe.evaluate.side_effect = evaluate
-    if acknowledged:
+    if acknowledged and operation == "reset":
         leave_device(pipe)
     else:
         with pytest.raises(browser_fixture.BrowserProtocolError, match="Execution context was destroyed"):
@@ -341,10 +384,10 @@ def test_native_reset_requires_an_active_exact_captured_identity(native_pipe, ma
     """An active diagnostic page cannot authorize resetting a different device."""
 
     pipe = native_pipe
-    pipe.evaluate.side_effect = [True, True, teardown_state(matches=matches), True]
+    pipe.evaluate.side_effect = [True, True, teardown_state(matches=matches), True, True]
     if matches:
         leave_device(pipe)
-        assert pipe.evaluate.call_count == 4
+        assert pipe.evaluate.call_count == 5
         pipe.wait_for_acknowledgement.assert_called_once()
     else:
         with pytest.raises(ValueError, match="live browser device no longer matches"):
@@ -360,7 +403,7 @@ def test_new_removal_requires_native_completion_and_server_proof(native_pipe, re
     pipe = native_pipe
     pipe.wait_for_acknowledgement.return_value = acknowledged
     checks = {**dict.fromkeys(REMOVAL_CHECKS, True), "Server Acknowledgement": False}
-    pipe.evaluate.side_effect = [True, True, teardown_state(), removed, checks]
+    pipe.evaluate.side_effect = [True, True, teardown_state(), True, removed, checks]
     if removed and acknowledged:
         leave_device(pipe)
     else:
@@ -375,7 +418,14 @@ def test_page_loss_cannot_erase_or_invent_server_confirmation(native_pipe, ackno
 
     pipe = native_pipe
     pipe.wait_for_acknowledgement.return_value = acknowledged
-    pipe.evaluate.side_effect = [True, True, teardown_state(), True, browser_fixture.BrowserProtocolError("Page lost")]
+    pipe.evaluate.side_effect = [
+        True,
+        True,
+        teardown_state(),
+        True,
+        True,
+        browser_fixture.BrowserProtocolError("Page lost"),
+    ]
     if acknowledged:
         leave_device(pipe)
     else:

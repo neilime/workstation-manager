@@ -500,7 +500,7 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         assert all(isinstance(value, bool) for value in checks.values())
         return result
 
-    unavailable = {"active": False, "ready": False, "matches": False, "needsNavigation": True}
+    unavailable = {"active": False, "stopped": False, "ready": False, "matches": False, "needsNavigation": True}
     pending = {**unavailable, "needsNavigation": False}
     assert pipe.evaluate(page, _START_TEARDOWN) is False
     assert teardown_snapshot() == unavailable
@@ -573,16 +573,25 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         responding = data_type == "Device Info"
         assert teardown_snapshot() == {
             "active": responding,
+            "stopped": False,
             "ready": ready,
             "matches": responding,
             "needsNavigation": False,
         }
     assert teardown_snapshot("another-device") == {
         "active": True,
+        "stopped": False,
         "ready": True,
         "matches": False,
         "needsNavigation": False,
     }
+    for state in ("Paused", "Disabled", "Active"):
+        pipe.evaluate(
+            page,
+            "window.fixtureAbout.details[0].data.find(item => item.stat_name === 'Transport State')"
+            f".stat_value = {json.dumps(state)}; true",
+        )
+        assert teardown_snapshot()["stopped"] is (state == "Disabled")
     fresh_teardown_diagnostics(pipe, page, teardown_snapshot)
     acknowledged = device_removal_acknowledgement(pipe, page)
     # A navigation discards all observer state. Recover the owned page and require

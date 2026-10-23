@@ -143,10 +143,12 @@ tag and a device-list readback; a native callback alone is insufficient.
 The observer is shared with [VM teardown](e2e-tests.md#teardown-and-reuse), which
 explicitly enables an additional proof: a fresh successful GetUpdates response
 containing the exact captured device's tombstone, server ID, and positive version.
-This allows a retried leave to verify an earlier deletion even when receiving
-that deletion stops Sync. Inactive transport and local reset state are never
-deletion evidence. Duplicate cleanup still requires its commit and device-list
-readback.
+Readback also requires a fresh native transport state of `Disabled`. If the client
+remains active, rearm the observer for commit acknowledgements only, request
+native leave, and require a new matching server commit. An earlier tombstone
+cannot confirm deletion while that client can still upload device updates.
+Inactive transport and local reset state alone are never deletion evidence.
+Duplicate cleanup still requires its commit and device-list readback.
 
 Latch acknowledgements outside page state so delayed events survive diagnostic
 page loss. Full recovery observations must obtain fresh status and counts for
