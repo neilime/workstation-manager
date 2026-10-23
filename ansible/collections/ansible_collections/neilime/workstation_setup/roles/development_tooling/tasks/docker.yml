@@ -32,6 +32,15 @@
     update_cache: "{{ workstation_manager_docker_repository is changed }}"
     install_recommends: false
 
+- name: Expose docker-compose through the installed Compose plugin
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: docker/docker-compose
+    dest: /usr/local/bin/docker-compose
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Enable the native Docker service
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.systemd_service:
