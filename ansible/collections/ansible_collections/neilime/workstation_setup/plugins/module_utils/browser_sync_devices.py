@@ -74,7 +74,7 @@ _REMOVAL_CHECKS = (
 # Device payloads and server IDs stay inside the diagnostic page. Only fixed
 # boolean checks cross the pipe. A native leave callback alone can
 # succeed after its short upload deadline even when deletion was not committed.
-_WATCH_REMOVAL = r"""(async identities => {
+_WATCH_REMOVAL = r"""(async (identities, readBack = false) => {
   const {addWebUiListener} = window.workstationSyncSettings;
   if (!Array.isArray(identities) || !identities.length
     || identities.some(identity => typeof identity !== 'string' || !identity)
@@ -94,8 +94,35 @@ _WATCH_REMOVAL = r"""(async identities => {
     since: Date.now(), requested: [], acknowledged: false,
     checks: Object.fromEntries(CHECK_NAMES.map(name => [name, false]))
   };
+  const acknowledge = () => {
+    state.acknowledged = remaining.size === 0;
+    state.checks['Server Acknowledgement'] = state.acknowledged;
+    if (state.acknowledged) {
+      clearInterval(state.timer);
+      window[REMOVAL_BINDING]('true');
+    }
+  };
   addWebUiListener('onProtocolEvent', event => {
-    if (typeof event.time !== 'number' || event.time < state.since) return;
+    if (state.acknowledged || !Number.isFinite(event.time) || event.time < state.since) return;
+    if (readBack === true && event.type === 'GetUpdates Response'
+      && event.proto?.error_code === 'SUCCESS') {
+      const details = /^Received ([1-9]\d*) update\(s\)\.(?: Some updates remain\.)?$/.exec(event.details);
+      const entries = event.proto.get_updates?.entries;
+      // A retried leave can download its already-committed tombstone before
+      // Sync disables itself. Only fresh successful native server responses
+      // for the exact captured GUID prove deletion; inactivity never does.
+      if (details && Array.isArray(entries) && entries.length === Number(details[1])) {
+        for (const entry of entries) {
+          if (entry && remaining.has(entry.client_tag_hash) && entry.deleted === true
+            && typeof entry.id_string === 'string' && entry.id_string
+            && typeof entry.version === 'string' && /^[1-9]\d*$/.test(entry.version)) {
+            state.checks['Device Tombstone'] = true;
+            remaining.delete(entry.client_tag_hash);
+          }
+        }
+        acknowledge();
+      }
+    }
     if (event.type === 'Commit Request') {
       state.checks['Commit Request'] = true;
       const entries = event.proto?.commit?.entries;
@@ -115,13 +142,8 @@ _WATCH_REMOVAL = r"""(async identities => {
           if (entry.response_type === 'SUCCESS') remaining.delete(state.requested[index]);
         });
       }
-      state.acknowledged = remaining.size === 0;
-      state.checks['Server Acknowledgement'] = state.acknowledged;
       state.requested = [];
-      if (state.acknowledged) {
-        clearInterval(state.timer);
-        window[REMOVAL_BINDING]('true');
-      }
+      acknowledge();
     }
   });
   chrome.send('setIncludeSpecifics', [false]);

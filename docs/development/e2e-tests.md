@@ -74,12 +74,22 @@ Teardown follows the shared
 Only captured fixture identities can leave; preexisting and subsequently added
 profiles are excluded. A local leave callback alone cannot authorize VM deletion.
 
-The [fixture helper](../../e2e-tests/browser_sync_fixture.py) checkpoints each
-captured profile privately before leaving. If native leave succeeds without a
-server acknowledgement, it restores that identity and Sync tracker and retries
-up to three attempts. Exhausted retries preserve the profile and manifest entry
-for another teardown attempt. Other failures stop immediately. Keep recovery
-words, device identities and raw protocol data out of diagnostics.
+The [fixture helper](../../e2e-tests/browser_sync_fixture.py) runs each attempt in
+a private copy of the captured profile and root encryption state. The original
+profile stays closed and unchanged, retaining its exact identity and tracker for
+retries. A loopback CONNECT proxy holds HTTPS connections until the native
+deletion observer is installed; browser TLS verification remains enabled.
+Removal requires a matching server commit or a fresh successful GetUpdates
+response containing that device's tombstone. Inactive Sync alone proves nothing.
+
+Unconfirmed removals and automation connection failures allow up to three
+attempts with fresh copies. Confirmed progress is written atomically before
+browser shutdown, so a later shutdown failure does not repeat an acknowledged
+removal. Copies still used by a browser are retained and block overlapping
+attempts. Other failures stop immediately; remaining identities and original
+profiles stay available in the retained VM. Keep recovery words, device
+identities and raw protocol data out of diagnostics. See
+[ADR 0005](adr/adr-0005-browser-sync-teardown.md) for the design rationale.
 
 Each device's Sync waits and retries are bounded. Teardown lets these
 finish for every captured profile; its total duration grows with the number of

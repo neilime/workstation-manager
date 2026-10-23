@@ -28,9 +28,10 @@ collection's code and guides instead.
 
 ## Records
 
-| ADR                                               | Status               | Decision                                                              |
-| ------------------------------------------------- | -------------------- | --------------------------------------------------------------------- |
-| [0001](adr-0001-workstation-toolchain.md)         | Implemented baseline | Workstation software, runtime ownership, and validation requirements. |
-| [0002](adr-0002-ai-tools-setup-and-management.md) | Accepted             | Provider-agnostic setup and management of AI skills and MCP servers.  |
-| [0003](adr-0003-desktop-system-monitor.md)        | Accepted             | Managed GNOME top-bar system monitor indicator (Vitals).              |
-| [0004](adr-0004-documentation-boundaries.md)      | Accepted             | End user readmes, current guides, and preserved ADR history.          |
+| ADR                                               | Status               | Decision                                                                  |
+| ------------------------------------------------- | -------------------- | ------------------------------------------------------------------------- |
+| [0001](adr-0001-workstation-toolchain.md)         | Implemented baseline | Workstation software, runtime ownership, and validation requirements.     |
+| [0002](adr-0002-ai-tools-setup-and-management.md) | Accepted             | Provider-agnostic setup and management of AI skills and MCP servers.      |
+| [0003](adr-0003-desktop-system-monitor.md)        | Accepted             | Managed GNOME top-bar system monitor indicator (Vitals).                  |
+| [0004](adr-0004-documentation-boundaries.md)      | Accepted             | End user readmes, current guides, and preserved ADR history.              |
+| [0005](adr-0005-browser-sync-teardown.md)         | Accepted             | Verify captured Sync device removal through isolated, resumable teardown. |
