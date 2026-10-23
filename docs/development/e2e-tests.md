@@ -81,6 +81,12 @@ up to three attempts. Exhausted retries preserve the profile and manifest entry
 for another teardown attempt. Other failures stop immediately. Keep recovery
 words, device identities and raw protocol data out of diagnostics.
 
+Each device's Sync waits and retries are bounded. Teardown lets these
+finish for every captured profile; its total duration grows with the number of
+devices and retries. The SSH wrapper detects an unresponsive connection, and CI
+retains its job timeout. Connection failures and native operation failures retain
+the VM.
+
 Use separate Sync chains for concurrent runs. Setup removes duplicate devices
 matching its own name, so shared names and chains can interfere with another run.
 VM names are not workstation cleanup defaults. Use `VM_NAME` to select an instance

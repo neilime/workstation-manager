@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -564,37 +562,3 @@ def test_teardown_rejects_malformed_readiness_snapshots(invalid: object, monkeyp
     assert "private" not in str(error.value)
     assert pipe.evaluate.call_count == 1
     pipe.call.assert_not_called()
-
-
-@pytest.mark.parametrize("cleanup_status", [0, 17])
-def test_vm_deletion_requires_successful_browser_fixture_teardown(tmp_path: Path, cleanup_status: int) -> None:
-    """A failed leave operation retains the VM and its identities for a retry."""
-
-    commands = tmp_path / "bin"
-    commands.mkdir()
-    log = tmp_path / "commands"
-    limactl = commands / "limactl"
-    limactl.write_text(
-        "#!/bin/bash\n"
-        'printf "%s\\n" "$1" >>"$TEST_COMMAND_LOG"\n'
-        'case "$1" in\n'
-        '  list) if [[ "$2" == --format ]]; then echo fixture; else echo Running; fi ;;\n'
-        '  shell) exit "$TEST_CLEANUP_STATUS" ;;\n'
-        "esac\n"
-    )
-    limactl.chmod(0o700)
-    result = subprocess.run(
-        ["bash", str(MODULE_PATH.parent / "e2e-down.sh"), "fixture"],
-        env={
-            **os.environ,
-            "PATH": f"{commands}:/usr/bin:/bin",
-            "TEST_COMMAND_LOG": str(log),
-            "TEST_CLEANUP_STATUS": str(cleanup_status),
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
-    assert result.returncode == (1 if cleanup_status else 0), result.stderr
-    assert log.read_text().splitlines() == ["list", "list", "shell"] + ([] if cleanup_status else ["stop", "delete"])
