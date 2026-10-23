@@ -18,6 +18,7 @@ SPEC.loader.exec_module(browser_fixture)
 # Build synthetic diagnostics with the implementation's fixed, private allowlist.
 TEARDOWN_CHECKS = browser_fixture._TEARDOWN_CHECKS  # pylint: disable=protected-access
 REMOVAL_CHECKS = browser_fixture._REMOVAL_CHECKS  # pylint: disable=protected-access
+PROTOCOL_BINDING = browser_fixture._PROTOCOL_BINDING  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)
@@ -268,12 +269,19 @@ def make_native_pipe(monkeypatch):
 
     monkeypatch.setattr(browser_fixture, "NativeSync", mock.Mock())
     pipe = mock.Mock()
+    pipe.forwarded = mock.Mock(return_value=True)
     pipe.readback = mock.Mock(return_value=False)
     pipe.committed = mock.Mock(return_value=False)
-    pipe.watch_acknowledgement.side_effect = lambda _session, binding: (
-        pipe.readback if binding == "workstationDeviceRemoved" else pipe.committed
-    )
-    pipe.wait_for_acknowledgement.return_value = True
+    pipe.commit_response = mock.Mock(return_value=True)
+    pipe.watch_acknowledgement.side_effect = lambda _session, binding: {
+        PROTOCOL_BINDING: pipe.forwarded,
+        "workstationDeviceRemoved": pipe.readback,
+        "workstationDeviceRemovedCommit": pipe.committed,
+    }[binding]
+    pipe.wait_for_acknowledgement.side_effect = lambda _session, binding, **_kwargs: {
+        PROTOCOL_BINDING: pipe.forwarded,
+        "workstationDeviceRemovedCommit": pipe.commit_response,
+    }[binding]()
     return pipe
 
 
@@ -299,7 +307,15 @@ def test_observer_is_installed_before_sync_can_receive_a_server_tombstone(native
 
     def release():
         assert pipe.evaluate.call_count == 2
-        assert not pipe.wait_for_acknowledgement.called
+        pipe.watch_acknowledgement.assert_has_calls(
+            [
+                mock.call(pipe.page.return_value, PROTOCOL_BINDING),
+                mock.call(pipe.page.return_value, "workstationDeviceRemoved"),
+            ]
+        )
+        pipe.wait_for_acknowledgement.assert_called_once_with(pipe.page.return_value, PROTOCOL_BINDING, timeout=30)
+        pipe.forwarded.assert_called_once()
+        pipe.commit_response.assert_not_called()
         acknowledged.return_value = True
 
     network.release.side_effect = release
@@ -309,6 +325,25 @@ def test_observer_is_installed_before_sync_can_receive_a_server_tombstone(native
     assert all("SyncSetupReset" not in call.args[1] for call in pipe.evaluate.call_args_list)
 
 
+def test_missing_backend_protocol_forwarding_keeps_network_gated(native_pipe, monkeypatch) -> None:
+    """Page listeners cannot authorize server traffic until the Sync thread forwards native events."""
+
+    pipe = native_pipe
+    pipe.evaluate.side_effect = [True, True]
+    pipe.forwarded.return_value = False
+    network = mock.Mock()
+    reset = mock.Mock()
+    monkeypatch.setattr(browser_fixture, "reset_device", reset)
+    with pytest.raises(browser_fixture.BrowserProtocolError, match="did not enable native protocol forwarding"):
+        leave_device(pipe, timeout=1, network=network)
+    pipe.wait_for_acknowledgement.assert_called_once_with(pipe.page.return_value, PROTOCOL_BINDING, timeout=1)
+    network.release.assert_not_called()
+    reset.assert_not_called()
+    pipe.readback.assert_not_called()
+    pipe.commit_response.assert_not_called()
+    assert pipe.evaluate.call_count == 2
+
+
 @pytest.mark.parametrize("committed", [False, True])
 def test_active_client_requires_new_commit_proof_after_downloading_its_tombstone(native_pipe, committed) -> None:
     """A pending local update can recreate a deleted device, invalidating its earlier readback."""
@@ -316,15 +351,18 @@ def test_active_client_requires_new_commit_proof_after_downloading_its_tombstone
     pipe = native_pipe
     pipe.readback.return_value = True
     pipe.evaluate.side_effect = [True, True, teardown_state(), True, True, dict.fromkeys(REMOVAL_CHECKS, False)]
-    pipe.wait_for_acknowledgement.return_value = committed
+    pipe.commit_response.return_value = committed
     if committed:
         leave_device(pipe)
     else:
         with pytest.raises(browser_fixture.UnconfirmedDeviceRemoval, match="did not confirm removal"):
             leave_device(pipe)
     bindings = [call.args[1] for call in pipe.watch_acknowledgement.call_args_list]
-    assert bindings == ["workstationDeviceRemoved", "workstationDeviceRemovedCommit"]
-    pipe.wait_for_acknowledgement.assert_called_once_with(pipe.page.return_value, bindings[-1])
+    assert bindings == [PROTOCOL_BINDING, "workstationDeviceRemoved", "workstationDeviceRemovedCommit"]
+    assert pipe.wait_for_acknowledgement.call_args_list == [
+        mock.call(pipe.page.return_value, PROTOCOL_BINDING, timeout=30),
+        mock.call(pipe.page.return_value, bindings[-1]),
+    ]
     assert "SyncSetupReset" in pipe.evaluate.call_args_list[4].args[1]
 
 
@@ -339,7 +377,8 @@ def test_server_tombstone_requires_a_fresh_disabled_transport(native_pipe, monke
     pipe.evaluate.side_effect = [True, True, teardown_state(stopped=True, failed=("Status Response",))]
     with pytest.raises(ValueError, match="could not verify Sync readiness"):
         leave_device(pipe, timeout=1)
-    pipe.wait_for_acknowledgement.assert_not_called()
+    pipe.wait_for_acknowledgement.assert_called_once_with(pipe.page.return_value, PROTOCOL_BINDING, timeout=1)
+    pipe.commit_response.assert_not_called()
 
 
 @pytest.mark.parametrize("acknowledged", [False, True])
@@ -377,6 +416,7 @@ def test_missing_observer_keeps_network_gated(native_pipe, installed) -> None:
     with pytest.raises(browser_fixture.BrowserProtocolError, match="could not observe"):
         leave_device(pipe, network=network)
     network.release.assert_not_called()
+    pipe.wait_for_acknowledgement.assert_not_called()
 
 
 @pytest.mark.parametrize("matches", [False, True])
@@ -388,12 +428,13 @@ def test_native_reset_requires_an_active_exact_captured_identity(native_pipe, ma
     if matches:
         leave_device(pipe)
         assert pipe.evaluate.call_count == 5
-        pipe.wait_for_acknowledgement.assert_called_once()
+        pipe.commit_response.assert_called_once()
     else:
         with pytest.raises(ValueError, match="live browser device no longer matches"):
             leave_device(pipe)
         assert pipe.evaluate.call_count == 3
-        pipe.wait_for_acknowledgement.assert_not_called()
+        pipe.commit_response.assert_not_called()
+    pipe.forwarded.assert_called_once()
 
 
 @pytest.mark.parametrize("removed,acknowledged", [(True, False), (False, True), (True, True)])
@@ -401,7 +442,7 @@ def test_new_removal_requires_native_completion_and_server_proof(native_pipe, re
     """A local reset alone cannot certify that the server removed the captured device."""
 
     pipe = native_pipe
-    pipe.wait_for_acknowledgement.return_value = acknowledged
+    pipe.commit_response.return_value = acknowledged
     checks = {**dict.fromkeys(REMOVAL_CHECKS, True), "Server Acknowledgement": False}
     pipe.evaluate.side_effect = [True, True, teardown_state(), True, removed, checks]
     if removed and acknowledged:
@@ -417,7 +458,7 @@ def test_page_loss_cannot_erase_or_invent_server_confirmation(native_pipe, ackno
     """IPC-latched proof survives page globals; unavailable diagnostics remain unverified."""
 
     pipe = native_pipe
-    pipe.wait_for_acknowledgement.return_value = acknowledged
+    pipe.commit_response.return_value = acknowledged
     pipe.evaluate.side_effect = [
         True,
         True,
@@ -455,7 +496,8 @@ def test_unverified_readiness_never_resets_a_device(native_pipe, monkeypatch, fa
     with pytest.raises(ValueError, match="could not verify Sync readiness"):
         leave_device(pipe, timeout=1)
     assert pipe.evaluate.call_count == 3
-    pipe.wait_for_acknowledgement.assert_not_called()
+    pipe.wait_for_acknowledgement.assert_called_once_with(pipe.page.return_value, PROTOCOL_BINDING, timeout=1)
+    pipe.commit_response.assert_not_called()
 
 
 @pytest.mark.parametrize("invalid", [None, {"private-device": False}, dict.fromkeys(REMOVAL_CHECKS, "private-value")])

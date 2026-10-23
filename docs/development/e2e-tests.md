@@ -77,8 +77,11 @@ profiles are excluded. A local leave callback alone cannot authorize VM deletion
 The [fixture helper](../../e2e-tests/browser_sync_fixture.py) runs each attempt in
 a private copy of the captured profile and root encryption state. The original
 profile stays closed and unchanged, retaining its exact identity and tracker for
-retries. A loopback CONNECT proxy holds HTTPS connections until the native
-deletion observer is installed; browser TLS verification remains enabled.
+retries. Before allowing server contact, a loopback CONNECT proxy immediately
+rejects tunnel requests locally. The fixture waits for a native protocol event
+proving that backend diagnostic forwarding is active, then permits browser
+retries. This prevents network waits from blocking observer registration;
+browser TLS verification remains enabled.
 Removal requires a matching server commit, or a fresh successful GetUpdates
 response containing that device's tombstone together with native confirmation
 that Sync is disabled. An active client must perform native leave and obtain a

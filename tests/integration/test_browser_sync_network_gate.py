@@ -27,8 +27,8 @@ def connect_proxy(gate) -> socket.socket:
     return socket.create_connection((endpoint.hostname, endpoint.port), timeout=1)
 
 
-def test_gate_defers_connections_then_relays_opaque_bytes(monkeypatch, capsys) -> None:
-    """No upstream socket opens before release; afterwards TLS bytes pass unchanged both ways."""
+def test_gate_rejects_connections_until_release_then_relays_opaque_bytes(monkeypatch, capsys) -> None:
+    """Closed-gate requests finish without upstream traffic; retries after release relay opaque bytes."""
 
     threads = set(threading.enumerate())
     with socket.socket() as server:
@@ -40,10 +40,16 @@ def test_gate_defers_connections_then_relays_opaque_bytes(monkeypatch, capsys) -
             monkeypatch.setattr(gate, "connect", connector)
             with connect_proxy(gate) as client:
                 client.sendall(b"CONNECT sync.example.invalid:443 HTTP/1.1\r\nHost: sync.example.invalid:443\r\n\r\n")
+                assert client.recv(4096) == (
+                    b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                assert client.recv(4096) == b""
                 with pytest.raises(TimeoutError):
                     server.accept()
                 connector.assert_not_called()
-                gate.release()
+            gate.release()
+            with connect_proxy(gate) as client:
+                client.sendall(b"CONNECT sync.example.invalid:443 HTTP/1.1\r\nHost: sync.example.invalid:443\r\n\r\n")
                 assert client.recv(4096) == b"HTTP/1.1 200 Connection Established\r\n\r\n"
                 upstream, _address = server.accept()
                 with upstream:
@@ -82,16 +88,25 @@ def test_gate_rejects_unsupported_requests_without_connecting(request_line, monk
     assert capsys.readouterr() == ("", "")
 
 
-@pytest.mark.parametrize("headers_complete", [False, True])
-def test_gate_shutdown_closes_waiting_connections_and_joins_threads(headers_complete) -> None:
-    """Closing the gate interrupts partial headers and pending CONNECTs without waiting for their deadlines."""
+@pytest.mark.parametrize("relaying", [False, True])
+def test_gate_shutdown_closes_connections_and_joins_threads(relaying, monkeypatch) -> None:
+    """Closing the gate interrupts partial headers and open tunnels without waiting for their deadlines."""
 
     threads = set(threading.enumerate())
     started = time.monotonic()
     with ExitStack() as connections:
         with network_gate.SyncNetworkGate() as gate:
             client = connections.enter_context(connect_proxy(gate))
-            client.sendall(b"CONNECT sync.example.invalid:443 HTTP/1.1" + (b"\r\n\r\n" if headers_complete else b""))
+            if relaying:
+                upstream, peer = socket.socketpair()
+                connections.enter_context(upstream)
+                connections.enter_context(peer)
+                monkeypatch.setattr(gate, "connect", lambda _host: upstream)
+                gate.release()
+                client.sendall(b"CONNECT sync.example.invalid:443 HTTP/1.1\r\n\r\n")
+                assert client.recv(4096) == b"HTTP/1.1 200 Connection Established\r\n\r\n"
+            else:
+                client.sendall(b"CONNECT sync.example.invalid:443 HTTP/1.1")
         try:
             assert client.recv(4096) == b""
         except ConnectionResetError:
