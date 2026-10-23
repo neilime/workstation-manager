@@ -17,6 +17,10 @@ device's tombstone can [reset Sync immediately][self-deletion], before an
 observer attached after startup sees it. Waiting longer for active Sync does not
 resolve that observation race.
 
+Chromium can [prefer a pending local update over a remote deletion][conflict].
+An active client can therefore recreate its device after receiving a tombstone;
+that readback requires confirmation that native Sync has stopped.
+
 These upstream sources were inspected on 2026-10-23. They explain the design;
 they are not evidence of a successful current VM test.
 
@@ -32,9 +36,14 @@ changing certificate verification, following [Chromium's proxy contract][proxy].
 
 Accept either the existing matched commit acknowledgement or, explicitly for
 teardown, a fresh successful GetUpdates response containing the captured
-device's deleted entity, client tag, server ID, and positive version. The
-[Sync server retains the client tag on tombstones][server]. Local inactivity,
-empty device lists, and reset callbacks remain insufficient.
+device's deleted entity, client tag, server ID, and positive version together
+with fresh native confirmation that transport is `Disabled`. The
+[Sync server retains the client tag on tombstones][server]. If transport remains
+active, rearm a separate observer for commit acknowledgements only and require
+a new native reset and matching server commit. This prevents an earlier
+tombstone from certifying removal while pending local updates could restore
+the device. Local inactivity, empty device lists, and reset callbacks alone
+remain insufficient.
 
 Atomically persist each confirmed removal before closing its browser. Retain
 copies with live writers and refuse overlapping attempts. A shutdown failure
@@ -65,3 +74,4 @@ and interruption safety. Live server behavior still requires the complete VM flo
 [self-deletion]: https://github.com/brave/brave-core/blob/master/browser/sync/brave_sync_service_impl_delegate.cc
 [proxy]: https://github.com/chromium/chromium/blob/main/net/docs/proxy.md#http-proxy-scheme
 [server]: https://github.com/brave/go-sync/blob/master/datastore/sync_entity.go
+[conflict]: https://github.com/chromium/chromium/blob/main/components/sync/model/data_type_sync_bridge.cc

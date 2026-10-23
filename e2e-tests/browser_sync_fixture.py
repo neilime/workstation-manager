@@ -31,6 +31,8 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 from browser_sync_network_gate import SyncNetworkGate
 from browser_sync_teardown_state import teardown_profile, write_private_json
 
+_COMMIT_BINDING = "workstationDeviceRemovedCommit"
+
 _TEARDOWN_CHECKS = (
     "Diagnostic Page",
     "Native Callbacks",
@@ -81,7 +83,7 @@ _TEARDOWN_STATE = (
     checks['Readiness Observer'] = !!window.workstationSync?.about || START_TEARDOWN;
   }
   if (!checks['Readiness Observer']) {
-    return {active: false, ready: false, matches: false,
+    return {active: false, stopped: false, ready: false, matches: false,
       needsNavigation: !expectedPage || loaded, checks};
   }
   const response = await BOUNDED_ABOUT(timeoutMs, window.workstationSyncSettings);
@@ -109,7 +111,8 @@ _TEARDOWN_STATE = (
   const ready = Object.entries(checks).every(([name, passed]) => name === 'Transport State' || passed);
   if (checks['Status Response'] && active && stats['Sync Cycle Ongoing'] === false && !ready)
     chrome.send('triggerRefresh');
-  return {active, ready, matches: stats['Sync Client ID'] === identity, needsNavigation: false, checks};
+  return {active, stopped: stats['Transport State'] === 'Disabled', ready,
+    matches: stats['Sync Client ID'] === identity, needsNavigation: false, checks};
 })""".replace("START_TEARDOWN", _START_TEARDOWN)
     .replace("BOUNDED_ABOUT", _GET_ABOUT)
     .replace("CHECK_NAMES", json.dumps(_TEARDOWN_CHECKS))
@@ -117,8 +120,8 @@ _TEARDOWN_STATE = (
 
 # Native leave has a short upload deadline. Observe the commit without starting
 # competing downloads; the fixture enables Chromium's immediate Sync scheduling.
-_WATCH_TEARDOWN_REMOVAL = r"""(async identities => {
-  const observed = await WATCH_REMOVAL(identities, true);
+_WATCH_TEARDOWN_REMOVAL = r"""(async (identities, readBack = true, binding) => {
+  const observed = await WATCH_REMOVAL(identities, readBack, binding);
   if (observed) clearInterval(window.workstationDeviceRemoval.timer);
   return observed;
 })""".replace("WATCH_REMOVAL", _WATCH_REMOVAL)
@@ -201,28 +204,33 @@ def wait_for_removal_readiness(
     checks = dict.fromkeys(_TEARDOWN_CHECKS, False)
     while time.monotonic() < deadline:
         snapshot_timeout = min(30, max(0.001, deadline - time.monotonic()))
-        try:
-            state = pipe.evaluate(
-                session,
-                f"{_TEARDOWN_STATE}({json.dumps(identity)}, {int(snapshot_timeout * 1000)})",
-                timeout=snapshot_timeout + 5,
-            )
-        except BrowserProtocolError:
-            if acknowledged():
-                return True
-            raise
-        if acknowledged():
-            return True
-        if not isinstance(state, dict) or set(state) != {"active", "ready", "matches", "needsNavigation", "checks"}:
+        state = pipe.evaluate(
+            session,
+            f"{_TEARDOWN_STATE}({json.dumps(identity)}, {int(snapshot_timeout * 1000)})",
+            timeout=snapshot_timeout + 5,
+        )
+        if not isinstance(state, dict) or set(state) != {
+            "active",
+            "stopped",
+            "ready",
+            "matches",
+            "needsNavigation",
+            "checks",
+        }:
             raise ValueError("Brave returned unsupported teardown diagnostics; the test device identity was retained")
         checks = state["checks"]
         if (
-            any(not isinstance(state[name], bool) for name in ("active", "ready", "matches", "needsNavigation"))
+            any(
+                not isinstance(state[name], bool)
+                for name in ("active", "stopped", "ready", "matches", "needsNavigation")
+            )
             or not isinstance(checks, dict)
             or set(checks) != set(_TEARDOWN_CHECKS)
             or any(not isinstance(value, bool) for value in checks.values())
         ):
             raise ValueError("Brave returned unsupported teardown diagnostics; the test device identity was retained")
+        if acknowledged() and state["stopped"] and checks["Status Response"]:
+            return True
         if state["needsNavigation"]:
             # Reopening this page after allowing downloads could miss the very
             # tombstone we need. Retry with a new gated copy instead.
@@ -259,12 +267,25 @@ def leave_device(
     network.release()
     if wait_for_removal_readiness(pipe, session, identity, acknowledged, timeout):
         return
+    # A pending local Device Info update can win a conflict with a downloaded
+    # tombstone. An active client therefore needs a new deletion and new proof;
+    # an earlier readback must never satisfy this reset's acknowledgement.
+    committed = pipe.watch_acknowledgement(session, _COMMIT_BINDING)
+    if (
+        pipe.evaluate(
+            session,
+            f"{_WATCH_TEARDOWN_REMOVAL}({json.dumps([identity])}, false, {json.dumps(_COMMIT_BINDING)})",
+            timeout=15,
+        )
+        is not True
+    ):
+        raise BrowserProtocolError("Brave could not observe the new device deletion; the test identity was retained")
     # This native operation takes no device ID: it leaves only the selected
     # profile's current device, whose freshly-created identity was checked above.
     try:
         removed = reset_device(pipe, native.settings, identity)
     except BrowserProtocolError:
-        if acknowledged():
+        if committed():
             return
         raise
     if removed is not True:
@@ -272,7 +293,7 @@ def leave_device(
     # The settings callback and diagnostic event arrive from separate targets.
     # Keep the binding installed until its event arrives; confirmation must not
     # depend on page globals that leave may discard. The pipe closes every target.
-    if pipe.wait_for_acknowledgement(session, _REMOVAL_BINDING) is not True:
+    if pipe.wait_for_acknowledgement(session, _COMMIT_BINDING) is not True:
         raise UnconfirmedDeviceRemoval(
             "The Sync server did not confirm removal of the captured test device; "
             f"incomplete checks: {incomplete_removal_checks(pipe, session)}"

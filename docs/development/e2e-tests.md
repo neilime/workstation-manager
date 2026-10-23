@@ -79,8 +79,10 @@ a private copy of the captured profile and root encryption state. The original
 profile stays closed and unchanged, retaining its exact identity and tracker for
 retries. A loopback CONNECT proxy holds HTTPS connections until the native
 deletion observer is installed; browser TLS verification remains enabled.
-Removal requires a matching server commit or a fresh successful GetUpdates
-response containing that device's tombstone. Inactive Sync alone proves nothing.
+Removal requires a matching server commit, or a fresh successful GetUpdates
+response containing that device's tombstone together with native confirmation
+that Sync is disabled. An active client must perform native leave and obtain a
+new commit acknowledgement. Inactive Sync alone proves nothing.
 
 Unconfirmed removals and automation connection failures allow up to three
 attempts with fresh copies. Confirmed progress is written atomically before
