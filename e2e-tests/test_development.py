@@ -235,7 +235,6 @@ def test_git_project_report_command_and_schedule_are_managed(host) -> None:
 
     # Arrange
     user_home = host.check_output("printf '%s' \"$HOME\"")
-    report_command = f"{user_home}/.local/bin/workstation-manager-git-project-report"
     helper_script = host.file(f"{user_home}/.local/share/workstation-manager/git-project-report.py")
     activator_script = host.file(f"{user_home}/.local/bin/workstation-manager-git-project-report-activate-timer")
     service_unit = host.file(f"{user_home}/.config/systemd/user/workstation-manager-git-project-report.service")
@@ -248,7 +247,6 @@ def test_git_project_report_command_and_schedule_are_managed(host) -> None:
     activation_file = host.file(f"{user_home}/.local/share/dbus-1/services/{application_id}.service")
 
     # Act
-    report_result = host.run(report_command)
     timer_link_result = host.run("test -L %s", timer_link)
 
     # Assert
@@ -266,7 +264,19 @@ def test_git_project_report_command_and_schedule_are_managed(host) -> None:
     assert service_unit.exists
     assert timer_unit.contains(r"^OnCalendar=daily$")
     assert timer_unit.contains(r"^Persistent=true$")
+
+
+def test_git_project_report_summarizes_restored_changes(host, workstation_config) -> None:
+    """The installed command summarizes restored local work with an accurate file count."""
+    user_home = workstation_config["user"]["home"]
+    project = workstation_config["user"]["projects_directory"] + "/client-restore"
+
+    report_result = host.run(f"{user_home}/.local/bin/workstation-manager-git-project-report")
+    status = host.check_output("git -C %s status --porcelain --untracked-files=all", project)
+    change_count = len(status.splitlines())
+
     assert report_result.succeeded
-    assert "client-restore [main]" in report_result.stdout
-    assert "local-note.txt" in report_result.stdout
-    assert "tracked.txt" in report_result.stdout
+    assert change_count >= 2
+    assert f"- client-restore [main]: {change_count} changed files" in report_result.stdout.splitlines()
+    assert "local-note.txt" not in report_result.stdout
+    assert "tracked.txt" not in report_result.stdout

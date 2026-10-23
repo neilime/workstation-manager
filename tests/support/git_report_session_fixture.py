@@ -104,21 +104,25 @@ class NotificationSession:
         assert not owner.unpack()[0], "The scheduled sender must exit before the click"
         application_id, notification_id, payload = self.notifications[0]
         assert application_id == APPLICATION_ID and notification_id == "daily-report"
-        assert "+1 more repositories" in payload["body"]
+        assert payload["body"].splitlines() == [
+            *(f"project-{index} [main]: 1 changed file" for index in range(5)),
+            "+1 more repositories",
+        ]
         assert payload["default-action"] == "app.open-report"
-        assert payload["buttons"] == [{"label": "Open full report", "action": "app.open-report"}]
+        assert payload["buttons"] == [{"label": "Open report", "action": "app.open-report"}]
         self._invoke(payload["default-action"])
-        self._wait(opened.exists)
+        self._wait(lambda: opened.exists() and opened.read_text().count("\n") == 1)
         viewed = json.loads(opened.read_text().splitlines()[0])
-        assert viewed["report"] == output, "The click must open the full saved report"
-        assert "project-5 [main]" in viewed["report"] and "uncommitted.txt" in viewed["report"]
+        assert viewed["report"] == output, "The click must open the saved report"
+        assert "project-5 [main]: 1 changed file" in viewed["report"]
+        assert "uncommitted.txt" not in viewed["report"]
         self._invoke(payload["buttons"][0]["action"])
-        self._wait(lambda: len(opened.read_text().splitlines()) == 2)
+        self._wait(lambda: opened.read_text().count("\n") == 2)
         (self.home / "projects/project-5/another-note.txt").write_text("More local work\n")
         updated = self._publish()
-        assert "another-note.txt" in updated
+        assert "project-5 [main]: 2 changed files" in updated
         self._invoke(self.notifications[-1][2]["default-action"])
-        self._wait(lambda: len(opened.read_text().splitlines()) == 3)
+        self._wait(lambda: opened.read_text().count("\n") == 3)
         assert json.loads(opened.read_text().splitlines()[-1])["report"] == updated
         Path(viewed["path"]).unlink()
         self._invoke(payload["default-action"])

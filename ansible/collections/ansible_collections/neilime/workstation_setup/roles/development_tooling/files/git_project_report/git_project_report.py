@@ -62,15 +62,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--notify",
         action="store_true",
-        help="Save the full report and show a clickable desktop notification after printing it.",
+        help="Save the report and show a clickable desktop notification after printing it.",
     )
     return parser.parse_args(argv)
-
-
-def display_path(relative_path: str) -> str:
-    """Normalize the root-relative path shown in reports."""
-
-    return "." if relative_path == "." else relative_path
 
 
 def discover_git_repositories(projects_directory: Path) -> list[Path]:
@@ -177,8 +171,15 @@ def scan_projects_directory(projects_directory: Path) -> ScanReport:
     )
 
 
+def render_repository_summary(repository: RepositoryStatus) -> str:
+    """Summarize a repository in one line without listing changed paths."""
+
+    file_label = "file" if repository.change_count == 1 else "files"
+    return f"{repository.relative_path} [{repository.branch}]: {repository.change_count} changed {file_label}"
+
+
 def render_report(report: ScanReport) -> str:
-    """Render the terminal-friendly report text."""
+    """Render one summary line per repository with local changes."""
 
     lines = [f"Git project report for {report.projects_directory}"]
 
@@ -192,14 +193,13 @@ def render_report(report: ScanReport) -> str:
 
     if report.dirty_repositories:
         lines.append(
-            f"{len(report.dirty_repositories)} of {report.repository_count} "
-            "Git repositories have local work in progress."
+            f"{len(report.dirty_repositories)} of {report.repository_count} Git repositories have local changes."
         )
-        for repository in report.dirty_repositories:
-            lines.append("")
-            lines.append(f"- {display_path(repository.relative_path)} [{repository.branch}]")
-            for status_line in repository.status_lines:
-                lines.append(f"  {status_line}")
+        lines.append("")
+        lines.extend(f"- {render_repository_summary(repository)}" for repository in report.dirty_repositories)
+    elif report.errors:
+        inspected_count = report.repository_count - len(report.errors)
+        lines.append(f"No local changes found in {inspected_count} inspected Git repositories.")
     else:
         lines.append(f"All {report.repository_count} Git repositories are clean.")
 
@@ -207,7 +207,7 @@ def render_report(report: ScanReport) -> str:
         lines.append("")
         lines.append("Scan errors:")
         for error in report.errors:
-            lines.append(f"- {display_path(error.relative_path)}: {error.message}")
+            lines.append(f"- {error.relative_path}: {error.message}")
 
     return "\n".join(lines)
 
@@ -243,15 +243,13 @@ def build_notification(report: ScanReport) -> tuple[str, str]:
 
     body_lines: list[str] = []
     for repository in report.dirty_repositories[:5]:
-        body_lines.append(
-            f"{display_path(repository.relative_path)} [{repository.branch}] - {repository.change_count} changes"
-        )
+        body_lines.append(render_repository_summary(repository))
     remaining_repositories = len(report.dirty_repositories) - min(len(report.dirty_repositories), 5)
     if remaining_repositories > 0:
         body_lines.append(f"+{remaining_repositories} more repositories")
 
     for error in report.errors[:3]:
-        body_lines.append(f"{display_path(error.relative_path)} - {error.message}")
+        body_lines.append(f"{error.relative_path} - {error.message}")
     remaining_errors = len(report.errors) - min(len(report.errors), 3)
     if remaining_errors > 0:
         body_lines.append(f"+{remaining_errors} more scan errors")
@@ -263,7 +261,7 @@ def build_notification(report: ScanReport) -> tuple[str, str]:
 
 
 def send_notification(report: ScanReport) -> int:
-    """Save the full report and send a notification with a persistent open action."""
+    """Save the report and send a notification with a persistent open action."""
 
     title, body = build_notification(report)
     notify_result = subprocess.run(

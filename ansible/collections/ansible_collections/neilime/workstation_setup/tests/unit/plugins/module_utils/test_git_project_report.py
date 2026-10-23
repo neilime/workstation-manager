@@ -109,6 +109,54 @@ def test_render_report_mentions_missing_projects_directory(tmp_path) -> None:
     )
 
 
+def test_render_report_uses_one_summary_line_per_dirty_repository(tmp_path) -> None:
+    """Report size depends on dirty repository count, not the number of changed files."""
+    module = load_script_module()
+    report = module.ScanReport(
+        projects_directory=tmp_path,
+        projects_directory_exists=True,
+        repository_count=3,
+        dirty_repositories=[
+            module.RepositoryStatus("team/small", "main", [" M tracked.txt"]),
+            module.RepositoryStatus("team/large", "feature", [f"?? file-{index}.txt" for index in range(1000)]),
+        ],
+        errors=[],
+    )
+
+    assert module.render_report(report).splitlines() == [
+        f"Git project report for {tmp_path}",
+        "2 of 3 Git repositories have local changes.",
+        "",
+        "- team/small [main]: 1 changed file",
+        "- team/large [feature]: 1000 changed files",
+    ]
+
+
+@pytest.mark.parametrize("has_local_changes", [False, True])
+def test_render_report_preserves_scan_errors_without_claiming_all_clean(tmp_path, has_local_changes) -> None:
+    """Inspection failures stay actionable even when no local changes were found."""
+    module = load_script_module()
+    report = module.ScanReport(
+        projects_directory=tmp_path,
+        projects_directory_exists=True,
+        repository_count=3,
+        dirty_repositories=[module.RepositoryStatus("changed", "main", [" M tracked.txt"])]
+        if has_local_changes
+        else [],
+        errors=[module.ScanError("unreadable", "Permission denied")],
+    )
+
+    rendered = module.render_report(report)
+
+    if has_local_changes:
+        assert "1 of 3 Git repositories have local changes." in rendered
+        assert "- changed [main]: 1 changed file" in rendered
+    else:
+        assert "No local changes found in 2 inspected Git repositories." in rendered
+    assert rendered.endswith("\n\nScan errors:\n- unreadable: Permission denied")
+    assert "are clean" not in rendered
+
+
 def test_notification_failures_are_reported_to_the_caller(tmp_path, monkeypatch, capsys) -> None:
     """A notification failure must fail the scheduled command and explain the error."""
     module = load_script_module()

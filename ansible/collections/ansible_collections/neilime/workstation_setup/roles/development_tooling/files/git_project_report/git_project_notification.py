@@ -12,7 +12,7 @@ APPLICATION_ID = "io.github.neilime.WorkstationGitReport"
 
 
 class GitReportNotifications:
-    """Keep the full report available after the scheduled sender has exited."""
+    """Keep the report available after the scheduled sender has exited."""
 
     def __init__(self, state_home: Path) -> None:
         self.path = state_home / "workstation-manager/git-project-report/latest.txt"
@@ -58,7 +58,7 @@ class GitReportNotifications:
             notification = Gio.Notification.new(title)
             notification.set_body(body)
             notification.set_default_action("app.open-report")
-            notification.add_button("Open full report", "app.open-report")
+            notification.add_button("Open report", "app.open-report")
             application.send_notification("daily-report", notification)
 
         open_action = Gio.SimpleAction.new("open-report", None)
