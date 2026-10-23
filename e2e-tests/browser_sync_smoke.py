@@ -39,8 +39,6 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (  # noqa: E402
     _REMOVAL_BINDING,
-    _REMOVAL_CHECKS,
-    _WATCH_REMOVAL,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
     DesktopSession,
@@ -54,6 +52,10 @@ from browser_sync_fixture import (  # noqa: E402
     BrowserSyncFixture,
     UnconfirmedDeviceRemoval,
     reset_device,
+)
+from browser_sync_removal_smoke import (  # noqa: E402
+    device_removal_acknowledgement,
+    device_removal_readback,
 )
 
 # pylint: enable=wrong-import-position
@@ -459,90 +461,6 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     )
 
 
-def device_removal_acknowledgement(pipe: BrowserPipe, page: str) -> Callable[[], bool]:
-    """Only a fresh successful commit for the captured device proves server removal."""
-
-    acknowledged = pipe.watch_acknowledgement(page, _REMOVAL_BINDING)
-    assert acknowledged() is False
-    pipe.evaluate(
-        page,
-        """(() => {
-          const send = chrome.send;
-          chrome.send = (method, args) => {
-            if (method === 'getAllNodes') throw new Error('Teardown must not query browser data');
-            send(method, args);
-          };
-          window.fixtureRefreshes = 0;
-          return true;
-        })()""",
-    )
-    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}([])") is False
-    assert pipe.evaluate(page, f"{_WATCH_REMOVAL}(['captured-device', 'second-device'])") is True
-    assert pipe.evaluate(page, "window.workstationDeviceRemoval.checks") == dict.fromkeys(_REMOVAL_CHECKS, False)
-    # Exercise the refresh interval used by remote-device pruning.
-    assert (
-        pipe.evaluate(
-            page,
-            "new Promise(resolve => setTimeout(() => resolve(window.fixtureRefreshes > 0), 200))",
-        )
-        is True
-    )
-    # Native ClientTagHash for the synthetic DeviceInfo_captured-device tag.
-    tag = "vDaa7bHEfGrVKfQexaIbA4HNnqE="
-    cases = [
-        # Stale responses, updates, other devices, and failed commits do not prove deletion.
-        (tag, "captured-server-id", True, "captured-server-id", "SUCCESS", -10000, False),
-        (tag, "captured-server-id", False, "captured-server-id", "SUCCESS", 0, False),
-        ("another-tag", "captured-server-id", True, "captured-server-id", "SUCCESS", 0, False),
-        (None, "captured-server-id", True, "captured-server-id", "SUCCESS", 0, False),
-        (tag, "", True, "", "SUCCESS", 0, False),
-        (tag, "captured-server-id", True, "captured-server-id", "TRANSIENT_ERROR", 0, False),
-        # Response IDs may be reassigned or omitted: the protocol uses request order.
-        (tag, "captured-server-id", True, "another-server-id", "SUCCESS", 0, False),
-        # Every selected device needs its own successful commit, including retries.
-        ("dCXwbGioGJWMGC5alsHTmMfUlAQ=", "second-id", True, "second-id", "TRANSIENT_ERROR", 0, False),
-        ("dCXwbGioGJWMGC5alsHTmMfUlAQ=", "second-id", True, None, "SUCCESS", 0, True),
-    ]
-    for request_tag, request_id, deleted, response_id, response_type, offset, expected in cases:
-        event: dict = {
-            "request": {
-                "commit": {"entries": [{"id_string": request_id, "client_tag_hash": request_tag, "deleted": deleted}]}
-            },
-            "response": {"commit": {"entryresponse": [{"id_string": response_id, "response_type": response_type}]}},
-        }
-        if response_id is None:
-            del event["response"]["commit"]["entryresponse"][0]["id_string"]
-        # A successful unrelated entry must not acknowledge the selected device.
-        event["request"]["commit"]["entries"].insert(
-            0, {"id_string": "unrelated-id", "client_tag_hash": "unrelated-tag", "deleted": True}
-        )
-        event["response"]["commit"]["entryresponse"].insert(0, {"response_type": "SUCCESS"})
-        result = pipe.evaluate(
-            page,
-            """(() => {
-              const {webUIListenerCallback} = window.cr;
-              const fixture = FIXTURE;
-              const time = Date.now() + OFFSET;
-              webUIListenerCallback('onProtocolEvent', {time, type: 'Commit Request', proto: fixture.request});
-              const respond = () => webUIListenerCallback(
-                'onProtocolEvent', {time, type: 'Commit Response', proto: fixture.response});
-              if (DELAYED) setTimeout(respond, 100);
-              else respond();
-              return window.workstationDeviceRemoval.acknowledged;
-            })()""".replace("FIXTURE", json.dumps(event))
-            .replace("OFFSET", str(offset))
-            .replace("DELAYED", json.dumps(expected)),
-        )
-        assert result is False
-        if expected:
-            assert pipe.wait_for_acknowledgement(page, _REMOVAL_BINDING, timeout=5) is True
-        assert acknowledged() is expected
-    assert pipe.evaluate(page, "window.workstationDeviceRemoval.checks") == dict.fromkeys(_REMOVAL_CHECKS, True)
-    pipe.evaluate(page, "clearInterval(window.workstationDeviceRemoval.timer); true")
-    print("Device removal requires a fresh successful server commit for its captured identity.", flush=True)
-    return acknowledged
-
-
 def navigate_teardown_page(pipe: BrowserPipe, page: str, url: str) -> None:
     """Wait for the owned diagnostic tab to finish its requested navigation."""
 
@@ -766,14 +684,19 @@ def pending_chain(pipe: BrowserPipe, native: NativeSync) -> str:
 
 
 def retry_native_fixture_leave(arguments: list[str], environment: dict[str, str], root: Path, code: str) -> None:
-    """Restore encrypted recovery state after a real native reset with simulated missing server evidence."""
+    """A destructive native reset in a copy leaves the original encrypted recovery state reusable."""
 
     fixture = BrowserSyncFixture(root, root / "fixture.json")
     attempts = []
+    confirmed = []
 
-    def reset_without_server_reply(pipe: BrowserPipe, profile: Path, identity: str) -> None:
+    def reset_without_server_reply(pipe: BrowserPipe, profile: Path, identity: str, *, network) -> None:
+        assert profile.parent != root
         native = NativeSync(pipe, str(profile))
-        assert native.code() == code, "The checkpoint did not restore the encrypted recovery code"
+        assert native.code() == code, "The copied profile could not decrypt the original recovery code"
+        # This smoke chain is offline. Native reset still exercises destructive
+        # local clearing without contacting any saved recovery chain.
+        assert network is not None
         assert (
             pipe.evaluate(native.settings, "window.workstationSyncSettings.sendWithPromise('SyncSetupReset')") is True
         )
@@ -781,15 +704,16 @@ def retry_native_fixture_leave(arguments: list[str], environment: dict[str, str]
         if len(attempts) == 1:
             raise UnconfirmedDeviceRemoval("Simulated missing server acknowledgement")
 
-    # Keep Sync offline: test profile restoration, leaving server verification to live teardown.
-    with (
-        patch("browser_sync_fixture.automation_arguments", return_value=arguments),
-        patch("browser_sync_fixture.leave_device", side_effect=reset_without_server_reply),
-    ):
-        fixture.leave_captured_device(root / "Default", "captured-device", arguments[0], environment)
+    with patch("browser_sync_fixture.leave_device", side_effect=reset_without_server_reply):
+        fixture.leave_captured_device(
+            root / "Default", "captured-device", arguments[0], environment, lambda: confirmed.append(True)
+        )
     assert attempts == ["captured-device", "captured-device"]
-    assert not list(root.glob("browser-leave-*")), "Private teardown checkpoints were retained"
-    print("Native reset retries preserve encrypted recovery state and remove private checkpoints.", flush=True)
+    assert confirmed == [True]
+    assert not list(root.glob("browser-teardown-*")), "Private teardown copies were retained"
+    with BrowserPipe(arguments, environment) as original:
+        assert NativeSync(original, str(root / "Default")).code() == code, "The original recovery state changed"
+    print("Native reset retries preserve original encrypted recovery state and remove private copies.", flush=True)
 
 
 def settings_callbacks(pipe: BrowserPipe) -> None:
@@ -969,6 +893,7 @@ def main() -> None:
             pipe.call("Target.createTarget", {"url": "data:text/plain,workstation-session-fixture"})
             diagnostics(pipe, pipe.page("brave://sync-internals"))
             teardown_readiness(pipe)
+            device_removal_readback(pipe)
             native_fixture_leave(pipe)
             code = pending_chain(pipe, native)
             sync_selection(pipe, native.settings)

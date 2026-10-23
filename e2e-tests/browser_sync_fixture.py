@@ -5,9 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import platform
-import shutil
-import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
@@ -16,6 +15,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
     automation_arguments,
+    browser_processes,
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
@@ -28,6 +28,8 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     _REMOVAL_CHECKS,
     _WATCH_REMOVAL,
 )
+from browser_sync_network_gate import SyncNetworkGate
+from browser_sync_teardown_state import teardown_profile, write_private_json
 
 _TEARDOWN_CHECKS = (
     "Diagnostic Page",
@@ -116,7 +118,7 @@ _TEARDOWN_STATE = (
 # Native leave has a short upload deadline. Observe the commit without starting
 # competing downloads; the fixture enables Chromium's immediate Sync scheduling.
 _WATCH_TEARDOWN_REMOVAL = r"""(async identities => {
-  const observed = await WATCH_REMOVAL(identities);
+  const observed = await WATCH_REMOVAL(identities, true);
   if (observed) clearInterval(window.workstationDeviceRemoval.timer);
   return observed;
 })""".replace("WATCH_REMOVAL", _WATCH_REMOVAL)
@@ -187,12 +189,11 @@ def incomplete_removal_checks(pipe: BrowserPipe, session: str) -> str:
     return ", ".join(name for name in _REMOVAL_CHECKS if not checks[name]) or "binding delivery"
 
 
-def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float = 120) -> None:
-    """Leave only a captured test device after checking its live identity and tracker."""
+def wait_for_removal_readiness(
+    pipe: BrowserPipe, session: str, identity: str, acknowledged: Callable[[], bool], timeout: float
+) -> bool:
+    """Return server proof, or wait until the captured tracker can safely request deletion."""
 
-    native = NativeSync(pipe, str(profile))
-    session = pipe.page("brave://sync-internals")
-    pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
     # Leaving changes Device Info, so verify its tracker and fresh server contact.
     # Browser-data recovery has already been tested by setup; aggregating every
     # data model here adds unrelated asynchronous callbacks to device teardown.
@@ -200,11 +201,18 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
     checks = dict.fromkeys(_TEARDOWN_CHECKS, False)
     while time.monotonic() < deadline:
         snapshot_timeout = min(30, max(0.001, deadline - time.monotonic()))
-        state = pipe.evaluate(
-            session,
-            f"{_TEARDOWN_STATE}({json.dumps(identity)}, {int(snapshot_timeout * 1000)})",
-            timeout=snapshot_timeout + 5,
-        )
+        try:
+            state = pipe.evaluate(
+                session,
+                f"{_TEARDOWN_STATE}({json.dumps(identity)}, {int(snapshot_timeout * 1000)})",
+                timeout=snapshot_timeout + 5,
+            )
+        except BrowserProtocolError:
+            if acknowledged():
+                return True
+            raise
+        if acknowledged():
+            return True
         if not isinstance(state, dict) or set(state) != {"active", "ready", "matches", "needsNavigation", "checks"}:
             raise ValueError("Brave returned unsupported teardown diagnostics; the test device identity was retained")
         checks = state["checks"]
@@ -216,35 +224,49 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
         ):
             raise ValueError("Brave returned unsupported teardown diagnostics; the test device identity was retained")
         if state["needsNavigation"]:
-            print("Reopening the captured test device's Sync diagnostic page.", flush=True)
-            navigation = pipe.call(
-                "Page.navigate",
-                {"url": "chrome://sync-internals/"},
-                session,
-                timeout=min(30, max(0.001, deadline - time.monotonic())),
-            )
-            if navigation.get("errorText"):
-                raise ValueError("Brave could not reopen Sync diagnostics; the test device identity was retained")
-        elif state["active"]:
+            # Reopening this page after allowing downloads could miss the very
+            # tombstone we need. Retry with a new gated copy instead.
+            raise BrowserProtocolError("Brave lost its teardown observer; the test identity was retained")
+        if state["active"]:
             if not state["matches"]:
                 raise ValueError("The live browser device no longer matches the captured test identity")
             if state["ready"]:
-                if (
-                    pipe.evaluate(session, f"{_WATCH_TEARDOWN_REMOVAL}({json.dumps([identity])})", timeout=15)
-                    is not True
-                ):
-                    raise ValueError("Brave could not observe device removal; the test identity was retained")
-                break
+                return False
         time.sleep(min(2, max(0, deadline - time.monotonic())))
-    else:
-        detail = ", ".join(name for name in _TEARDOWN_CHECKS if not checks[name]) or "removal observer"
-        raise ValueError(
-            "The test device could not verify Sync readiness for teardown; "
-            f"its identity was retained; incomplete checks: {detail}"
-        )
+    detail = ", ".join(name for name in _TEARDOWN_CHECKS if not checks[name]) or "removal observer"
+    raise ValueError(
+        "The test device could not verify Sync readiness for teardown; "
+        f"its identity was retained; incomplete checks: {detail}"
+    )
+
+
+def leave_device(
+    pipe: BrowserPipe, profile: Path, identity: str, timeout: float = 120, *, network: SyncNetworkGate
+) -> None:
+    """Leave only a captured test device after checking its live identity and tracker."""
+
+    native = NativeSync(pipe, str(profile))
+    session = pipe.page("brave://sync-internals")
+    acknowledged = pipe.watch_acknowledgement(session, _REMOVAL_BINDING)
+    if (
+        pipe.evaluate(session, _START_TEARDOWN) is not True
+        or pipe.evaluate(session, f"{_WATCH_TEARDOWN_REMOVAL}({json.dumps([identity])})", timeout=15) is not True
+    ):
+        raise BrowserProtocolError("Brave could not observe device removal; the test identity was retained")
+    # A retry can receive its own server tombstone and immediately stop Sync.
+    # Install the observer before allowing any server contact, so that deletion
+    # is proved even when no active tracker remains to satisfy readiness.
+    network.release()
+    if wait_for_removal_readiness(pipe, session, identity, acknowledged, timeout):
+        return
     # This native operation takes no device ID: it leaves only the selected
     # profile's current device, whose freshly-created identity was checked above.
-    removed = reset_device(pipe, native.settings, identity)
+    try:
+        removed = reset_device(pipe, native.settings, identity)
+    except BrowserProtocolError:
+        if acknowledged():
+            return
+        raise
     if removed is not True:
         raise ValueError("Brave did not confirm leaving the captured test device")
     # The settings callback and diagnostic event arrive from separate targets.
@@ -255,7 +277,6 @@ def leave_device(pipe: BrowserPipe, profile: Path, identity: str, timeout: float
             "The Sync server did not confirm removal of the captured test device; "
             f"incomplete checks: {incomplete_removal_checks(pipe, session)}"
         )
-    pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, session)
 
 
 class BrowserSyncFixture:
@@ -296,38 +317,55 @@ class BrowserSyncFixture:
             if identity:
                 record["devices"][preferences.parent.name] = identity
         record["phase"] = "captured"
-        self.manifest.write_text(json.dumps(record))
+        write_private_json(self.manifest, record)
 
-    def leave_captured_device(self, profile: Path, identity: str, executable: str, environment: dict[str, str]) -> None:
-        """Retry unacknowledged native leave with the same captured identity and Sync state."""
+    def leave_captured_device(
+        self, profile: Path, identity: str, executable: str, environment: dict[str, str], confirmed: Callable[[], None]
+    ) -> None:
+        """Leave through isolated copies; keep the original identity available after every failure."""
 
-        # Brave stops Sync after its fixed upload deadline, even without a server
-        # response. Its successful callback clears the seed and tracker, so simply
-        # reopening that profile cannot retry the deletion. Checkpoint only this
-        # owned fixture, while the browser is closed, in a private directory.
-        with tempfile.TemporaryDirectory(prefix="browser-leave-", dir=self.manifest.parent) as directory:
-            checkpoint = Path(directory) / "profile"
-            shutil.copytree(profile, checkpoint, symlinks=True)
-            for attempt in range(3):
-                try:
+        for attempt in range(3):
+            confirmed_removal = False
+            try:
+                with (
+                    teardown_profile(self.root, profile, self.manifest.parent) as copied,
+                    SyncNetworkGate() as network,
+                ):
+                    arguments = [
+                        argument
+                        for argument in automation_arguments(executable, str(copied.parent), copied.name)
+                        if argument != "--restore-last-session"
+                    ]
                     with BrowserPipe(
                         [
-                            *automation_arguments(executable, str(self.root), profile.name),
+                            *arguments,
                             "--sync-short-nudge-delay-for-test",
+                            f"--proxy-server={network.proxy_url}",
+                            "--disable-quic",
+                            "--disable-extensions",
+                            "about:blank",
                         ],
                         environment,
                     ) as pipe:
-                        leave_device(pipe, profile, identity)
-                    return
-                except UnconfirmedDeviceRemoval:
-                    # BrowserPipe has closed and reaped the writer. Restore the
-                    # complete tracker, including its GUID, rather than rejoining
-                    # the chain with a new device. Also retain it on final failure.
-                    shutil.rmtree(profile)
-                    shutil.copytree(checkpoint, profile, symlinks=True)
-                    if attempt == 2:
-                        raise
-                    print("Retrying unconfirmed E2E device removal with its saved Sync state.", flush=True)
+                        leave_device(pipe, copied, identity, network=network)
+                        # Persist proof before closing targets: a failed browser
+                        # shutdown must not make the next invocation reset again.
+                        confirmed()
+                        confirmed_removal = True
+                return
+            except (UnconfirmedDeviceRemoval, BrowserProtocolError) as error:
+                self.check_stopped_copies()
+                if confirmed_removal or attempt == 2:
+                    raise
+                print(f"Retrying E2E device removal ({attempt + 1}/3): {error}", flush=True)
+                time.sleep(2**attempt)
+
+    def check_stopped_copies(self) -> None:
+        """Prevent overlapping same-identity writers after an interrupted attempt."""
+
+        for copied_root in self.manifest.parent.glob("browser-teardown-*"):
+            if copied_root.is_symlink() or browser_processes(copied_root):
+                raise ValueError("A previous teardown browser is still running; its private copy and VM were retained")
 
     def leave(self) -> None:
         """Leave only captured devices; never enumerate other profiles for mutation."""
@@ -337,18 +375,22 @@ class BrowserSyncFixture:
         record = self.load()
         if record.get("phase") != "captured":
             raise ValueError("Browser fixture identities were not captured; the VM must be retained")
+        self.check_stopped_copies()
         if not record["devices"]:
             return
-        with closed_browser(str(self.root)) as (executable, environment):
+        with closed_browser(str(self.root), reopen=False) as (executable, environment):
             for directory, identity in list(record["devices"].items()):
                 if Path(directory).name != directory or directory in {".", ".."}:
                     raise ValueError("Invalid captured browser fixture directory")
                 profile = self.root / directory
                 if device_identity(profile) != identity:
                     raise ValueError("The browser profile no longer matches the captured test identity")
-                self.leave_captured_device(profile, identity, executable, environment)
-                del record["devices"][directory]
-                self.manifest.write_text(json.dumps(record))
+
+                def confirmed(selected: str = directory) -> None:
+                    del record["devices"][selected]
+                    write_private_json(self.manifest, record)
+
+                self.leave_captured_device(profile, identity, executable, environment, confirmed)
                 print("The Sync server confirmed removal of a captured E2E browser device.", flush=True)
 
 

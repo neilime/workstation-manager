@@ -417,8 +417,11 @@ def test_stale_local_profile_lock_is_cleared_before_operation(tmp_path: Path, mo
     launch.assert_not_called()
 
 
-def test_existing_browser_is_reopened_even_when_sync_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Failed verification still restores the user's GUI, without remote debugging flags."""
+@pytest.mark.parametrize("reopen", [True, False])
+def test_browser_reopening_after_failure_respects_terminal_teardown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reopen: bool
+) -> None:
+    """The default restores the user's GUI after failure; terminal teardown keeps it closed."""
 
     (tmp_path / "Local State").write_text(json.dumps({"profile": {"last_active_profiles": ["Default", "Profile 2"]}}))
     processes = iter([[123], [], [], []])
@@ -429,9 +432,13 @@ def test_existing_browser_is_reopened_even_when_sync_fails(tmp_path: Path, monke
     launch.return_value.wait.side_effect = subprocess.TimeoutExpired("fixture", 2)
     monkeypatch.setattr(lifecycle, "_request_close", terminate)
     monkeypatch.setattr(lifecycle.subprocess, "Popen", launch)
-    with pytest.raises(ValueError, match="fixture failure"), lifecycle.closed_browser(str(tmp_path)):
+    options = {} if reopen else {"reopen": False}
+    with pytest.raises(ValueError, match="fixture failure"), lifecycle.closed_browser(str(tmp_path), **options):
         raise ValueError("fixture failure")
     terminate.assert_called_once_with(123)
+    if not reopen:
+        launch.assert_not_called()
+        return
     assert launch.call_count == 2
     for call, profile in zip(launch.call_args_list, ["Default", "Profile 2"]):
         assert "--restore-last-session" in call.args[0]

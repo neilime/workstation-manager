@@ -132,8 +132,8 @@ def _reopen_browser(executable: str, root: Path, environment: dict[str, str], pr
 
 
 @contextmanager
-def closed_browser(user_data_dir: str) -> Iterator[tuple[str, dict[str, str]]]:
-    """Gracefully close and later reopen a previously running browser after approval."""
+def closed_browser(user_data_dir: str, *, reopen: bool = True) -> Iterator[tuple[str, dict[str, str]]]:
+    """Gracefully close a browser, restoring its session unless terminal teardown disables it."""
 
     root = Path(user_data_dir)
     if not root.is_absolute() or root.is_symlink():
@@ -163,5 +163,5 @@ def closed_browser(user_data_dir: str) -> Iterator[tuple[str, dict[str, str]]]:
             previous_profiles = _previous_profiles(root)
         yield executable, environment
     finally:
-        if running and not browser_processes(root) and not os.path.lexists(root / "SingletonLock"):
+        if reopen and running and not browser_processes(root) and not os.path.lexists(root / "SingletonLock"):
             _reopen_browser(executable, root, environment, previous_profiles)

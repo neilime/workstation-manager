@@ -140,12 +140,19 @@ current device GUID, recheck identities before mutation, and preserve unrelated
 devices. Each deletion requires a fresh successful server commit for its client
 tag and a device-list readback; a native callback alone is insufficient.
 
-The observer is shared with [VM teardown](e2e-tests.md#teardown-and-reuse).
-Keep it installed across diagnostic navigation and delayed acknowledgement events.
-Each observation must obtain fresh status and counts for every running data type
-within one deadline. Replaced status or lost page state invalidates the
-observation; late replies cannot complete it. Explicit native rejections and
-broken automation connections fail recovery.
+The observer is shared with [VM teardown](e2e-tests.md#teardown-and-reuse), which
+explicitly enables an additional proof: a fresh successful GetUpdates response
+containing the exact captured device's tombstone, server ID, and positive version.
+This allows a retried leave to verify an earlier deletion even when receiving
+that deletion stops Sync. Inactive transport and local reset state are never
+deletion evidence. Duplicate cleanup still requires its commit and device-list
+readback.
+
+Latch acknowledgements outside page state so delayed events survive diagnostic
+page loss. Full recovery observations must obtain fresh status and counts for
+every running data type within one deadline. Replaced status or lost page state
+invalidates the observation; late replies cannot complete it. Explicit native
+rejections and broken automation connections fail recovery.
 
 Reduce diagnostics inside the browser to booleans, numeric metrics and
 allowlisted error categories. Never return entity contents, scripts, recovery
