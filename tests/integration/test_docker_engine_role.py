@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import stat
+import subprocess
+import sys
 
 import pytest
 from ansible.parsing.dataloader import DataLoader
@@ -61,6 +65,12 @@ def make_docker_setup(tmp_path: pathlib.Path):
     def isolate(task):
         task.pop("become", None)
         task.pop("become_user", None)
+        if "ansible.builtin.copy" in task:
+            arguments = task["ansible.builtin.copy"]
+            arguments["src"] = str(ROLE_PATH / "files" / arguments["src"])
+            arguments["dest"] = str(tmp_path / "docker-compose")
+            arguments["owner"] = str(os.getuid())
+            arguments["group"] = str(os.getgid())
         for operation in (
             "apt",
             "deb822_repository",
@@ -117,9 +127,44 @@ def test_native_installation_preserves_groups_and_uses_current_suite(docker_setu
     assert "changed=0" in repeated.stdout
 
 
-def test_preview_does_not_start_services_or_change_group_membership(docker_setup) -> None:
-    """Check mode must not mutate the privileged fixture state."""
+def test_compose_alias_forwards_arguments_streams_and_exit_status(docker_setup, tmp_path: pathlib.Path) -> None:
+    """The installed executable delegates unchanged arguments and streams to Docker Compose."""
+    setup, _state = docker_setup()
+    assert setup.returncode == 0, setup.stdout + setup.stderr
+    launcher = tmp_path / "docker-compose"
+    assert stat.S_IMODE(launcher.stat().st_mode) == 0o755
+
+    binary_directory = tmp_path / "bin"
+    binary_directory.mkdir()
+    docker = binary_directory / "docker"
+    docker.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        "print(json.dumps({'args': sys.argv[1:], 'stdin': sys.stdin.read()}))\n"
+        "sys.stderr.write('compose diagnostic\\n')\n"
+        "sys.exit(23)\n"
+    )
+    docker.chmod(0o755)
+    arguments = ["-f", "compose file.yml", "config", "--", "", "$HOME", "; exit 99", "*"]
+    result = subprocess.run(
+        [str(launcher), *arguments],
+        env={"PATH": str(binary_directory)},
+        input="compose input\n",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert json.loads(result.stdout) == {"args": ["compose", *arguments], "stdin": "compose input\n"}
+    assert result.stderr == "compose diagnostic\n"
+    assert result.returncode == 23
+
+
+def test_preview_does_not_mutate_services_groups_or_compose_alias(docker_setup, tmp_path: pathlib.Path) -> None:
+    """Check mode must preserve the fixture state and leave the executable absent."""
     result, state = docker_setup(check=True)
     assert result.returncode == 0, result.stdout + result.stderr
     assert not state["services"]
     assert state["groups"] == ["existing-group"]
+    assert not (tmp_path / "docker-compose").exists()

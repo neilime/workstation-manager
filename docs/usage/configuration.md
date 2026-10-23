@@ -222,6 +222,9 @@ the managed user to the `docker` group. Log out and back in for group membership
 to take effect. Verify with `docker info`, `docker compose version`, and
 `docker buildx version`. Docker group access grants root-level control.
 
+Setup also provides `docker-compose` as an executable alias for `docker compose`,
+available in terminals and scripts. Both commands use the installed Compose plugin.
+
 For `development.github.host: github.com`, setup logs Docker into `ghcr.io` using
 the GitHub CLI account and requests `write:packages` through browser authorization
 when needed. Package permissions and organization SSO still control access.

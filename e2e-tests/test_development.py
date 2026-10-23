@@ -85,8 +85,13 @@ def test_docker_engine_is_available_to_the_managed_user(host) -> None:
     assert docker_socket.group == "docker"
     assert "docker" in host.user().groups
     assert docker_info.succeeded, docker_info.stderr
-    for plugin in ("buildx", "compose"):
-        assert host.run("docker %s version", plugin).succeeded
+    assert host.run("docker buildx version").succeeded
+    compose_alias = host.file("/usr/local/bin/docker-compose")
+    assert compose_alias.mode == 0o755
+    assert compose_alias.user == compose_alias.group == "root"
+    assert host.check_output(
+        "env -i HOME=%s PATH=/usr/local/bin:/usr/bin:/bin docker-compose version", host.user().home
+    ) == host.check_output("docker compose version")
 
 
 def test_native_docker_service_survives_restart(host) -> None:
