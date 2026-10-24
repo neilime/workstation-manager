@@ -40,6 +40,16 @@ def test_system_timezone_configuration(host, workstation_config) -> None:
     assert host.check_output("readlink -f /etc/localtime") == f"/usr/share/zoneinfo/{timezone}"
 
 
+def test_system_sysctl_configuration(host, workstation_config) -> None:
+    """Configured system kernel settings must be persisted and applied."""
+    content = host.file("/etc/sysctl.d/99-workstation-manager-system.conf").content_string
+    persisted = dict(line.split("=", 1) for line in content.splitlines() if "=" in line and not line.startswith("#"))
+    persisted = {key.strip(): value.strip() for key, value in persisted.items()}
+    for name, value in workstation_config["system"]["settings"]["sysctl"].items():
+        assert persisted[name] == str(value)
+        assert host.check_output("sysctl -n %s", name) == str(value)
+
+
 def test_system_state_file(host) -> None:
     """The installation should write the system state marker."""
 
