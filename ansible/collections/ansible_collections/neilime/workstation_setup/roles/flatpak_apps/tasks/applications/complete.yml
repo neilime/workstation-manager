@@ -25,7 +25,7 @@
         seconds: 10
 
     - name: Retry a failed Flatpak transaction within the original attempt budget
-      ansible.builtin.include_tasks: install.yml
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/applications/install.yml"
       vars:
         # The background transaction consumed the first of the four attempts.
         flatpak_apps_install_retries: 2
@@ -41,7 +41,7 @@
         - flatpak_apps_completion.msg | default('') != 'could not find job'
 
 - name: Apply native scanner delivery after both package transactions complete
-  ansible.builtin.import_tasks: ../scanner.yml
+  ansible.builtin.import_tasks: "{{ role_path }}/tasks/scanner.yml"
   when:
     - not ansible_check_mode
     - flatpak_apps_pending_install is defined

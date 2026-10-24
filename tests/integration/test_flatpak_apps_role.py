@@ -1,4 +1,4 @@
-"""Exercise Flatpak updates, retries, and setup concurrency through isolated Ansible tasks."""
+"""Exercise Flatpak updates, retries, and setup concurrency through isolated Ansible roles."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ elif operation == "consumer":
 """
 
 
-def isolated_role_tasks(directory: Path, state_file: Path) -> Path:
+def isolated_role_tasks(directory: Path, state_file: Path) -> None:
     """Keep real role control flow and async modules, replacing only external operations."""
 
     def shorten_waits(task):
@@ -102,7 +102,7 @@ def isolated_role_tasks(directory: Path, state_file: Path) -> Path:
                 module = "community.general." + operation
                 if module in task:
                     arguments = task.pop(module)
-                    task["fixture_flatpak"] = {
+                    task["ansible.legacy.fixture_flatpak"] = {
                         "operation": operation,
                         "arguments": arguments,
                         "state_file": str(state_file),
@@ -112,12 +112,11 @@ def isolated_role_tasks(directory: Path, state_file: Path) -> Path:
         target = directory / path.relative_to(source)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(tasks))
-    return directory
 
 
 @pytest.fixture(name="flatpak_playbook")
 def flatpak_playbook_fixture(tmp_path):
-    """Keep role retries and conditions while isolating external downloads."""
+    """Keep collection role loading, retries, and conditions while isolating external downloads."""
     state_file = tmp_path / "state.json"
     state_file.write_text(
         json.dumps(
@@ -131,10 +130,13 @@ def flatpak_playbook_fixture(tmp_path):
     library = tmp_path / "library"
     library.mkdir()
     write_stateful_module(library / "fixture_flatpak.py", FIXTURE_OPERATIONS)
-    role = isolated_role_tasks(tmp_path / "tasks", state_file)
+    collections = tmp_path / "collections"
+    isolated_role_tasks(
+        collections / "ansible_collections/neilime/workstation_setup/roles/flatpak_apps/tasks", state_file
+    )
     playbook = write_local_playbook(
         tmp_path / "playbook.json",
-        [{"ansible.builtin.import_tasks": str(role / "main.yml")}],
+        [{"ansible.builtin.import_role": {"name": "neilime.workstation_setup.flatpak_apps"}}],
         desktop_variables(
             tmp_path / "home",
             desktop={"flatpak": {"remote": "fixture", "packages": ["org.example.First", "org.example.Second"]}},
@@ -143,35 +145,35 @@ def flatpak_playbook_fixture(tmp_path):
     data = json.loads(playbook.read_text())
     data[0]["vars"]["ansible_async_dir"] = str(tmp_path / "async")
     playbook.write_text(json.dumps(data))
+    environment = ansible_environment(tmp_path, ANSIBLE_LIBRARY=str(library))
+    environment["ANSIBLE_COLLECTIONS_PATH"] = f"{collections}:{environment['ANSIBLE_COLLECTIONS_PATH']}"
     return (
         ["ansible-playbook", "-i", "localhost,", str(playbook)],
-        ansible_environment(tmp_path, ANSIBLE_LIBRARY=str(library)),
+        environment,
         state_file,
     )
 
 
 @pytest.fixture(name="setup_playbook")
 def setup_playbook_fixture(flatpak_playbook):
-    """Run the production setup block with only development work isolated."""
+    """Run the production role entrypoints and setup block with only external work isolated."""
     command, _environment, state_file = flatpak_playbook
     playbook = Path(command[-1])
     data = json.loads(playbook.read_text(encoding="utf-8"))
     setup = SETUP_ROLES.parents[4] / "tasks/setup_action.yml"
     block = next(task for task in DataLoader().load_from_file(str(setup)) if "always" in task)
-    role = state_file.parent / "tasks"
     for task in block["block"]:
-        imported = task.pop("ansible.builtin.import_role")
-        if imported["name"].endswith(".flatpak_apps"):
-            task["ansible.builtin.import_tasks"] = str(role / "main.yml")
-        else:
-            task["fixture_flatpak"] = {"operation": "development", "arguments": {}, "state_file": str(state_file)}
-    for task in block["always"]:
-        imported = task.pop("ansible.builtin.include_role")
-        task["ansible.builtin.include_tasks"] = str(role / (imported["tasks_from"] + ".yml"))
+        if task["ansible.builtin.import_role"]["name"].endswith(".development_tooling"):
+            del task["ansible.builtin.import_role"]
+            task["ansible.legacy.fixture_flatpak"] = {
+                "operation": "development",
+                "arguments": {},
+                "state_file": str(state_file),
+            }
     data[0]["tasks"] = [
         block,
         {
-            "fixture_flatpak": {"operation": "consumer", "arguments": {}, "state_file": str(state_file)},
+            "ansible.legacy.fixture_flatpak": {"operation": "consumer", "arguments": {}, "state_file": str(state_file)},
             "when": "workstation_manager_resolved.desktop.flatpak.packages | length > 0",
         },
     ]
