@@ -98,6 +98,19 @@ writes, and cache synchronization in managed-user CLI tasks. Browser recovery
 and post-write verification require fresh reads in their execution context;
 do not replace those reads with cached controller facts.
 
+Collection reads reuse an unlocked session only within the same action, managed
+user, home, CLI cache, server, and configured account context. Each reuse runs a
+live status check; locked or expired sessions must unlock again, and an unexpected
+account change stops recovery. These facts remain in memory for the current
+Ansible run. Every collection read still synchronizes the vault, and writes keep
+their explicit synchronization and read-back verification.
+
+Authentication uses the internal `neilime.workstation_setup.bitwarden_cli` module
+for credential-bearing status, login, unlock, and sync calls. It passes credentials
+inside the managed process so verbose connection tracing cannot expose task
+environment values. Its callers retain `no_log`, and failed CLI output is discarded
+before returning the status used for diagnostics and retries.
+
 ## Recovery decisions
 
 `neilime.workstation_backup.recovery_decision` owns prompts, input retries,

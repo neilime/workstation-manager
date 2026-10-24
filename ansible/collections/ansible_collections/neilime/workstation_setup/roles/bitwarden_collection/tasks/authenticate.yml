@@ -13,8 +13,38 @@
       {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_INTERACTIVE') | default('0', true) == '1' }}
     bitwarden_collection_tty_path: >-
       {{ lookup('ansible.builtin.env', 'WORKSTATION_MANAGER_TTY') | default('', true) }}
+  no_log: true
+
+- name: Identify the current Bitwarden authentication context
+  ansible.builtin.set_fact:
+    bitwarden_collection_context:
+      play: "{{ ansible_play_name }}"
+      user: "{{ workstation_manager_resolved.user.name }}"
+      home: "{{ workstation_manager_resolved.user.home }}"
+      appdata: "{{ bitwarden_collection_appdata_dir }}"
+      server: "{{ workstation_manager_resolved.secrets.bitwarden.server }}"
+      email: "{{ bitwarden_collection_email }}"
+      client_id: "{{ bitwarden_collection_client_id }}"
+  no_log: true
+
+- name: Select a session only from the matching action context
+  ansible.builtin.set_fact:
+    bitwarden_collection_candidate_from_run: >-
+      {{
+        (bitwarden_collection_run_context | default({})) == bitwarden_collection_context
+        and (bitwarden_collection_run_account | default('') | length > 0)
+        and (bitwarden_collection_session | default('') | length > 0)
+      }}
+  no_log: true
+
+- name: Prepare the candidate Bitwarden session for validation
+  ansible.builtin.set_fact:
     bitwarden_collection_candidate_session: >-
-      {{ lookup('ansible.builtin.env', 'BW_SESSION') | default('', true) }}
+      {{
+        bitwarden_collection_session
+        if bitwarden_collection_candidate_from_run
+        else lookup('ansible.builtin.env', 'BW_SESSION') | default('', true)
+      }}
     bitwarden_collection_session: ""
   no_log: true
 
@@ -65,31 +95,40 @@
 - name: Re-check the Bitwarden CLI after installation
   check_mode: false
   ansible.builtin.command: bw --version
-  register: bitwarden_collection_cli
+  register: bitwarden_collection_installed_cli
   changed_when: false
   failed_when: false
+  when: bitwarden_collection_cli.rc != 0
 
 - name: Assert that the Bitwarden CLI is installed
   ansible.builtin.assert:
     that:
-      - bitwarden_collection_cli.rc == 0
+      - bitwarden_collection_cli.rc == 0 or (bitwarden_collection_installed_cli.rc | default(1)) == 0
     fail_msg: >-
       {{ bitwarden_collection_purpose }} requires the Bitwarden CLI, but `bw`
       could not be installed automatically.
 
-- name: Probe the inherited Bitwarden session for reuse
+- name: Probe the candidate Bitwarden session for reuse
   check_mode: false
-  ansible.builtin.command: bw status
+  neilime.workstation_setup.bitwarden_cli:
+    operation: status
+    session: "{{ bitwarden_collection_candidate_session }}"
   register: bitwarden_collection_reuse_probe
   changed_when: false
   failed_when: false
-  environment:
-    BW_SESSION: "{{ bitwarden_collection_candidate_session }}"
   no_log: true
   when: bitwarden_collection_candidate_session | length > 0
 
-- name: Decide whether to reuse the inherited Bitwarden session
+- name: Decide whether to reuse the validated Bitwarden session
   ansible.builtin.set_fact:
+    bitwarden_collection_account_changed: >-
+      {{
+        bitwarden_collection_candidate_from_run
+        and (bitwarden_collection_reuse_probe.rc | default(1)) == 0
+        and (bitwarden_collection_reuse_probe.stdout | from_json).get('serverUrl') == bitwarden_collection_context.server
+        and (bitwarden_collection_reuse_probe.stdout | from_json).get('status') != 'unauthenticated'
+        and (bitwarden_collection_reuse_probe.stdout | from_json).get('userId') != bitwarden_collection_run_account
+      }}
     bitwarden_collection_reuse_session: >-
       {{
         (
@@ -101,6 +140,13 @@
         ) | bool
       }}
   no_log: true
+
+- name: Stop when the action's Bitwarden account has changed
+  ansible.builtin.fail:
+    msg: >-
+      The Bitwarden account changed during this action. Retry setup or backup
+      with the intended account before reading recovery collections.
+  when: bitwarden_collection_account_changed
 
 - name: Reuse the unlocked Bitwarden session for this run
   ansible.builtin.set_fact:
@@ -116,12 +162,14 @@
   changed_when: false
   environment:
     BW_SESSION: ""
+  no_log: true
   when: not bitwarden_collection_reuse_session
 
 - name: Parse Bitwarden session status
   ansible.builtin.set_fact:
     bitwarden_collection_status: >-
       {{ bitwarden_collection_status_command.stdout | from_json }}
+  no_log: true
   when: not bitwarden_collection_reuse_session
 
 - name: Require the correct Bitwarden server before a dry run
@@ -166,15 +214,10 @@
 
 - name: Login to Bitwarden with the configured API key
   check_mode: false
-  ansible.builtin.command:
-    argv:
-      - bw
-      - login
-      - --apikey
-  environment:
-    BW_CLIENTID: "{{ bitwarden_collection_client_id }}"
-    BW_CLIENTSECRET: "{{ bitwarden_collection_client_secret }}"
-    BW_SESSION: ""
+  neilime.workstation_setup.bitwarden_cli:
+    operation: login
+    client_id: "{{ bitwarden_collection_client_id }}"
+    client_secret: "{{ bitwarden_collection_client_secret }}"
   register: bitwarden_collection_api_key_login
   changed_when: bitwarden_collection_api_key_login.rc == 0
   failed_when: false
@@ -212,15 +255,10 @@
 
 - name: Fall back to the configured Bitwarden API key when the email verification prompt is unavailable
   check_mode: false
-  ansible.builtin.command:
-    argv:
-      - bw
-      - login
-      - --apikey
-  environment:
-    BW_CLIENTID: "{{ bitwarden_collection_client_id }}"
-    BW_CLIENTSECRET: "{{ bitwarden_collection_client_secret }}"
-    BW_SESSION: ""
+  neilime.workstation_setup.bitwarden_cli:
+    operation: login
+    client_id: "{{ bitwarden_collection_client_id }}"
+    client_secret: "{{ bitwarden_collection_client_secret }}"
   register: bitwarden_collection_api_key_login_fallback
   changed_when: bitwarden_collection_api_key_login_fallback.rc == 0
   failed_when: false
@@ -285,16 +323,9 @@
 
 - name: Unlock the Bitwarden vault for this run
   check_mode: false
-  ansible.builtin.command:
-    argv:
-      - bw
-      - unlock
-      - --passwordenv
-      - BITWARDEN_PASSWORD
-      - --raw
-  environment:
-    BITWARDEN_PASSWORD: "{{ bitwarden_collection_password }}"
-    BW_SESSION: ""
+  neilime.workstation_setup.bitwarden_cli:
+    operation: unlock
+    password: "{{ bitwarden_collection_password }}"
   register: bitwarden_collection_unlock
   changed_when: false
   failed_when: false
@@ -326,14 +357,38 @@
       session token.
   no_log: true
 
+- name: Verify the account after unlocking the Bitwarden session
+  check_mode: false
+  neilime.workstation_setup.bitwarden_cli:
+    operation: status
+    session: "{{ bitwarden_collection_session }}"
+  register: bitwarden_collection_unlocked_status
+  changed_when: false
+  no_log: true
+  when: not bitwarden_collection_reuse_session
+
+- name: Record the verified Bitwarden account status
+  ansible.builtin.set_fact:
+    bitwarden_collection_status: "{{ bitwarden_collection_unlocked_status.stdout | from_json }}"
+  no_log: true
+  when: not bitwarden_collection_reuse_session
+
+- name: Require the expected unlocked Bitwarden account
+  ansible.builtin.assert:
+    that:
+      - bitwarden_collection_status.status == 'unlocked'
+      - bitwarden_collection_status.serverUrl == bitwarden_collection_context.server
+      - >-
+        not bitwarden_collection_candidate_from_run
+        or bitwarden_collection_status.get('userId') == bitwarden_collection_run_account
+    fail_msg: Bitwarden did not unlock the expected account; retry setup or backup.
+  no_log: true
+
 - name: Sync the Bitwarden vault before reading collection items
   check_mode: false
-  ansible.builtin.command:
-    argv:
-      - bw
-      - sync
-  environment:
-    BW_SESSION: "{{ bitwarden_collection_session }}"
+  neilime.workstation_setup.bitwarden_cli:
+    operation: sync
+    session: "{{ bitwarden_collection_session }}"
   register: bitwarden_collection_sync
   changed_when: false
   failed_when: false
@@ -348,3 +403,10 @@
       {{ bitwarden_collection_purpose }} could not sync Bitwarden before
       reading collection items.
   when: bitwarden_collection_sync.rc != 0
+
+- name: Remember the verified session context only for this action
+  ansible.builtin.set_fact:
+    bitwarden_collection_run_context: "{{ bitwarden_collection_context }}"
+    bitwarden_collection_run_account: "{{ bitwarden_collection_status.get('userId') | default('', true) }}"
+    cacheable: false
+  no_log: true
