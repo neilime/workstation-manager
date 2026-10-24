@@ -65,7 +65,10 @@ def test_normalize_returns_complete_shape_with_defaults(with_tool_versions) -> N
     assert normalized["system"]["packages"]["prerequisites"] == ["locales", "tzdata"]
     assert normalized["system"]["packages"]["apt"] == []
     assert normalized["system"]["packages"]["cache_valid_time"] == 86400
-    assert normalized["system"]["settings"]["sysctl"] == {}
+    assert normalized["system"]["settings"]["sysctl"] == {
+        "net.ipv6.conf.all.disable_ipv6": "1",
+        "net.ipv6.conf.default.disable_ipv6": "1",
+    }
     assert normalized["development"]["settings"]["sysctl"] == {"fs.inotify.max_user_watches": "524288"}
     assert normalized["desktop"]["flatpak"]["remote"] == "flathub"
     assert normalized["desktop"]["browser"] == "brave"

@@ -29,6 +29,12 @@ workstation_manager:
         - fwupd
       # Reuse APT metadata for this many seconds between setup's forced refreshes.
       cache_valid_time: 86400
+    settings:
+      # Kernel parameters applied system-wide through /etc/sysctl.d.
+      sysctl:
+        # Disable IPv6 system-wide.
+        net.ipv6.conf.all.disable_ipv6: "1"
+        net.ipv6.conf.default.disable_ipv6: "1"
   desktop:
     clipboard_indicator:
       # The managed GNOME clipboard extension; inherit these pins in private overrides.
