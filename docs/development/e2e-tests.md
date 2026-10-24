@@ -23,13 +23,19 @@ then runs the complete workstation bootstrap. Live VM disks, restored keys,
 Bitwarden state, and browser profiles are never used to build the image.
 
 For a local prepared base, install `libguestfs-tools` alongside the VM tools,
-then run:
+ensure your user can access `/dev/kvm`, then run:
 
 ```sh
+sudo chmod a+r /boot/vmlinuz-*
 make e2e-base-inputs
-sudo make e2e-base
+make e2e-base
 E2E_BASE_IMAGE="$PWD/.cache/e2e-base/desktop.qcow2" make e2e-up
 ```
+
+The builder must run without `sudo`: its network helper needs access to the
+builder's temporary files. On Ubuntu, the kernel read permission above lets
+libguestfs create its appliance as your user; see the
+[libguestfs Ubuntu guidance](https://libguestfs.org/guestfs-faq.1.html#ubuntu).
 
 The builder customizes a fresh download offline; it never opens an existing Lima
 instance. Without `E2E_BASE_IMAGE`, local startup installs desktop prerequisites

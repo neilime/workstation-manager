@@ -267,8 +267,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libguestfs-tools
+          # Supermin reads the host kernel; keep its network helper unprivileged.
+          sudo chmod a+r /boot/vmlinuz-*
           source e2e-tests/e2e-common.sh
-          run_e2e_timed_command base-build sudo make e2e-base
+          run_e2e_timed_command base-build make e2e-base
 
       - name: Verify desktop prerequisite image
         if: inputs.prepared-desktop
