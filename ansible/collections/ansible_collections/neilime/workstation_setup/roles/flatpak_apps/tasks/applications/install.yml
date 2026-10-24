@@ -1,0 +1,13 @@
+---
+- name: Install or update declared Flatpak applications
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak:
+    name: "{{ workstation_manager_resolved.desktop.flatpak.packages }}"
+    state: latest
+    method: system
+    remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+  register: flatpak_apps_install
+  until: flatpak_apps_install is succeeded
+  retries: "{{ flatpak_apps_install_retries | default(3) }}"
+  delay: 10
+  when: workstation_manager_resolved.desktop.flatpak.packages | length > 0

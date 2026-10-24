@@ -1,0 +1,47 @@
+---
+- name: Complete the pending Flatpak transaction before continuing setup
+  when: flatpak_apps_pending_install.ansible_job_id is defined
+  block:
+    - name: Wait for the Flatpak application transaction
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.async_status:
+        jid: "{{ flatpak_apps_pending_install.ansible_job_id }}"
+      register: flatpak_apps_completion
+      until: flatpak_apps_completion.finished | default(false)
+      # Outlast the worker's one-hour deadline so a timed-out worker is reaped.
+      retries: 730
+      delay: 5
+  rescue:
+    - name: Require a completed Flatpak worker before retrying its transaction
+      ansible.builtin.assert:
+        that:
+          - flatpak_apps_completion.finished | default(false)
+          - flatpak_apps_completion.msg | default('') != 'could not find job'
+          - not (flatpak_apps_completion.msg | default('')).startswith('Could not parse job output')
+        fail_msg: Cannot confirm that the background Flatpak transaction completed safely.
+
+    - name: Wait before retrying the failed Flatpak download
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: Retry a failed Flatpak transaction within the original attempt budget
+      ansible.builtin.include_tasks: install.yml
+      vars:
+        # The background transaction consumed the first of the four attempts.
+        flatpak_apps_install_retries: 2
+  always:
+    - name: Remove the completed Flatpak job status
+      become: "{{ workstation_manager_use_become }}"
+      ansible.builtin.async_status:
+        jid: "{{ flatpak_apps_pending_install.ansible_job_id }}"
+        mode: cleanup
+      changed_when: false
+      when:
+        - flatpak_apps_completion.finished | default(false)
+        - flatpak_apps_completion.msg | default('') != 'could not find job'
+
+- name: Apply native scanner delivery after both package transactions complete
+  ansible.builtin.import_tasks: ../scanner.yml
+  when:
+    - not ansible_check_mode
+    - flatpak_apps_pending_install is defined
