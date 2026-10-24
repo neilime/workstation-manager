@@ -14,6 +14,17 @@ run_e2e_timed_command() (
 	local phase_started_at=$SECONDS
 	shift
 
+	# Only these public labels may enter logs and reports. Never record arguments.
+	case "$phase_name" in
+	vm-start | backup | backup-assertions | setup | desktop-restart | clipboard-extension | setup-screenshot | \
+		desktop-diagnostics | browser-diagnostics | setup-assertions | cleanup | cleanup-assertions | browser-teardown) ;;
+	*)
+		printf '%s\n' 'Unsupported E2E timing phase; timing was not recorded.' >&2
+		"$@"
+		exit "$?"
+		;;
+	esac
+
 	# Called by the EXIT trap below within this subshell.
 	# shellcheck disable=SC2329
 	finish_e2e_timed_command() {
@@ -23,6 +34,15 @@ run_e2e_timed_command() (
 		# Log only the phase label: command arguments can contain vault credentials.
 		printf 'E2E timing: phase=%s elapsed=%ss status=%s\n' \
 			"$phase_name" "$phase_elapsed" "$phase_status" >&2
+		if [[ -n "${REPORTS_DIR:-}" ]]; then
+			if ! {
+				mkdir -p "$REPORTS_DIR/e2e" &&
+					printf '{"phase":"%s","elapsed_seconds":%s,"exit_status":%s}\n' \
+						"$phase_name" "$phase_elapsed" "$phase_status" >>"$REPORTS_DIR/e2e/phase-timings.jsonl"
+			} 2>/dev/null; then
+				printf '%s\n' 'Could not append E2E timing to the JSONL report.' >&2
+			fi
+		fi
 		if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 			# Only public phase labels and numbers belong in the summary.
 			printf -- '- E2E %s: %ss (exit %s)\n' \
