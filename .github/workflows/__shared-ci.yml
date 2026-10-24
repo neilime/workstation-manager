@@ -266,7 +266,10 @@ jobs:
         if: inputs.prepared-desktop && steps.desktop-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libguestfs-tools
+          sudo apt-get install -y --no-install-recommends libguestfs-tools dhcpcd-base
+          # Include the maintained DHCP client in the appliance, not just the host.
+          printf '%s\n' dhcpcd-base |
+            sudo tee "$(guestfish get-path)/supermin.d/workstation-manager-dhcp" >/dev/null
           # Supermin reads the host kernel; keep its network helper unprivileged.
           sudo chmod a+r /boot/vmlinuz-*
           source e2e-tests/e2e-common.sh

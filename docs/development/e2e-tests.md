@@ -14,27 +14,30 @@ Existing VMs retain their resources.
 CI prepares an offline desktop prerequisite image from the configured Ubuntu
 cloud image. Its cache key includes the upstream SHA-256, build recipes, and UTC
 calendar week; the weekly rebuild refreshes desktop packages. Cached image bytes
-are checked before use. A cache miss installs `libguestfs-tools` on the runner
-and builds the image before authenticated actions begin.
+are checked before use. A cache miss installs `libguestfs-tools` and `dhcpcd-base`
+on the runner and builds the image before authenticated actions begin.
 
 The image contains only the desktop prerequisites normally installed by Lima.
 Every test VM still creates its own identity, user session, and fixture keyring,
 then runs the complete workstation bootstrap. Live VM disks, restored keys,
 Bitwarden state, and browser profiles are never used to build the image.
 
-For a local prepared base, install `libguestfs-tools` alongside the VM tools,
-ensure your user can access `/dev/kvm`, then run:
+For a local prepared base, install `libguestfs-tools` and `dhcpcd-base` alongside
+the VM tools, ensure your user can access `/dev/kvm`, then run:
 
 ```sh
+printf '%s\n' dhcpcd-base |
+  sudo tee "$(guestfish get-path)/supermin.d/workstation-manager-dhcp" >/dev/null
 sudo chmod a+r /boot/vmlinuz-*
 make e2e-base-inputs
 make e2e-base
 E2E_BASE_IMAGE="$PWD/.cache/e2e-base/desktop.qcow2" make e2e-up
 ```
 
-The builder must run without `sudo`: its network helper needs access to the
-builder's temporary files. On Ubuntu, the kernel read permission above lets
-libguestfs create its appliance as your user; see the
+The supplemental package list includes the DHCP client inside the appliance so
+it can configure networking and DNS. The builder must run without `sudo`: its
+network helper needs access to the builder's temporary files. On Ubuntu, the
+kernel read permission above lets libguestfs create its appliance as your user; see the
 [libguestfs Ubuntu guidance](https://libguestfs.org/guestfs-faq.1.html#ubuntu).
 
 The builder customizes a fresh download offline; it never opens an existing Lima
