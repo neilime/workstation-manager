@@ -16,6 +16,7 @@ cloud image. Its cache key includes the upstream SHA-256, build recipes, and UTC
 calendar week; the weekly rebuild refreshes desktop packages. Cached image bytes
 are checked before use. A cache miss installs `libguestfs-tools` and `dhcpcd-base`
 on the runner and builds the image before authenticated actions begin.
+CI uses QEMU's built-in user networking for the build appliance.
 
 The image contains only the desktop prerequisites normally installed by Lima.
 Every test VM still creates its own identity, user session, and fixture keyring,

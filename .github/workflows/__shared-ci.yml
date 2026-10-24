@@ -267,6 +267,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libguestfs-tools dhcpcd-base
+          # Select QEMU user networking for the build appliance on this runner.
+          sudo apt-get remove -y passt # codespell:ignore passt
           # Include the maintained DHCP client in the appliance, not just the host.
           printf '%s\n' dhcpcd-base |
             sudo tee "$(guestfish get-path)/supermin.d/workstation-manager-dhcp" >/dev/null
