@@ -1,10 +1,13 @@
 ARG TOOLING_UID=1000
 ARG TOOLING_GID=1000
+ARG TOOLING_BASE_DIGEST
 
-FROM ubuntu:26.04
+FROM ubuntu:26.04${TOOLING_BASE_DIGEST}
 
 ARG TOOLING_UID
 ARG TOOLING_GID
+# CI advances this weekly so cached apt/pip layers cannot freeze floating dependencies.
+ARG TOOLING_REFRESH=local
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     LANG=en_US.UTF-8 \
