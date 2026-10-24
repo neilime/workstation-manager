@@ -338,8 +338,9 @@ def test_desktop_recipe_preserves_networkd_for_fresh_and_prepared_images(desktop
     assert netplan.stat().st_mode & 0o777 == 0o600
 
 
-def test_image_cleanup_removes_instance_identity_and_transient_files(tmp_path):
-    """A reusable image requests cloud-init identity reset and retains only the package recipe marker."""
+@pytest.mark.parametrize("identity_layout", ["regular", "etc-link", "dbus-link", "missing"])
+def test_image_cleanup_removes_instance_identity_and_transient_files(tmp_path, identity_layout):
+    """Reusable images request fresh systemd identity regardless of the source's machine-ID file layout."""
     guest = tmp_path / "guest"
     removed = (
         "etc/ssh/ssh_host_ed25519_key",
@@ -354,10 +355,21 @@ def test_image_cleanup_removes_instance_identity_and_transient_files(tmp_path):
         path = guest / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("synthetic guest state", encoding="utf-8")
+    machine_id = guest / "etc/machine-id"
+    dbus_id = guest / "var/lib/dbus/machine-id"
+    if identity_layout == "etc-link":
+        machine_id.symlink_to(dbus_id)
+    elif identity_layout == "missing":
+        dbus_id.unlink()
+    else:
+        machine_id.write_text("synthetic machine identity\n", encoding="utf-8")
+        if identity_layout == "dbus-link":
+            dbus_id.unlink()
+            dbus_id.symlink_to(machine_id)
     script = tmp_path / "clean-image.sh"
     content = (WORKSPACE / "e2e-tests/base-image/clean-image.sh").read_text(encoding="utf-8")
     content = re.sub(
-        r"/etc/ssh|/var/lib/dbus|/var/lib/apt/lists|/var/tmp|/var/log|/tmp",
+        r"/etc/ssh|/etc/machine-id|/var/lib/dbus|/var/lib/apt/lists|/var/tmp|/var/log|/tmp",
         lambda match: shlex.quote(str(guest / match[0].lstrip("/"))),
         content,
     )
@@ -378,7 +390,10 @@ def test_image_cleanup_removes_instance_identity_and_transient_files(tmp_path):
         timeout=10,
     )
 
-    assert (trace / "cloud-init").read_text(encoding="utf-8").splitlines() == ["clean", "--logs", "--machine-id"]
+    assert (trace / "cloud-init").read_text(encoding="utf-8").splitlines() == ["clean", "--logs"]
+    assert not machine_id.is_symlink()
+    assert machine_id.read_text(encoding="utf-8") == "uninitialized\n"
+    assert machine_id.stat().st_mode & 0o777 == 0o444
     assert not any((guest / relative).exists() for relative in removed)
     assert (guest / "var/log/package.log").read_text(encoding="utf-8") == ""
     assert (guest / "var/lib/workstation-manager-e2e-base").read_text(encoding="utf-8") == "synthetic guest state"
