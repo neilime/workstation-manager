@@ -6,6 +6,11 @@ name: Main - Continuous Integration
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      prepared-desktop:
+        description: Use the prepared desktop base (disable to compare cold provisioning).
+        type: boolean
+        default: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +22,8 @@ jobs:
   ci:
     name: Continuous Integration
     uses: $/.github/workflows/__shared-ci.yml
+    with:
+      prepared-desktop: ${{ github.event_name != 'workflow_dispatch' || inputs.prepared-desktop }}
     permissions:
       actions: read
       attestations: write

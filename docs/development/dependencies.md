@@ -50,6 +50,12 @@ image to avoid competing proposals. Align Python across the tooling image,
 requirements, collection metadata, Make commands and CI. The test interpreter
 must match the tooling image.
 
+CI resolves the current Ubuntu container digest for tooling and the cloud-image
+SHA-256 for the desktop fixture on each run. Both dependency images refresh
+package installation weekly even when their maintained version inputs stay the
+same. Their content fingerprints invalidate caches when recipes or upstream
+images change; test VM state is never reused.
+
 Clipboard Indicator and Vitals use custom GNOME Extensions datasources.
 Reviewers must download the proposed archive, refresh its SHA-256, verify GNOME
 compatibility, and requalify clipboard behavior or panel sensors on Wayland.

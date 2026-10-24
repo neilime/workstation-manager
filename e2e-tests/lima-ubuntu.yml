@@ -46,7 +46,6 @@ provision:
     script: |
       #!/bin/bash
       set -euo pipefail
-      export DEBIAN_FRONTEND=noninteractive
       desktop_user="{{.User}}"
 
       if ! getent passwd "$desktop_user" >/dev/null; then
@@ -54,33 +53,7 @@ provision:
         exit 1
       fi
 
-      # ubuntu-desktop-minimal installs a default NetworkManager renderer.
-      # Keep Lima's cloud-init interface on networkd so a service restart
-      # during system maintenance cannot leave the VM without networking.
-      install -d -m 0755 /etc/netplan
-      cat >/etc/netplan/99-lima-networkd.yaml <<'EOF'
-      network:
-        version: 2
-        renderer: networkd
-      EOF
-      chmod 0600 /etc/netplan/99-lima-networkd.yaml
-
-      printf '%s\n' \
-        'gdm3 shared/default-x-display-manager select gdm3' \
-        'gdm3 gdm3/daemon_name string /usr/sbin/gdm3' \
-        | debconf-set-selections
-      # HTTP archive connections can stall long enough to exhaust VM readiness.
-      sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources
-      apt_options=(-o Acquire::Retries=3 -o Acquire::https::Timeout=30)
-      apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
-      apt-get "${apt_options[@]}" install -y --no-install-recommends \
-        dconf-cli \
-        flatpak \
-        gdm3 \
-        gnome-keyring \
-        libpam-gnome-keyring \
-        ptyxis \
-        ubuntu-desktop-minimal
+      bash /workspace/e2e-tests/base-image/install-desktop.sh
       systemctl stop gdm3
 
       netplan generate

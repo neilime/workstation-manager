@@ -11,6 +11,34 @@ architecture, disk, and memory. Override CPU and memory with positive
 `E2E_VM_CPUS` and `E2E_VM_MEMORY_GIB` values before creating a VM.
 Existing VMs retain their resources.
 
+CI prepares an offline desktop prerequisite image from the configured Ubuntu
+cloud image. Its cache key includes the upstream SHA-256, build recipes, and UTC
+calendar week; the weekly rebuild refreshes desktop packages. Cached image bytes
+are checked before use. A cache miss installs `libguestfs-tools` on the runner
+and builds the image before authenticated actions begin.
+
+The image contains only the desktop prerequisites normally installed by Lima.
+Every test VM still creates its own identity, user session, and fixture keyring,
+then runs the complete workstation bootstrap. Live VM disks, restored keys,
+Bitwarden state, and browser profiles are never used to build the image.
+
+For a local prepared base, install `libguestfs-tools` alongside the VM tools,
+then run:
+
+```sh
+make e2e-base-inputs
+sudo make e2e-base
+E2E_BASE_IMAGE="$PWD/.cache/e2e-base/desktop.qcow2" make e2e-up
+```
+
+The builder customizes a fresh download offline; it never opens an existing Lima
+instance. Without `E2E_BASE_IMAGE`, local startup installs desktop prerequisites
+from the cloud image. Existing instances keep their original base. The manual
+main CI workflow exposes `prepared-desktop`: disable it to compare the full suite
+against cold desktop provisioning at the same commit. Compare cache misses
+separately from cache hits, and run comparisons sequentially when using the same
+Sync chains.
+
 Readiness requires GNOME on Wayland and an unlocked fixture keyring.
 The fixture initializes its encrypted keyring privately, restarts the desktop
 session after setup, and unlocks it for recovery checks.
@@ -132,7 +160,8 @@ After failed setup, browser diagnostics use numeric metrics and redacted checks;
 a separate disposable chain is verified and removed without replacing the
 original failure or saved recovery chains.
 
-CI caches public Lima downloads before authenticated phases. Guest disks and
-authenticated state are never cached. Each assertion phase uses its own SSH
+CI caches public Lima downloads by upstream image checksum and saves its offline
+desktop base before authenticated phases. Running guest disks and authenticated
+state are never cached. Each assertion phase uses its own SSH
 control socket and a read-only Lima configuration. The read-only workspace mount
 uses QEMU 9p without caching and leaves AppArmor enabled.
