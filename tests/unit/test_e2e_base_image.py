@@ -119,6 +119,7 @@ def fixture_image_commands(monkeypatch):
             assert disk.read_bytes() == SOURCE
             disk.write_bytes(b"prepared desktop")
             assert options["env"]["LIBGUESTFS_BACKEND"] == "direct"
+            assert "XDG_RUNTIME_DIR" not in options["env"]
         elif command[:2] == ["qemu-img", "convert"]:
             Path(command[-1]).write_bytes(Path(command[-2]).read_bytes())
         else:
@@ -132,12 +133,28 @@ def fixture_image_commands(monkeypatch):
     return calls, run, execute_shell
 
 
+def test_base_image_build_rejects_root_before_creating_or_downloading_image(
+    builder, image_commands, tmp_path, monkeypatch
+):
+    """Image construction requires one unprivileged owner for libguestfs and its network helper."""
+    monkeypatch.setattr(base_image.os, "geteuid", lambda: 0)
+    image = tmp_path / "cache/desktop.qcow2"
+
+    with pytest.raises(PermissionError, match="without sudo"):
+        builder.build(image, builder.identify(source_checksums(), TODAY))
+
+    base_image.urllib.request.urlopen.assert_not_called()
+    assert image_commands[0] == []
+    assert not image.parent.exists()
+
+
 def test_base_image_build_customizes_only_a_fresh_download(builder, image_commands, tmp_path, monkeypatch):
     """Building prerequisites never reads or modifies an existing authenticated Lima instance."""
     live_vm = tmp_path / "lima/fixture/diffdisk"
     live_vm.parent.mkdir(parents=True)
     live_vm.write_bytes(b"existing workstation and credentials")
     monkeypatch.setenv("LIMA_HOME", str(live_vm.parent.parent))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "user-session"))
     image = tmp_path / "cache/desktop.qcow2"
     metadata = builder.identify(source_checksums(), TODAY)
 

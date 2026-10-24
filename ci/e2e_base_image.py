@@ -64,6 +64,8 @@ class DesktopBaseImage:
 
     def build(self, image: Path, metadata: dict[str, str]) -> None:
         """Customize only a fresh verified cloud image, then publish atomically."""
+        if os.geteuid() == 0:
+            raise PermissionError("Build the desktop image as an unprivileged user; run make e2e-base without sudo")
         image.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="e2e-base-", dir=image.parent) as temporary:
             directory = Path(temporary)
@@ -74,6 +76,8 @@ class DesktopBaseImage:
                 raise ValueError("Ubuntu cloud image checksum mismatch; resolve its identity again")
             expanded = directory / "expanded.qcow2"
             environment = {**os.environ, "LIBGUESTFS_BACKEND": "direct"}
+            # Use /tmp for appliance sockets, as allowed by Ubuntu's network-helper profile.
+            environment.pop("XDG_RUNTIME_DIR", None)
             commands = [
                 ["qemu-img", "create", "-f", "qcow2", str(expanded), "16G"],
                 [
