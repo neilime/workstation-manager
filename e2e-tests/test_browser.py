@@ -1,9 +1,14 @@
 """End-to-end checks for the primary browser."""
 
+from browser_sync_smoke import timing_lines
 
-def test_native_browser_sync_automation_is_available(host) -> None:
+
+def test_native_browser_sync_automation_is_available(host, capsys) -> None:
     """SSH-launched automation must reach the desktop and preserve disposable native profiles."""
     result = host.run("python3 /workspace/e2e-tests/browser_sync_smoke.py")
+    with capsys.disabled():
+        for line in timing_lines(result.stdout):
+            print(line, flush=True)
     assert result.succeeded, result.stdout + result.stderr
 
 
