@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import configparser
 import importlib.util
+import json
 import os
 import pathlib
 import re
@@ -347,29 +348,120 @@ class PhaseTimingTests(unittest.TestCase):
         for exit_status in (0, 37):
             with self.subTest(exit_status=exit_status), tempfile.TemporaryDirectory() as temporary_dir:
                 summary = pathlib.Path(temporary_dir) / "summary.md"
+                report_dir = pathlib.Path(temporary_dir) / "reports"
                 result = subprocess.run(
                     [
                         "bash",
                         "-c",
                         (
                             'set -euo pipefail; source "$1"; '
-                            "run_e2e_timed_command fixture bash -c 'exit \"$1\"' "
+                            "run_e2e_timed_command setup bash -c 'exit \"$1\"' "
                             'fixture "$2" synthetic-vault-password'
                         ),
                         "timing-test",
                         str(E2E_PATH / "e2e-common.sh"),
                         str(exit_status),
                     ],
-                    env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary)},
+                    env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary), "REPORTS_DIR": str(report_dir)},
                     capture_output=True,
                     text=True,
                     check=False,
                     timeout=10,
                 )
                 self.assertEqual(result.returncode, exit_status, result.stderr)
-                self.assertRegex(result.stderr, rf"phase=fixture elapsed=\d+s status={exit_status}")
-                self.assertRegex(summary.read_text(), rf"- E2E fixture: \d+s \(exit {exit_status}\)")
-                self.assertNotIn("synthetic-vault-password", result.stdout + result.stderr + summary.read_text())
+                self.assertRegex(result.stderr, rf"phase=setup elapsed=\d+s status={exit_status}")
+                self.assertRegex(summary.read_text(), rf"- E2E setup: \d+s \(exit {exit_status}\)")
+                report = (report_dir / "e2e/phase-timings.jsonl").read_text()
+                records = [json.loads(line) for line in report.splitlines()]
+                self.assertEqual(len(records), 1)
+                elapsed = records[0]["elapsed_seconds"]
+                self.assertIsInstance(elapsed, int)
+                self.assertGreaterEqual(elapsed, 0)
+                self.assertEqual(records[0], {"phase": "setup", "elapsed_seconds": elapsed, "exit_status": exit_status})
+                self.assertNotIn(
+                    "synthetic-vault-password", result.stdout + result.stderr + summary.read_text() + report
+                )
+
+    def test_report_appends_completed_phases_before_a_failure(self) -> None:
+        """A later action failure retains earlier phase measurements in the same report."""
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    (
+                        'set -euo pipefail; source "$1"; run_e2e_timed_command backup true; '
+                        'run_e2e_timed_command setup bash -c "exit 37"'
+                    ),
+                    "timing-test",
+                    str(E2E_PATH / "e2e-common.sh"),
+                ],
+                env={**os.environ, "GITHUB_STEP_SUMMARY": "", "REPORTS_DIR": temporary_dir},
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            report = pathlib.Path(temporary_dir) / "e2e/phase-timings.jsonl"
+            records = [json.loads(line) for line in report.read_text().splitlines()]
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertEqual(
+            [(record["phase"], record["exit_status"]) for record in records], [("backup", 0), ("setup", 37)]
+        )
+
+    def test_report_failure_preserves_action_status_and_summary(self) -> None:
+        """A report destination failure leaves successful and failed action results unchanged."""
+        for exit_status in (0, 37):
+            with self.subTest(exit_status=exit_status), tempfile.TemporaryDirectory() as temporary_dir:
+                report_dir = pathlib.Path(temporary_dir) / "blocked"
+                report_dir.touch()
+                summary = pathlib.Path(temporary_dir) / "summary.md"
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        (
+                            'set -euo pipefail; source "$1"; '
+                            'run_e2e_timed_command setup bash -c \'exit "$1"\' fixture "$2"'
+                        ),
+                        "timing-test",
+                        str(E2E_PATH / "e2e-common.sh"),
+                        str(exit_status),
+                    ],
+                    env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary), "REPORTS_DIR": str(report_dir)},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, exit_status, result.stderr)
+                self.assertIn("Could not append E2E timing to the JSONL report.", result.stderr)
+                self.assertIn(f"(exit {exit_status})", summary.read_text())
+
+    def test_unrecognized_phase_cannot_leak_into_reports(self) -> None:
+        """Only public phase labels are recorded, while unsupported labels preserve action failure."""
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            summary = pathlib.Path(temporary_dir) / "summary.md"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'set -euo pipefail; source "$1"; run_e2e_timed_command "$2" bash -c "exit 37"',
+                    "timing-test",
+                    str(E2E_PATH / "e2e-common.sh"),
+                    'synthetic-private-label"\n',
+                ],
+                env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary), "REPORTS_DIR": temporary_dir},
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            self.assertFalse(summary.exists())
+            self.assertFalse((pathlib.Path(temporary_dir) / "e2e").exists())
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertNotIn("synthetic-private-label", result.stdout + result.stderr)
+        self.assertIn("Unsupported E2E timing phase", result.stderr)
 
     def test_summary_failure_preserves_the_action_status(self) -> None:
         """An unavailable summary destination must not replace the original action failure."""
@@ -378,7 +470,7 @@ class PhaseTimingTests(unittest.TestCase):
                 [
                     "bash",
                     "-c",
-                    'set -euo pipefail; source "$1"; run_e2e_timed_command fixture bash -c "exit 37"',
+                    'set -euo pipefail; source "$1"; run_e2e_timed_command setup bash -c "exit 37"',
                     "timing-test",
                     str(E2E_PATH / "e2e-common.sh"),
                 ],

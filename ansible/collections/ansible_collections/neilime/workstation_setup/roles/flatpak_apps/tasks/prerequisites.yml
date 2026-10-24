@@ -1,0 +1,44 @@
+---
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update Flatpak and GNOME session integration # noqa: package-latest
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name:
+      - flatpak
+      - gnome-software
+      - gnome-software-plugin-flatpak
+      - dconf-cli
+      - python3-psutil
+      - python3-gi
+      - gnome-keyring
+      - libpam-gnome-keyring
+      - xdg-desktop-portal-gnome
+      - xdg-desktop-portal-gtk
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+
+- name: Ensure GNOME Software Snap support is absent
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name: gnome-software-plugin-snap
+    state: absent
+    purge: true
+
+- name: Configure GNOME Software updates
+  ansible.builtin.import_tasks: updates.yml
+
+- name: Ensure configured Flatpak remote is present
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak_remote:
+    name: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+    state: present
+    method: system
+    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+  register: flatpak_apps_remote
+  until: flatpak_apps_remote is succeeded
+  retries: 3
+  delay: 10

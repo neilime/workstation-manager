@@ -11,6 +11,44 @@ architecture, disk, and memory. Override CPU and memory with positive
 `E2E_VM_CPUS` and `E2E_VM_MEMORY_GIB` values before creating a VM.
 Existing VMs retain their resources.
 
+CI prepares an offline desktop prerequisite image from the configured Ubuntu
+cloud image. Its cache key includes the upstream SHA-256, build recipes, and UTC
+calendar week; the weekly rebuild refreshes desktop packages. Cached image bytes
+are checked before use. A cache miss installs `libguestfs-tools` and `dhcpcd-base`
+on the runner and builds the image before authenticated actions begin.
+CI uses QEMU's built-in user networking for the build appliance.
+
+The image contains only the desktop prerequisites normally installed by Lima.
+Every test VM still creates its own identity, user session, and fixture keyring,
+then runs the complete workstation bootstrap. Live VM disks, restored keys,
+Bitwarden state, and browser profiles are never used to build the image.
+
+For a local prepared base, install `libguestfs-tools` and `dhcpcd-base` alongside
+the VM tools, ensure your user can access `/dev/kvm`, then run:
+
+```sh
+printf '%s\n' dhcpcd-base |
+  sudo tee "$(guestfish get-path)/supermin.d/workstation-manager-dhcp" >/dev/null
+sudo chmod a+r /boot/vmlinuz-*
+make e2e-base-inputs
+make e2e-base
+E2E_BASE_IMAGE="$PWD/.cache/e2e-base/desktop.qcow2" make e2e-up
+```
+
+The supplemental package list includes the DHCP client inside the appliance so
+it can configure networking and DNS. The builder must run without `sudo`: its
+network helper needs access to the builder's temporary files. On Ubuntu, the
+kernel read permission above lets libguestfs create its appliance as your user; see the
+[libguestfs Ubuntu guidance](https://libguestfs.org/guestfs-faq.1.html#ubuntu).
+
+The builder customizes a fresh download offline; it never opens an existing Lima
+instance. Without `E2E_BASE_IMAGE`, local startup installs desktop prerequisites
+from the cloud image. Existing instances keep their original base. The manual
+main CI workflow exposes `prepared-desktop`: disable it to compare the full suite
+against cold desktop provisioning at the same commit. Compare cache misses
+separately from cache hits, and run comparisons sequentially when using the same
+Sync chains.
+
 Readiness requires GNOME on Wayland and an unlocked fixture keyring.
 The fixture initializes its encrypted keyring privately, restarts the desktop
 session after setup, and unlocks it for recovery checks.
@@ -117,7 +155,17 @@ The setup screenshot defaults to `.reports/screenshots/e2e-setup-desktop.png`;
 The suite records phase duration and exit status. `E2E_PROFILE_TASKS=1` adds
 Ansible task timing; CI enables it and records failures as well as success.
 Temporary profiling changes are restored afterward. Assertion output includes
-the slowest tests.
+the slowest tests. The native browser smoke test also prints elapsed time and
+status for API checks, recovery persistence, profile switching, teardown retry,
+and window restoration, including successful runs. These records contain fixed
+scenario labels only; browser state and recovery data stay excluded.
+
+With `REPORTS_DIR` set, each timed phase appends one JSON record to
+`e2e/phase-timings.jsonl` beneath that directory. Records contain only `phase`,
+`elapsed_seconds`, and `exit_status`; command arguments and credentials are
+excluded. CI uploads this report after teardown, including failed phases.
+Local invocations append to the same file; use a fresh report directory when
+comparing separate runs. Detailed Ansible task timings remain in the job log.
 
 Startup and setup failures produce bounded VM, memory, session, display-manager,
 and OOM diagnostics. They exclude action journals and process environments.
@@ -125,7 +173,8 @@ After failed setup, browser diagnostics use numeric metrics and redacted checks;
 a separate disposable chain is verified and removed without replacing the
 original failure or saved recovery chains.
 
-CI caches public Lima downloads before authenticated phases. Guest disks and
-authenticated state are never cached. Each assertion phase uses its own SSH
+CI caches public Lima downloads by upstream image checksum and saves its offline
+desktop base before authenticated phases. Running guest disks and authenticated
+state are never cached. Each assertion phase uses its own SSH
 control socket and a read-only Lima configuration. The read-only workspace mount
 uses QEMU 9p without caching and leaves AppArmor enabled.

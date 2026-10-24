@@ -19,7 +19,7 @@ COLLECTION_UNIT_TEST_DIRS := $(wildcard $(addsuffix /tests/unit,$(FIRST_PARTY_CO
 UNIT_TEST_DIRS := tests/unit $(COLLECTION_UNIT_TEST_DIRS)
 
 .PHONY: help setup tool-shell lint lint-fix check-ansible check-collections test test-unit test-integration test-host test-collections ci
-.PHONY: e2e-prepare
+.PHONY: e2e-prepare e2e-base-inputs e2e-base
 
 help: ## Display help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -94,6 +94,14 @@ e2e-up: ## Start the Lima end-to-end test VM
 
 e2e-prepare: ## Prepare the tooling image and start the VM concurrently
 	@$(MAKE) --jobs=2 setup e2e-up
+
+e2e-base-inputs: ## Resolve the public desktop base image cache key
+	@mkdir -p .cache
+	@python3 ci/e2e_base_image.py identify --metadata .cache/e2e-base-inputs.json \
+		$(if $(strip $(GITHUB_OUTPUT)),--github-output "$(GITHUB_OUTPUT)")
+
+e2e-base: ## Build a fresh offline desktop base (requires e2e-base-inputs and libguestfs)
+	@python3 ci/e2e_base_image.py build --metadata .cache/e2e-base-inputs.json
 
 e2e-setup: ## Run workstation.sh setup inside the Lima end-to-end test VM
 	$(call check_lima)

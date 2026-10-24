@@ -17,6 +17,22 @@ if limactl list --format '{{.Name}}' 2>/dev/null | grep -Fxq "$E2E_VM_NAME"; the
 	start_args+=("$E2E_VM_NAME")
 else
 	start_args+=(-y --containerd=none "--name=$E2E_VM_NAME")
+	if [[ -n "${E2E_BASE_IMAGE:-}" ]]; then
+		image_override="$(
+			python3 - "$E2E_BASE_IMAGE" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+image = pathlib.Path(sys.argv[1]).resolve(strict=True)
+with image.open("rb") as stream:
+    digest = hashlib.file_digest(stream, "sha256").hexdigest()
+print('.images = ' + json.dumps([{"location": str(image), "arch": "x86_64", "digest": "sha256:" + digest}]))
+PY
+		)"
+		start_args+=(--set "$image_override")
+	fi
 	# Resource overrides apply only when creating a disposable fixture.
 	for resource in E2E_VM_CPUS E2E_VM_MEMORY_GIB; do
 		value="${!resource:-}"

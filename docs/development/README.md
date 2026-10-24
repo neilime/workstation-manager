@@ -96,8 +96,14 @@ link checks. Do not edit generated caches, reports, vendored collections, or
 test output.
 
 CI runs the linter independently and starts syntax/sanity, unit/integration, and
-VM jobs after the tooling image is available. The Ansible job caches only sanity
-virtual environments, keyed by runner architecture and tooling filesystem layers.
+VM jobs after resolving the tooling image. Images are reused by a fingerprint of
+the Dockerfile, its copied inputs, ignore files, Ubuntu base digest, architecture,
+and UTC calendar week. A miss builds the image; registry and authentication
+failures stop resolution. Each job consumes the selected immutable digest and
+mounts the current checkout. The weekly refresh also invalidates package-install
+build layers. Input-addressed registry tags are retained and share image layers.
+The Ansible job caches only sanity virtual environments, keyed by runner
+architecture and tooling filesystem layers.
 
 ## Detailed guides
 

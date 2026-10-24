@@ -1,0 +1,14 @@
+---
+- name: Start installing or updating declared Flatpak applications
+  become: "{{ workstation_manager_use_become }}"
+  community.general.flatpak:
+    name: "{{ workstation_manager_resolved.desktop.flatpak.packages }}"
+    state: latest
+    method: system
+    remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+  async: 3600
+  poll: 0
+  register: flatpak_apps_pending_install
+  # The completion task reports the package transaction's actual change result.
+  changed_when: false
+  when: workstation_manager_resolved.desktop.flatpak.packages | length > 0

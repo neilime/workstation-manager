@@ -6,6 +6,11 @@ name: Main - Continuous Integration
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      prepared-desktop:
+        description: Use the prepared desktop base (disable to compare cold provisioning).
+        type: boolean
+        default: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,19 +19,11 @@ concurrency:
 permissions: {}
 
 jobs:
-  clean:
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/prune-pull-requests-images-tags.yml@5ffc3c81daacc57700a14bb91d67edbc67eedc1d # 0.39.0
-    permissions:
-      contents: read
-      id-token: write
-      packages: write
-      pull-requests: read
-    with:
-      images: '["tooling"]'
-
   ci:
     name: Continuous Integration
     uses: $/.github/workflows/__shared-ci.yml
+    with:
+      prepared-desktop: ${{ github.event_name != 'workflow_dispatch' || inputs.prepared-desktop }}
     permissions:
       actions: read
       attestations: write

@@ -60,6 +60,13 @@ unless explicitly deferred. Browser Sync decisions still require interaction.
 
 ## Execution and credential safety
 
+Setup starts one Flatpak application transaction after configuring its prerequisites
+and overlaps it with development tooling installation. It waits for completion,
+including retries, before restoring keys, dotfiles, or archives. A development
+failure still waits for the pending transaction before returning failure. APT
+operations stay serial; direct Flatpak role calls and previews stay synchronous.
+Native scanner cleanup runs after application installation completes.
+
 Preserve these entrypoint contracts:
 
 - Local and remote execution share `run_action`; remote playbooks target only
@@ -90,6 +97,19 @@ Keep login, unlock, server selection, collection metadata, attachments, vault
 writes, and cache synchronization in managed-user CLI tasks. Browser recovery
 and post-write verification require fresh reads in their execution context;
 do not replace those reads with cached controller facts.
+
+Collection reads reuse an unlocked session only within the same action, managed
+user, home, CLI cache, server, and configured account context. Each reuse runs a
+live status check; locked or expired sessions must unlock again, and an unexpected
+account change stops recovery. These facts remain in memory for the current
+Ansible run. Every collection read still synchronizes the vault, and writes keep
+their explicit synchronization and read-back verification.
+
+Authentication uses the internal `neilime.workstation_setup.bitwarden_cli` module
+for credential-bearing status, login, unlock, and sync calls. It passes credentials
+inside the managed process so verbose connection tracing cannot expose task
+environment values. Its callers retain `no_log`, and failed CLI output is discarded
+before returning the status used for diagnostics and retries.
 
 ## Recovery decisions
 
