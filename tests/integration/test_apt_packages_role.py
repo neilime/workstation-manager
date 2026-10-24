@@ -9,7 +9,6 @@ from ansible.parsing.dataloader import DataLoader
 from ansible_test_helpers import (
     SETUP_ROLES,
     ansible_environment,
-    desktop_variables,
     run_playbook,
     write_local_playbook,
     write_stateful_module,
@@ -71,20 +70,19 @@ def apt_playbook_fixture(tmp_path):
                     "state_file": str(state_file),
                 }
                 tasks.append(task)
-    playbook = write_local_playbook(
-        tmp_path / "playbook.json",
-        tasks,
-        desktop_variables(
-            tmp_path / "home",
-            system={
+    variables = {
+        "workstation_manager_use_become": False,
+        "workstation_manager_resolved": {
+            "system": {
                 "packages": {
                     "prerequisites": [],
                     "apt": ["managed", "missing", "pinned=1.0"],
                     "cache_valid_time": 86400,
-                }
+                },
             },
-        ),
-    )
+        },
+    }
+    playbook = write_local_playbook(tmp_path / "playbook.json", tasks, variables)
     return (
         ["ansible-playbook", "-i", "localhost,", str(playbook)],
         ansible_environment(tmp_path, ANSIBLE_LIBRARY=str(library)),
