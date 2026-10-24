@@ -1,10 +1,13 @@
 ---
-- name: Ensure GPG tooling is installed
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update GPG tooling # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name:
       - gpg
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
 

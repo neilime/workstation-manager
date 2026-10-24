@@ -1,11 +1,14 @@
 ---
-- name: Install the extension archive and settings dependencies
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update the extension archive and settings dependencies # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name:
       - libglib2.0-bin
       - unzip
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
 
 - name: Prepare the versioned clipboard extension directory
   become: "{{ workstation_manager_gnome_use_become_user }}"

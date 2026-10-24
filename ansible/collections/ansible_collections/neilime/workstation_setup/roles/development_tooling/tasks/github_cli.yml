@@ -9,11 +9,14 @@
       - development_tooling_github_arch | length > 0
     fail_msg: GitHub CLI installation supports Ubuntu amd64 and arm64.
 
-- name: Install GitHub credential-store dependencies
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update GitHub credential-store dependencies # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name: libsecret-tools
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
 
@@ -52,5 +55,7 @@
   ansible.builtin.apt:
     name: gh
     state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: "{{ development_tooling_github_repository is changed }}"
     install_recommends: false

@@ -1,4 +1,4 @@
-"""Exercise Flatpak download retries through isolated Ansible tasks."""
+"""Exercise Flatpak updates and download retries through isolated Ansible tasks."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ansible_test_helpers import (
 
 FIXTURE_OPERATIONS = r"""
 if operation in ("flatpak_remote", "flatpak"):
-    if args["state"] != "present" or args["method"] != "system":
+    if args["method"] != "system":
         module.fail_json(msg="Expected system-wide installation")
     if operation == "flatpak" and args["remote"] not in state["remotes"]:
         module.fail_json(msg="Remote must exist before installing applications")
@@ -25,13 +25,15 @@ if operation in ("flatpak_remote", "flatpak"):
         state["failures"][operation] -= 1
         if operation == "flatpak":
             # A failed transaction can leave some applications installed.
-            state["applications"] = sorted(set(state["applications"]) | {args["name"][0]})
+            state["applications"].setdefault(args["name"][0], "current")
         path.write_text(json.dumps(state))
         module.fail_json(msg="Synthetic download failure: SSL connect error")
     if operation == "flatpak_remote":
         state["remotes"] = sorted(set(state["remotes"]) | {args["name"]})
     else:
-        state["applications"] = sorted(set(state["applications"]) | set(args["name"]))
+        for name in args["name"]:
+            if name not in state["applications"] or args["state"] == "latest":
+                state["applications"][name] = "current"
 """
 
 
@@ -44,7 +46,7 @@ def flatpak_playbook_fixture(tmp_path):
             {
                 "failures": {"flatpak_remote": 0, "flatpak": 0},
                 "remotes": [],
-                "applications": ["org.example.Personal"],
+                "applications": {"org.example.Personal": "older", "org.example.First": "older"},
             }
         )
     )
@@ -79,7 +81,7 @@ def flatpak_playbook_fixture(tmp_path):
 
 
 def test_flatpak_downloads_recover_and_converge(flatpak_playbook) -> None:
-    """Retry remote and partial application failures, preserving installed applications."""
+    """Install and update declared apps after partial failures, preserving unmanaged apps."""
     command, environment, state_file = flatpak_playbook
     original = json.loads(state_file.read_text())
     original["failures"] = {"flatpak_remote": 1, "flatpak": 2}
@@ -91,7 +93,11 @@ def test_flatpak_downloads_recover_and_converge(flatpak_playbook) -> None:
     assert state == {
         "failures": {"flatpak_remote": 0, "flatpak": 0},
         "remotes": ["fixture"],
-        "applications": ["org.example.First", "org.example.Personal", "org.example.Second"],
+        "applications": {
+            "org.example.First": "current",
+            "org.example.Personal": "older",
+            "org.example.Second": "current",
+        },
     }
     repeated = run_playbook(command, environment)
     assert repeated.returncode == 0, repeated.stdout + repeated.stderr

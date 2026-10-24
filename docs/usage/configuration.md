@@ -54,10 +54,11 @@ cancels. Bootstrap authentication can also occur during `--dry-run`.
 ## Application delivery
 
 Use the [supported Ubuntu release](../../ansible/ubuntu-version). Setup installs
-native APT applications and Flatpaks from the configured remote. GNOME Software
-manages application updates, with automatic downloads enabled. Failed Flatpak
-operations are retried; persistent errors stop setup. Rerun setup after resolving
-them to install missing applications.
+native APT applications and Flatpaks from the configured remote and updates them
+on subsequent runs. GNOME Software also manages application updates between
+setup runs, with automatic downloads enabled. Failed Flatpak operations are
+retried; persistent errors stop setup. Rerun setup after resolving them to finish
+installing or updating applications.
 
 Setup removes Snap applications, snapd, and residual Snap directories. Close Snap
 applications first. Snap-dependent boot or encryption blocks removal; use a
@@ -71,6 +72,29 @@ include it. Restore individual application files into the replacement's data
 location yourself; setup does not convert profile formats. Archive failures,
 mounted data, or unexpected package dependencies stop removal. Dry runs inventory
 changes without stopping services, archiving, or deleting data.
+
+### Software updates
+
+Each setup run refreshes APT metadata and installs or updates managed APT
+packages, including native vendor applications. APT preferences and explicit
+package versions still apply. An update that would change a held package or
+remove an installed package stops setup; resolve the reported conflict before
+rerunning. Full-system upgrades remain a separate maintenance action.
+
+Setup also updates declared system Flatpak applications and their required
+runtimes. Other installed applications remain outside this update scope, except
+for dependencies needed by managed packages. Package updates can restart services;
+finish work in Docker containers before running setup.
+
+Tools with configured versions use those pins. Publish pin changes before
+rerunning setup; see [dependency updates](../development/dependencies.md) for
+update ownership. Setup does not update project dependency manifests or lockfiles.
+
+Use `setup --dry-run` to preview changes. Package tasks do not apply updates in
+check mode, and APT previews use existing metadata. Flatpak previews report a
+potential change even when an application is current. Bootstrap downloads,
+installation, and authentication can still occur as described in the
+[entrypoint guide](../../README.md#set-up-or-update-the-workstation).
 
 ## Prepare Bitwarden collections
 
@@ -167,8 +191,8 @@ and themes in `custom/` or Chezmoi. Existing shell history is preserved.
 ## Developer tools and project files
 
 [Public configuration](../../ansible/group_vars/all.yml) selects software and
-versions. Rerun setup after publishing pin updates; use APT for native vendor
-package updates. Project-specific runtimes belong in each project's `mise.toml`.
+versions. Rerun setup to apply [software updates](#software-updates), including
+published pin changes. Project-specific runtimes belong in each project's `mise.toml`.
 See [AI tools](ai-tools.md) for Orca, Codex, Copilot, skills, and MCP servers.
 
 Setup installs PHP and Composer through mise. PHP compiles from source, so initial

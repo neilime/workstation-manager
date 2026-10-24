@@ -1,9 +1,12 @@
 ---
-- name: Ensure Zsh is installed for the target user's login shell
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update Zsh for the target user's login shell # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name: zsh
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
 
 - name: Set Zsh as the target user's login shell
   become: "{{ workstation_manager_use_become }}"

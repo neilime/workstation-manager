@@ -1,9 +1,12 @@
 ---
-- name: Install the native scanner application and SANE diagnostics
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update the native scanner application and SANE diagnostics # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name: [simple-scan, sane-utils]
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     install_recommends: false
 
 - name: Remove the duplicate system Flatpak scanner without deleting application data

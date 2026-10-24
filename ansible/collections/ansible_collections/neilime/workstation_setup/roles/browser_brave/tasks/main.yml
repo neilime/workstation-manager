@@ -40,14 +40,18 @@
       - arm64
     signed_by: /usr/share/keyrings/brave-browser-archive-keyring.gpg
     state: present
+  register: browser_brave_repository
 
-- name: Install Brave browser package
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update Brave browser package # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name: brave-browser
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: true
-    cache_valid_time: 0
+    cache_valid_time: "{{ 0 if browser_brave_repository is changed else workstation_manager_resolved.system.packages.cache_valid_time }}"
 
 - name: Configure Brave as the target user's default browser
   ansible.builtin.include_tasks: default_browser.yml

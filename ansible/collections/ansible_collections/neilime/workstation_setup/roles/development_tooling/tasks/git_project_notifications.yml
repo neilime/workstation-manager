@@ -1,11 +1,14 @@
 ---
-- name: Install the native GNOME notification dependencies
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update the native GNOME notification dependencies # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name:
       - python3-gi
       - gir1.2-glib-2.0
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
 
 - name: Ensure Git report desktop activation directories exist
   become: "{{ workstation_manager_use_become }}"
