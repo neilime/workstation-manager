@@ -93,6 +93,7 @@ class DesktopBaseImage:
                 ],
                 [
                     "virt-customize",
+                    "--verbose",
                     "--format",
                     "qcow2",
                     "-a",
