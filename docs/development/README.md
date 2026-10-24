@@ -80,6 +80,8 @@ the resulting installation rather than repeating normalization checks.
 
 Reuse `tests/support/ansible_test_helpers.py` for bounded playbook runs and isolated
 controller state, and the adjacent entrypoint helpers for terminal fixtures.
+When replacing external operations, preserve role imports and `tasks_from`
+entrypoints so tests exercise Ansible's role-relative task lookup.
 Keep mutable homes and process state local to each test; share setup only when
 the fixture is immutable. Use synthetic inputs and maintained configuration
 instead of release snapshots or assertions about source layout.
