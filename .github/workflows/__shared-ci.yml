@@ -33,31 +33,58 @@ jobs:
       statuses: write
 
   build-tooling-image:
-    # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-container/.github/workflows/docker-build-images.yml@5ffc3c81daacc57700a14bb91d67edbc67eedc1d # 0.39.0
-    # yamllint enable rule:line-length
+    name: Resolve tooling image
+    runs-on: ubuntu-latest
     permissions:
-      attestations: write
       contents: read
-      id-token: write
       issues: read
       packages: write
       pull-requests: read
-    with:
-      oci-registry: ghcr.io
-      sign: false
-      attest: false
-      images: |
-        [
-          {
-            "name": "tooling",
-            "context": ".",
-            "dockerfile": "./docker/tooling/Dockerfile",
-            "platforms": ["linux/amd64"]
-          }
-        ]
-    secrets:
-      oci-registry-password: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      built-images: ${{ steps.selected.outputs.built-images }}
+    steps:
+      - name: Checkout
+        # yamllint disable rule:line-length
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # yamllint enable rule:line-length
+        with:
+          persist-credentials: false
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve tooling build inputs
+        id: tooling
+        run: python3 ci/tooling_image.py resolve
+
+      - name: Build missing tooling image
+        if: steps.tooling.outputs.image == ''
+        id: build
+        # yamllint disable rule:line-length
+        uses: hoverkraft-tech/ci-github-container/actions/docker/build-image@5ffc3c81daacc57700a14bb91d67edbc67eedc1d # 0.39.0
+        # yamllint enable rule:line-length
+        with:
+          oci-registry: ghcr.io
+          oci-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image: tooling
+          tag: ${{ steps.tooling.outputs.tag }}
+          context: .
+          dockerfile: docker/tooling/Dockerfile
+          platform: linux/amd64
+          build-args: |
+            TOOLING_BASE_DIGEST=${{ steps.tooling.outputs.base-digest }}
+            TOOLING_REFRESH=${{ steps.tooling.outputs.refresh }}
+
+      - name: Select immutable tooling image
+        id: selected
+        env:
+          TOOLING_CACHED_IMAGE: ${{ steps.tooling.outputs.image }}
+          TOOLING_BUILT_IMAGE: ${{ steps.build.outputs.built-image }}
+        run: python3 ci/tooling_image.py select
 
   static-ansible:
     name: Ansible checks
