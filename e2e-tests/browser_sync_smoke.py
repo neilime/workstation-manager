@@ -6,12 +6,14 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import signal
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -60,6 +62,37 @@ from browser_sync_removal_smoke import (  # noqa: E402
 )
 
 # pylint: enable=wrong-import-position
+
+SMOKE_SCENARIOS = frozenset(
+    {"native-api", "recovery-persistence", "profile-switching", "teardown-retry", "window-restoration"}
+)
+
+
+@contextmanager
+def timed_scenario(name: str) -> Iterator[None]:
+    """Report public scenario timings without exposing browser state or exceptions."""
+
+    if name not in SMOKE_SCENARIOS:
+        raise ValueError("Unsupported browser smoke timing scenario")
+    started = time.monotonic()
+    status = "failed"
+    try:
+        yield
+        status = "passed"
+    finally:
+        elapsed = time.monotonic() - started
+        print(f"E2E browser timing: scenario={name} elapsed={elapsed:.2f}s status={status}", flush=True)
+
+
+def timing_lines(output: str) -> Iterator[str]:
+    """Select only fixed scenario labels, numeric timings, and public status values."""
+
+    for line in output.splitlines():
+        match = re.fullmatch(
+            r"E2E browser timing: scenario=([a-z-]+) elapsed=[0-9]+\.[0-9]{2}s status=(?:passed|failed)", line
+        )
+        if match and match.group(1) in SMOKE_SCENARIOS:
+            yield line
 
 
 def diagnostic_fixture() -> dict:
@@ -903,7 +936,7 @@ def main() -> None:
             "--sync-url=http://127.0.0.1:1",
         ]
         environment = DesktopSession.environment()
-        with BrowserPipe(arguments, environment) as pipe:
+        with timed_scenario("native-api"), BrowserPipe(arguments, environment) as pipe:
             requested_page(pipe)
             native = delayed_profile_identity(pipe, directory + "/Default")
             assert len(native.code().split()) == 24
@@ -916,7 +949,7 @@ def main() -> None:
             code = pending_chain(pipe, native)
             sync_selection(pipe, native.settings)
             profile_preferences(pipe, native)
-        with BrowserPipe(arguments, environment) as pipe:
+        with timed_scenario("recovery-persistence"), BrowserPipe(arguments, environment) as pipe:
             native = NativeSync(pipe, directory + "/Default")
             assert native.code() == code, "Native code could not be decrypted after restarting"
             native.profile_preferences({"bookmark_bar": "always", "confirm_close_tabs": False}, restore=False)
@@ -925,13 +958,16 @@ def main() -> None:
             assert any(target["url"] == "data:text/plain,workstation-session-fixture" for target in targets), (
                 "Previous session tab was not restored"
             )
-        for profile in ("Profile 2", "Default"):
-            selected = [argument for argument in arguments if not argument.startswith("--profile-directory=")]
-            with BrowserPipe([*selected, f"--profile-directory={profile}"], environment) as pipe:
-                NativeSync(pipe, directory + "/" + profile)
-        retry_native_fixture_leave(arguments, environment, Path(directory), code)
-        assert not (Path(directory) / "SingletonLock").exists()
-    restore_open_profiles(environment)
+        with timed_scenario("profile-switching"):
+            for profile in ("Profile 2", "Default"):
+                selected = [argument for argument in arguments if not argument.startswith("--profile-directory=")]
+                with BrowserPipe([*selected, f"--profile-directory={profile}"], environment) as pipe:
+                    NativeSync(pipe, directory + "/" + profile)
+        with timed_scenario("teardown-retry"):
+            retry_native_fixture_leave(arguments, environment, Path(directory), code)
+            assert not (Path(directory) / "SingletonLock").exists()
+    with timed_scenario("window-restoration"):
+        restore_open_profiles(environment)
     print(
         "Encrypted code persistence, offline rejection, Sync selection, "
         "profile identity, session preservation, and cleanup passed.",

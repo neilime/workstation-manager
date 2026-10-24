@@ -145,7 +145,10 @@ The setup screenshot defaults to `.reports/screenshots/e2e-setup-desktop.png`;
 The suite records phase duration and exit status. `E2E_PROFILE_TASKS=1` adds
 Ansible task timing; CI enables it and records failures as well as success.
 Temporary profiling changes are restored afterward. Assertion output includes
-the slowest tests.
+the slowest tests. The native browser smoke test also prints elapsed time and
+status for API checks, recovery persistence, profile switching, teardown retry,
+and window restoration, including successful runs. These records contain fixed
+scenario labels only; browser state and recovery data stay excluded.
 
 With `REPORTS_DIR` set, each timed phase appends one JSON record to
 `e2e/phase-timings.jsonl` beneath that directory. Records contain only `phase`,
