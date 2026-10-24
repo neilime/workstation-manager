@@ -132,7 +132,12 @@ class DesiredStateDefaultsFactory:
                     "apt": [],
                     "cache_valid_time": 86400,
                 },
-                "settings": {"sysctl": {}},
+                "settings": {
+                    "sysctl": {
+                        "net.ipv6.conf.all.disable_ipv6": "1",
+                        "net.ipv6.conf.default.disable_ipv6": "1",
+                    }
+                },
             },
             "desktop": {
                 "flatpak": {
