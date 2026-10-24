@@ -119,6 +119,13 @@ Ansible task timing; CI enables it and records failures as well as success.
 Temporary profiling changes are restored afterward. Assertion output includes
 the slowest tests.
 
+With `REPORTS_DIR` set, each timed phase appends one JSON record to
+`e2e/phase-timings.jsonl` beneath that directory. Records contain only `phase`,
+`elapsed_seconds`, and `exit_status`; command arguments and credentials are
+excluded. CI uploads this report after teardown, including failed phases.
+Local invocations append to the same file; use a fresh report directory when
+comparing separate runs. Detailed Ansible task timings remain in the job log.
+
 Startup and setup failures produce bounded VM, memory, session, display-manager,
 and OOM diagnostics. They exclude action journals and process environments.
 After failed setup, browser diagnostics use numeric metrics and redacted checks;
