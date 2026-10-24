@@ -60,6 +60,13 @@ unless explicitly deferred. Browser Sync decisions still require interaction.
 
 ## Execution and credential safety
 
+Setup starts one Flatpak application transaction after configuring its prerequisites
+and overlaps it with development tooling installation. It waits for completion,
+including retries, before restoring keys, dotfiles, or archives. A development
+failure still waits for the pending transaction before returning failure. APT
+operations stay serial; direct Flatpak role calls and previews stay synchronous.
+Native scanner cleanup runs after application installation completes.
+
 Preserve these entrypoint contracts:
 
 - Local and remote execution share `run_action`; remote playbooks target only

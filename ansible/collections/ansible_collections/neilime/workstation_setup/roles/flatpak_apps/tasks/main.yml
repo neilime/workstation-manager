@@ -1,60 +1,17 @@
 ---
-# Setup updates managed APT packages to their repository candidates.
-- name: Install or update Flatpak and GNOME session integration # noqa: package-latest
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.apt:
-    name:
-      - flatpak
-      - gnome-software
-      - gnome-software-plugin-flatpak
-      - dconf-cli
-      - python3-psutil
-      - python3-gi
-      - gnome-keyring
-      - libpam-gnome-keyring
-      - xdg-desktop-portal-gnome
-      - xdg-desktop-portal-gtk
-    state: latest
-    force_apt_get: true
-    fail_on_autoremove: true
-    install_recommends: false
-    update_cache: true
-    cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
+- name: Prepare Flatpak and its configured remote
+  ansible.builtin.import_tasks: prerequisites.yml
 
-- name: Ensure GNOME Software Snap support is absent
-  become: "{{ workstation_manager_use_become }}"
-  ansible.builtin.apt:
-    name: gnome-software-plugin-snap
-    state: absent
-    purge: true
+- name: Install Flatpak applications synchronously
+  ansible.builtin.import_tasks: applications/install.yml
+  when: not (flatpak_apps_defer_completion | default(false)) or ansible_check_mode
 
-- name: Configure GNOME Software updates
-  ansible.builtin.import_tasks: updates.yml
-
-- name: Ensure configured Flatpak remote is present
-  become: "{{ workstation_manager_use_become }}"
-  community.general.flatpak_remote:
-    name: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
-    state: present
-    method: system
-    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
-  register: flatpak_apps_remote
-  until: flatpak_apps_remote is succeeded
-  retries: 3
-  delay: 10
-
-- name: Install or update declared Flatpak applications
-  become: "{{ workstation_manager_use_become }}"
-  community.general.flatpak:
-    name: "{{ workstation_manager_resolved.desktop.flatpak.packages }}"
-    state: latest
-    method: system
-    remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
-  register: flatpak_apps_install
-  until: flatpak_apps_install is succeeded
-  retries: 3
-  delay: 10
-  when: workstation_manager_resolved.desktop.flatpak.packages | length > 0
-
-- name: Apply native scanner delivery
+- name: Apply native scanner delivery after synchronous application installation
   ansible.builtin.import_tasks: scanner.yml
+  when: not (flatpak_apps_defer_completion | default(false)) or ansible_check_mode
+
+- name: Start Flatpak applications while setup installs development tooling
+  ansible.builtin.import_tasks: applications/start.yml
+  when:
+    - flatpak_apps_defer_completion | default(false)
+    - not ansible_check_mode

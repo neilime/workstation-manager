@@ -12,13 +12,22 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.apt_packages
 
-- name: Apply Flatpak desktop applications
-  ansible.builtin.import_role:
-    name: neilime.workstation_setup.flatpak_apps
+- name: Install independent application and development packages
+  block:
+    - name: Start Flatpak desktop application installation
+      ansible.builtin.import_role:
+        name: neilime.workstation_setup.flatpak_apps
+      vars:
+        flatpak_apps_defer_completion: true
 
-- name: Apply development tooling
-  ansible.builtin.import_role:
-    name: neilime.workstation_setup.development_tooling
+    - name: Apply development tooling
+      ansible.builtin.import_role:
+        name: neilime.workstation_setup.development_tooling
+  always:
+    - name: Complete Flatpak installation even when development setup fails
+      ansible.builtin.include_role:
+        name: neilime.workstation_setup.flatpak_apps
+        tasks_from: applications/complete
 
 - name: Restore SSH keys from Bitwarden
   ansible.builtin.import_role:

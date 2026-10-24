@@ -39,7 +39,7 @@ def isolated_tasks(state_file):
     loader = DataLoader()
     tasks = [
         task
-        for task in loader.load_from_file(str(SETUP_ROLES / "flatpak_apps/tasks/main.yml"))
+        for task in loader.load_from_file(str(SETUP_ROLES / "flatpak_apps/tasks/prerequisites.yml"))
         if "ansible.builtin.apt" in task
     ]
     tasks.extend(loader.load_from_file(str(SETUP_ROLES / "flatpak_apps/tasks/updates.yml")))
