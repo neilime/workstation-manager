@@ -1,8 +1,8 @@
 """End-to-end checks for configured Flatpak applications and update ownership."""
 
 
-def test_gnome_software_owns_flatpak_updates(host) -> None:
-    """GNOME Software manages updates for the installed Flatpak applications."""
+def test_gnome_software_enables_updates_between_setup_runs(host) -> None:
+    """GNOME Software downloads updates between explicit setup runs."""
     assert host.package("gnome-software").is_installed
     assert host.package("gnome-software-plugin-flatpak").is_installed
     assert host.check_output("dbus-run-session -- gsettings get org.gnome.software download-updates") == "true"

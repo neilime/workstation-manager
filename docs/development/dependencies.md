@@ -6,6 +6,14 @@ manifests. Workstation tool pins belong in
 Normalizers, scripts, roles, and templates consume configured values and reject
 missing or invalid required pins. Private examples inherit public pins.
 
+Setup applies configured pins and updates managed unpinned APT packages to their
+repository candidates. It refreshes APT metadata at the start of system setup and
+after vendor repository changes. Upgrade tasks use `state: latest`, `force_apt_get`
+and `fail_on_autoremove`; the task-local lint exceptions express this update
+policy. Held packages are not overridden. Declared Flatpak apps use `state: latest`;
+check mode reports a potential change even when they are current. See the
+[software update contract](../usage/configuration.md#software-updates).
+
 Verify stable releases, support status and migration requirements against official
 upstream sources. Use the latest stable release compatible with the supported
 environment; document a concrete blocker if an upgrade cannot proceed. Remove

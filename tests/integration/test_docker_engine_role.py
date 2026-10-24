@@ -25,7 +25,11 @@ ROLE_PATH = (
 FIXTURE_OPERATIONS = r"""
 if operation == "apt":
     packages = args["name"] if isinstance(args["name"], list) else [args["name"]]
-    state["packages"] = sorted(set(state["packages"] + packages))
+    if args.get("update_cache"):
+        state["metadata"] = "current"
+    for name in packages:
+        if name not in state["packages"] or args["state"] == "latest":
+            state["packages"][name] = state["metadata"]
 elif operation == "deb822_repository":
     state["repository"] = args
 elif operation == "get_url":
@@ -51,7 +55,8 @@ def make_docker_setup(tmp_path: pathlib.Path):
     state_path.write_text(
         json.dumps(
             {
-                "packages": [],
+                "packages": {"docker-ce": "older"},
+                "metadata": "older",
                 "services": {},
                 "groups": ["existing-group"],
             }
@@ -110,13 +115,14 @@ def make_docker_setup(tmp_path: pathlib.Path):
     return run
 
 
-def test_native_installation_preserves_groups_and_uses_current_suite(docker_setup) -> None:
-    """The vendor service is usable with the complete package set and account membership."""
+def test_native_updates_preserve_groups_and_use_current_suite(docker_setup) -> None:
+    """Refresh vendor metadata, update Docker, and install missing plugins while preserving groups."""
     result, state = docker_setup()
     assert result.returncode == 0, result.stdout + result.stderr
-    assert state["packages"] == sorted(
+    assert sorted(state["packages"]) == sorted(
         ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
     )
+    assert set(state["packages"].values()) == {"current"}
     assert state["repository"]["suites"] == "resolute"
     assert state["repository"]["signed_by"] == "/etc/apt/keyrings/docker.asc"
     assert state["services"]["docker.service"]["state"] == "started"

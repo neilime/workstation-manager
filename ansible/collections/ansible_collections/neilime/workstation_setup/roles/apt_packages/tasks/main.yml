@@ -1,9 +1,12 @@
 ---
-- name: Install declared APT packages
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update declared APT packages # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name: "{{ workstation_manager_resolved.system.packages.apt }}"
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
   when: workstation_manager_resolved.system.packages.apt | length > 0

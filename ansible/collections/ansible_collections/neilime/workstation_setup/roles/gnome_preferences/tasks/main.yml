@@ -5,7 +5,8 @@
       {{ workstation_manager_use_become and ansible_facts['user_id'] != workstation_manager_resolved.user.name }}
   changed_when: false
 
-- name: Install GNOME preference dependencies
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update GNOME preference dependencies # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name:
@@ -15,7 +16,9 @@
       - ptyxis
       - python3-psutil
       - python3-gi
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: true
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
 

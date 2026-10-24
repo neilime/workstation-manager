@@ -27,7 +27,7 @@ workstation_manager:
         - htop
         - xdg-utils
         - fwupd
-      # Refresh APT metadata when the cache is older than this many seconds.
+      # Reuse APT metadata for this many seconds between setup's forced refreshes.
       cache_valid_time: 86400
   desktop:
     clipboard_indicator:

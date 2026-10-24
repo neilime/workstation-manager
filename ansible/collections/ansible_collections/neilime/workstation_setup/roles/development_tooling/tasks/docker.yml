@@ -19,7 +19,8 @@
     signed_by: /etc/apt/keyrings/docker.asc
   register: workstation_manager_docker_repository
 
-- name: Install Docker Engine and official CLI plugins
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update Docker Engine and official CLI plugins # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name:
@@ -28,7 +29,9 @@
       - containerd.io
       - docker-buildx-plugin
       - docker-compose-plugin
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: "{{ workstation_manager_docker_repository is changed }}"
     install_recommends: false
 

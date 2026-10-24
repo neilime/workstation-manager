@@ -34,11 +34,14 @@
           Pin: origin "packages.microsoft.com"
           Pin-Priority: 9999
 
-- name: Install declared native editor packages
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update declared native editor packages # noqa: package-latest
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.apt:
     name: "{{ workstation_manager_resolved.development.editor_packages }}"
-    state: present
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
     update_cache: true
     cache_valid_time: "{{ 0 if workstation_manager_vscode_repository is changed else workstation_manager_resolved.system.packages.cache_valid_time }}"
 

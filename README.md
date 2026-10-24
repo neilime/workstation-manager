@@ -22,8 +22,10 @@ if your boot or encryption depends on it.
 wget -qO- https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh | sh -s -- setup
 ```
 
-Rerun setup after publishing configuration changes. To restore a backup during
-setup, follow [backup and restore](docs/usage/backup-and-restore.md).
+Rerun setup to update managed applications and apply published configuration
+changes. See [software updates](docs/usage/configuration.md#software-updates) for
+scope and service interruptions. To restore a backup during setup, follow
+[backup and restore](docs/usage/backup-and-restore.md).
 
 Append `--dry-run` to preview an action:
 
