@@ -98,3 +98,41 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: Remove managed system sysctl configuration when no values are declared
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: /etc/sysctl.d/99-workstation-manager-system.conf
+    state: absent
+  when: workstation_manager_resolved.system.settings.sysctl | length == 0
+
+- name: Initialize managed system sysctl configuration
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-workstation-manager-system.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by workstation-manager.
+  when: workstation_manager_resolved.system.settings.sysctl | length > 0
+
+- name: Apply managed system sysctl entries
+  become: "{{ workstation_manager_use_become }}"
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value | string }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-workstation-manager-system.conf
+    sysctl_set: true
+    reload: false
+  loop: >-
+    {{
+      workstation_manager_resolved.system.settings.sysctl
+      | dict2items
+      | sort(attribute='key')
+    }}
+  loop_control:
+    label: "{{ item.key }}"
+  when: workstation_manager_resolved.system.settings.sysctl | length > 0
+
