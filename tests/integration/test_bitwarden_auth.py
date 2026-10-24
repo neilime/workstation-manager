@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,6 +12,80 @@ import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     bitwarden_auth,
 )
+from ansible_collections.neilime.workstation_setup.plugins.modules import bitwarden_cli
+
+
+@pytest.fixture(name="private_cli")
+def private_cli_fixture(tmp_path: Path):
+    """Execute the actual module against a CLI that deliberately emits sensitive diagnostics."""
+    binary = tmp_path / "bw"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "if os.environ.get('FIXTURE_CLI_FAIL'):\n"
+        "    print('synthetic-unexpected-secret')\n"
+        "    print('synthetic-unexpected-secret', file=sys.stderr)\n"
+        "    sys.exit(17)\n"
+        "print(json.dumps({'session': os.environ.get('BW_SESSION')}))\n"
+    )
+    binary.chmod(0o755)
+
+    def run(parameters: dict, *, fail: bool = False) -> dict:
+        result = subprocess.run(
+            [sys.executable, bitwarden_cli.__file__],
+            input=json.dumps({"ANSIBLE_MODULE_ARGS": parameters}),
+            env={
+                **os.environ,
+                "PATH": f"{tmp_path}:{os.environ['PATH']}",
+                "BW_SESSION": "synthetic-inherited-session",
+                "FIXTURE_CLI_FAIL": "1" if fail else "",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        assert "synthetic-unexpected-secret" not in result.stdout + result.stderr
+        assert "synthetic-inherited-session" not in result.stdout + result.stderr
+        return json.loads(result.stdout)
+
+    return run
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"operation": "login"},
+        {"operation": "login", "client_id": "synthetic-client"},
+        {"operation": "login", "client_secret": "synthetic-secret"},
+        {"operation": "unlock"},
+        {"operation": "unsupported"},
+    ],
+)
+def test_private_cli_rejects_missing_or_unsupported_authentication_inputs(private_cli, parameters):
+    """Invalid authentication requests fail at the module boundary before executing the CLI."""
+    result = private_cli(parameters)
+    assert result["failed"] is True
+    assert "rc" not in result
+
+
+@pytest.mark.parametrize("operation", ["status", "login", "unlock", "sync"])
+def test_private_cli_preserves_failure_status_without_returning_sensitive_diagnostics(private_cli, operation):
+    """The role can retry failures using rc without exposing arbitrary CLI output or errors."""
+    result = private_cli(
+        {"operation": operation, "password": "synthetic-password", "client_id": "id", "client_secret": "secret"},
+        fail=True,
+    )
+    assert result["failed"] is True
+    assert result["rc"] == 17
+    assert result["stdout"] == ""
+
+
+def test_private_cli_does_not_inherit_an_unselected_session(private_cli):
+    """Status probes without an explicit candidate cannot use the controller's session implicitly."""
+    result = private_cli({"operation": "status"})
+    assert result["rc"] == 0
+    assert json.loads(result["stdout"]) == {"session": ""}
 
 
 def _write_fake_bw(path: Path, scenario: str) -> None:
