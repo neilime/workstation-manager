@@ -10,7 +10,7 @@ vm_name="${1:-workstation-manager-v1}"
 stage="${2:-all}"
 stages=(backup-arrange backup-act backup-assert setup-arrange setup-act setup-assert cleanup-arrange cleanup-act cleanup-assert)
 case "$stage" in
-all | finish | backup-arrange | backup-act | backup-assert | setup-arrange | setup-act | setup-assert | cleanup-arrange | cleanup-act | cleanup-assert) ;;
+all | finish | backup-arrange | backup-act | backup-assert | setup-arrange | setup-act | setup-assert | setup-repeat-act | setup-repeat-assert | cleanup-arrange | cleanup-act | cleanup-assert) ;;
 *)
 	printf '%s\n' 'Unsupported E2E stage.' >&2
 	exit 2
@@ -118,17 +118,21 @@ finish_e2e_stage() {
 }
 
 run_setup_action() {
+	local setup_stage="${1:-act}"
+	local screenshot_phase=setup
 	local setup_status=0
 	local capture_status=0
+	if [[ "$setup_stage" == repeat ]]; then screenshot_phase=setup-repeat; fi
+	local screenshot_status_path="$screenshot_dir/e2e-${screenshot_phase}-desktop.status"
 
-	bash "$script_dir/e2e-setup.sh" "$vm_name" act || setup_status=$?
+	bash "$script_dir/e2e-setup.sh" "$vm_name" "$setup_stage" || setup_status=$?
 	if [[ $setup_status -eq 0 ]]; then
 		run_e2e_timed_command desktop-restart restart_e2e_desktop_session || setup_status=$?
 	fi
 	if [[ $setup_status -eq 0 ]]; then
 		run_e2e_timed_command clipboard-extension wait_for_e2e_clipboard_extension || setup_status=$?
 	fi
-	run_e2e_timed_command setup-screenshot capture_phase_screenshot setup || capture_status=$?
+	run_e2e_timed_command setup-screenshot capture_phase_screenshot "$screenshot_phase" || capture_status=$?
 	# Defer screenshot-only failure until after all assertions and cleanup.
 	if ! printf '%s\n' "$capture_status" >"$screenshot_status_path"; then
 		printf '%s\n' 'Could not record the E2E screenshot status.' >&2
@@ -159,13 +163,16 @@ run_cleanup_action() {
 
 finish_e2e_fixtures() {
 	local finish_status=0
+	local status_path
 	timeout --kill-after=5s 60s bash "$script_dir/e2e-backup.sh" "$vm_name" finish || finish_status=$?
-	if [[ -f "$screenshot_status_path" && "$(cat "$screenshot_status_path")" != 0 ]]; then
-		printf '%s\n' 'E2E setup screenshot failed; see the screenshot diagnostics.' >&2
-		if [[ $finish_status -eq 0 ]]; then
-			finish_status=1
+	for status_path in "$screenshot_status_path" "$screenshot_dir/e2e-setup-repeat-desktop.status"; do
+		if [[ -f "$status_path" && "$(cat "$status_path")" != 0 ]]; then
+			printf '%s\n' 'E2E setup screenshot failed; see the screenshot diagnostics.' >&2
+			if [[ $finish_status -eq 0 ]]; then
+				finish_status=1
+			fi
 		fi
-	fi
+	done
 	return "$finish_status"
 }
 
@@ -193,11 +200,11 @@ if [[ "$stage" == finish ]]; then
 	exit 0
 fi
 if [[ "$stage" == backup-arrange ]]; then
-	rm -f "$screenshot_status_path"
+	rm -f "$screenshot_status_path" "$screenshot_dir/e2e-setup-repeat-desktop.status"
 fi
 
 case "$stage" in
-backup-arrange | backup-act | setup-act | cleanup-act)
+backup-arrange | backup-act | setup-act | setup-repeat-act | cleanup-act)
 	trap finish_e2e_stage EXIT
 	prepare_e2e_task_profiling
 	;;
@@ -208,8 +215,10 @@ backup-arrange | backup-act | setup-arrange | cleanup-arrange)
 	run_e2e_timed_command "$stage" bash "$script_dir/e2e-${stage%-*}.sh" "$vm_name" "${stage##*-}"
 	;;
 setup-act) run_e2e_timed_command "$stage" run_setup_action ;;
+setup-repeat-act) run_e2e_timed_command "$stage" run_setup_action repeat ;;
 cleanup-act) run_e2e_timed_command "$stage" run_cleanup_action ;;
 backup-assert) run_e2e_timed_command "$stage" run_phase_tests backup e2e-tests/test_backup.py ;;
 setup-assert) run_e2e_timed_command "$stage" run_phase_tests setup "${setup_test_paths[@]}" ;;
+setup-repeat-assert) run_e2e_timed_command "$stage" run_phase_tests setup-repeat "${setup_test_paths[@]}" ;;
 cleanup-assert) run_e2e_timed_command "$stage" run_phase_tests cleanup e2e-tests/test_cleanup.py ;;
 esac

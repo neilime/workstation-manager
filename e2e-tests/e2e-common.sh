@@ -17,6 +17,7 @@ run_e2e_timed_command() (
 	# Only these public labels may enter logs and reports. Never record arguments.
 	case "$phase_name" in
 	base-build | vm-start | backup-arrange | backup-act | backup-assert | setup-arrange | setup-act | setup-assert | \
+		setup-command | setup-repeat-command | setup-repeat-act | setup-repeat-assert | \
 		cleanup-arrange | cleanup-act | cleanup-assert | desktop-restart | clipboard-extension | setup-screenshot | \
 		desktop-diagnostics | browser-diagnostics | browser-teardown) ;;
 	*)

@@ -113,6 +113,37 @@ stages to succeed; they are not independent reruns. Always run
 and report screenshot failures, then `make e2e-down`. The full `make e2e-test`
 command handles stage sequencing and fixture finishing automatically.
 
+## Measure setup in CI
+
+Run the manual **Main - Continuous Integration** workflow on the revision to
+measure, with `setup-benchmark=true`:
+
+```sh
+gh workflow run main-ci.yml --ref <published-branch> -f setup-benchmark=true
+```
+
+This mode adds a repeated setup and all setup assertions before cleanup in the
+same disposable VM. The repeat retains installed state and
+the same configuration; it does not remove restoration targets or replay the
+backup archive. Browser identities must match the original captured fixture
+before and after the repeat. An interrupted or unverifiable repeat retains the VM
+for diagnosis instead of discarding unverified remote devices.
+
+The benchmark adds separate `setup-repeat-act` and `setup-repeat-assert` timings
+and a separate JUnit report. `setup-command` and `setup-repeat-command` measure
+the entrypoint itself, excluding browser fixture bookkeeping and desktop
+assertion preparation. They are contained within their Act timings; do not add
+them to the stage totals. The repeat gets its own screenshot and deferred failure
+status. The manual benchmark has a 50-minute suite deadline and a 75-minute job
+limit; routine PR runs retain the original single setup and deadlines.
+
+Compare baseline and candidate revisions using the same VM resources and
+`prepared-desktop` setting. Run them sequentially with verified teardown because
+the credentials and recovery chains are shared. Record each commit and run URL;
+external downloads, package updates and Sync latency can vary between runs.
+Provider sign-in is deferred and a local private override is prepared by the end-to-end
+fixture, so these measurements do not include those interactive production steps.
+
 ## Teardown and reuse
 
 Run `make e2e-down` after failures too. It resumes a stopped VM, asks only the

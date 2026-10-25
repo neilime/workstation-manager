@@ -8,6 +8,10 @@ name: Shared - Continuous Integration
         description: Use the offline desktop prerequisite image; disable for a cold-base comparison.
         type: boolean
         default: true
+      setup-benchmark:
+        description: Repeat setup and its assertions before cleanup for a CI-only comparison.
+        type: boolean
+        default: false
     secrets:
       BITWARDEN_CLIENT_ID:
         required: true
@@ -198,7 +202,7 @@ jobs:
     needs: [build-tooling-image]
     runs-on: ubuntu-latest
     # Leave time for VM preparation and verified teardown.
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.setup-benchmark && 75 || 60 }}
     environment: ci
     permissions:
       contents: read
@@ -307,12 +311,16 @@ jobs:
           key: ${{ steps.lima-cache.outputs.cache-primary-key }}
 
       - name: Initialize e2e stages
+        env:
+          E2E_SETUP_BENCHMARK: ${{ inputs.setup-benchmark }}
         run: |
           # Bootstrap the same commit that supplies the assertions, including PR merge commits.
           E2E_REPOSITORY_REF="$(git rev-parse HEAD)"
           printf 'E2E_REPOSITORY_REF=%s\n' "$E2E_REPOSITORY_REF" >> "$GITHUB_ENV"
-          # Share the original 35-minute budget across Arrange, Act, and Assert.
-          printf 'E2E_SUITE_DEADLINE=%s\n' "$(($(date +%s) + 35 * 60))" >> "$GITHUB_ENV"
+          # Only the opt-in repeat receives additional time; teardown stays outside.
+          suite_minutes=35
+          if [[ "$E2E_SETUP_BENCHMARK" == true ]]; then suite_minutes=50; fi
+          printf 'E2E_SUITE_DEADLINE=%s\n' "$(($(date +%s) + suite_minutes * 60))" >> "$GITHUB_ENV"
 
       - name: Backup - Arrange fixtures and recovery keys
         env:
@@ -347,6 +355,20 @@ jobs:
 
       - name: Setup - Assert
         run: make e2e-stage STAGE=setup-assert
+
+      - name: Setup repeat - Act without rearranging installed state
+        if: inputs.setup-benchmark
+        env:
+          WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
+          WORKSTATION_MANAGER_GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
+          BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
+          BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+        run: make e2e-stage STAGE=setup-repeat-act
+
+      - name: Setup repeat - Assert
+        if: inputs.setup-benchmark
+        run: make e2e-stage STAGE=setup-repeat-assert
 
       - name: Cleanup - Arrange preservation fixtures
         run: make e2e-stage STAGE=cleanup-arrange
