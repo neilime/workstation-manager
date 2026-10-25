@@ -171,6 +171,7 @@ def sync_browser_recovery(
     *,
     check_mode: bool = False,
     disposable_names: list[str] | None = None,
+    restore_metadata: bool = False,
 ) -> dict:
     """Synchronize actual profiles and compare codes in memory, never exporting secrets."""
 
@@ -179,14 +180,22 @@ def sync_browser_recovery(
         action = "sync"
     if action not in {"sync", "save", "restore"}:
         raise ValueError("Unsupported live browser recovery action")
+    if restore_metadata and action != "restore":
+        raise ValueError("Browser metadata restoration requires the restore action")
     inspection = inspect_browser_profiles(user_data_dir, profiles)
-    if inspection["drift"]:
+    if inspection["drift"] and (
+        not restore_metadata or any(issue["kind"] == "undeclared" for issue in inspection["drift"])
+    ):
         raise ValueError("Browser metadata changed; reconcile profiles before live synchronization")
-    profiles = _declared_profiles(profiles, inspection)
     if not profiles:
         raise ValueError("No declared browser profiles to synchronize")
     if check_mode:
-        return {"changed": False, "verified": False, "issues": [], **live_sync_report(profiles, [])}
+        return {
+            "changed": False,
+            "verified": False,
+            "issues": [],
+            **live_sync_report(_declared_profiles(profiles, inspection), []),
+        }
     issues = []
     vault.run("sync")
     with closed_browser(user_data_dir) as (executable, environment):
@@ -194,13 +203,15 @@ def sync_browser_recovery(
             raise BrowserLifecycleBlocked(
                 "The desktop session is unavailable; log in to GNOME and retry browser recovery"
             )
+        if restore_metadata:
+            # Setup owns both operations; backup still requires separate metadata approval.
+            sync_browser_profiles(user_data_dir, profiles, "restore", vault)
         # Re-read preferences after a graceful exit flushes changes to disk.
         inspection = inspect_browser_profiles(user_data_dir, profiles)
-        observed = {profile["directory"]: profile for profile in inspection["profiles"]}
         if inspection["drift"]:
             raise ValueError("Browser metadata changed while closing; retry browser recovery")
-        for declaration in profiles:
-            state = observed[declaration["directory"]]["sync"]
+        profiles = _declared_profiles(profiles, inspection)
+        for declaration, state in zip(profiles, (profile["sync"] for profile in inspection["profiles"]), strict=True):
             if state["managed"] is True or state["keep_everything_synced"] is not True:
                 raise ValueError(
                     "Browser Sync is blocked by policy or Sync everything is disabled; retry browser recovery"
