@@ -30,7 +30,17 @@ def test_remote_pull_ignores_hostname_aliases_and_preserves_task_diagnostics(tmp
     write_local_playbook(
         source / "playbook.yml",
         [
-            {"ansible.builtin.assert": {"that": ["ansible_play_hosts_all == ['localhost']"]}},
+            {
+                "ansible.builtin.assert": {
+                    "that": [
+                        "ansible_play_hosts_all == ['localhost']",
+                        (
+                            "lookup('ansible.builtin.config', 'pipelining', "
+                            "plugin_type='connection', plugin_name='local') | bool"
+                        ),
+                    ]
+                }
+            },
             {"fixture_probe": {"fail": fail}},
         ],
         {},

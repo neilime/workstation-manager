@@ -286,7 +286,7 @@ class RepositorySourceTests(unittest.TestCase):
             self.assertIn(f"collection install -r {requirements} -p /tmp/collections", ansible_galaxy_log.read_text())
 
     def test_local_repository_runs_playbook_from_worktree(self) -> None:
-        """A local repository source should run ansible-playbook from the working tree."""
+        """Local sources run the worktree playbook and preserve an explicit pipelining opt-out."""
 
         with tempfile.TemporaryDirectory() as temporary_dir:
             fixture = pathlib.Path(temporary_dir)
@@ -304,6 +304,7 @@ class RepositorySourceTests(unittest.TestCase):
                     "print(json.dumps({\n"
                     '    "cwd": os.getcwd(),\n'
                     '    "args": sys.argv[1:],\n'
+                    '    "pipelining": os.environ.get("ANSIBLE_PIPELINING"),\n'
                     "}))\n"
                 ),
                 "ansible-pull": "#!/bin/sh\nexit 99\n",
@@ -330,6 +331,7 @@ class RepositorySourceTests(unittest.TestCase):
                     "USER": "runner",
                     "TEST_PROCESS_USER": "runner",
                     "TEST_TARGET_HOME": "/home/runner",
+                    "ANSIBLE_PIPELINING": "false",
                 },
                 check=True,
                 capture_output=True,
@@ -338,6 +340,7 @@ class RepositorySourceTests(unittest.TestCase):
             )
             invocation = json.loads(result.stdout.splitlines()[-1])
             self.assertEqual(invocation["cwd"], str(repository))
+            self.assertEqual(invocation["pipelining"], "false")
             self.assertIn(str(repository / "ansible/backup.yml"), invocation["args"])
 
     def test_run_ansible_pull_exports_interactive_tty_path(self) -> None:

@@ -333,6 +333,7 @@ run_ansible_pull_captured_with_script() (
 		printf 'REPOSITORY_BRANCH=%s\n' "$(shell_quote "$REPOSITORY_BRANCH")"
 		printf 'ANSIBLE_CHECKOUT_DIR=%s\n' "$(shell_quote "$ANSIBLE_CHECKOUT_DIR")"
 		printf 'ANSIBLE_VENV_DIR=%s\n' "$(shell_quote "$ANSIBLE_VENV_DIR")"
+		printf 'ANSIBLE_PIPELINING=%s\n' "$(shell_quote "${ANSIBLE_PIPELINING:-true}")"
 		printf 'set --'
 		for extra_arg in "$@"; do
 			printf ' %s' "$(shell_quote "$extra_arg")"
@@ -795,9 +796,11 @@ run_ansible_pull() {
 	interactive_tty_path="$(interactive_terminal_path || true)"
 	set -- "WORKSTATION_MANAGER_TTY=$interactive_tty_path" "$@"
 
+	# Pipeline local modules across sudo; keep explicit opt-outs for sudo policies.
 	# ansible-pull relays playbook output; flush prompts before waiting for input.
 	set -- env \
 		PYTHONUNBUFFERED=1 \
+		"ANSIBLE_PIPELINING=${ANSIBLE_PIPELINING:-true}" \
 		ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
 		"WORKSTATION_MANAGER_USER=$TARGET_USER" \
 		"WORKSTATION_MANAGER_USER_HOME=$TARGET_USER_HOME" \
