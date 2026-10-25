@@ -48,6 +48,16 @@ _DIAGNOSTIC_CHECKS = (
     "Fresh Download",
 )
 
+_SETTINGS_URL = "chrome://settings/braveSync/setup"
+_SETTINGS_CHECKS = (
+    "Settings Page",
+    "Document Loaded",
+    "Response Callback",
+    "Listener Callback",
+    "Native Sender",
+    "Callback Bridge",
+)
+
 # Only booleans and counts leave diagnostics. In particular getAllNodes contains
 # browsing data: reduce it inside the browser, never return it over the pipe.
 _START = r"""(async () => {
@@ -342,7 +352,7 @@ class NativeSync:
         if matches is not True:
             raise BrowserProtocolError("Brave opened a different profile; browser synchronization stopped")
         self.settings = pipe.page("brave://settings/braveSync/setup")
-        if self._evaluate(self.settings, _SETTINGS_BRIDGE, "initializing settings callbacks") is not True:
+        if self._evaluate_settings("true", "initializing settings callbacks") is not True:
             raise BrowserProtocolError("Brave's native Sync callbacks are unavailable")
         self._wait_for_encryption()
 
@@ -355,20 +365,64 @@ class NativeSync:
             raise BrowserProtocolError(f"Brave Sync failed while {operation}: {error}") from error
 
     def _evaluate_settings(self, expression: str, operation: str, timeout: float = 30) -> object:
-        """Install callbacks in the current page context before issuing one native operation."""
+        """Wait for the owned settings page, then issue one native operation without replay."""
 
-        # Settings can reload after startup. A bridge installed by the constructor
-        # belongs to that document, not the DevTools session. Install it and issue
-        # the request in one evaluation; never replay an operation whose reply fails.
-        return self._evaluate(
-            self.settings,
+        script = (
             "(() => {"
-            f" if (!{_SETTINGS_BRIDGE}) throw new Error('Native Sync callbacks are unavailable');"
-            f" return {expression};"
-            " })()",
-            operation,
-            timeout=timeout,
+            " const checks = {"
+            f" 'Settings Page': location.href === {json.dumps(_SETTINGS_URL)},"
+            " 'Document Loaded': document.readyState === 'complete',"
+            " 'Response Callback': typeof window.cr?.webUIResponse === 'function',"
+            " 'Listener Callback': typeof window.cr?.webUIListenerCallback === 'function',"
+            " 'Native Sender': typeof window.chrome?.send === 'function'"
+            " };"
+            f" checks['Callback Bridge'] = Object.values(checks).every(Boolean) && {_SETTINGS_BRIDGE};"
+            " if (!Object.values(checks).every(Boolean)) return {issued: false, checks};"
+            # Checking this document and issuing the operation are synchronous.
+            # An exception or lost reply after this point must never be retried.
+            f" return Promise.resolve({expression}).then(value => ({{issued: true, value}}));"
+            " })()"
         )
+        deadline = None
+        navigated = False
+        checks = dict.fromkeys(_SETTINGS_CHECKS, False)
+        while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            response = self._evaluate(self.settings, script, operation, timeout=timeout)
+            if isinstance(response, dict) and set(response) == {"issued", "value"} and response["issued"] is True:
+                return response["value"]
+            if (
+                not isinstance(response, dict)
+                or set(response) != {"issued", "checks"}
+                or response["issued"] is not False
+            ):
+                raise BrowserProtocolError("Brave returned unsupported settings readiness diagnostics")
+            checks = response["checks"]
+            if (
+                not isinstance(checks, dict)
+                or set(checks) != set(_SETTINGS_CHECKS)
+                or any(not isinstance(value, bool) for value in checks.values())
+                or all(checks.values())
+            ):
+                raise BrowserProtocolError("Brave returned unsupported settings readiness diagnostics")
+            if deadline is None:
+                deadline = time.monotonic() + 30
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            if not navigated and (not checks["Settings Page"] or checks["Document Loaded"]):
+                # Only this adapter-created tab is recovered, before any request
+                # was dispatched. Never navigate a failed in-flight operation.
+                result = self.pipe.call(
+                    "Page.navigate", {"url": _SETTINGS_URL}, self.settings, timeout=min(30, remaining)
+                )
+                if "errorText" in result or result.get("isDownload") is True:
+                    raise BrowserProtocolError("Brave could not reopen its native Sync settings page")
+                navigated = True
+            time.sleep(min(0.1, remaining))
+        missing = ", ".join(name for name in _SETTINGS_CHECKS if not checks[name])
+        raise BrowserProtocolError(f"Brave Sync could not finish {operation}; unavailable: {missing}")
 
     def _wait_for_encryption(self, timeout: float = 30) -> None:
         """Wait for asynchronous OS encryption before reading or changing a recovery chain."""

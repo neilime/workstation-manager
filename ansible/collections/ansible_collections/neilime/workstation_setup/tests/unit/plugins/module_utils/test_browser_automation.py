@@ -28,9 +28,18 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
     _DIAGNOSTIC_CHECKS,
+    _SETTINGS_CHECKS,
 )
 
-_ENCRYPTION_READY = {"available": True, "decryptionFailed": False}
+
+def issued(value: object) -> dict:
+    """Represent the result of an operation that passed atomic settings readiness."""
+
+    return {"issued": True, "value": value}
+
+
+_CALLBACKS_READY = issued(True)
+_ENCRYPTION_READY = issued({"available": True, "decryptionFailed": False})
 
 
 def test_partial_event_traffic_cannot_extend_the_acknowledgement_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -109,13 +118,94 @@ def test_profile_identity_query_failure_stops_before_sync() -> None:
     pipe.page.assert_called_once_with("brave://version")
 
 
-def test_native_sync_requires_the_existing_page_callbacks() -> None:
-    """Missing WebUI callbacks stop recovery before any code can be accessed."""
+@pytest.mark.parametrize("state", ["loading", "other-page", "missing-callbacks"])
+def test_settings_readiness_recovers_only_before_a_native_request(state: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pending documents can finish or recover once without repeating a dispatched operation."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, False]
-    with pytest.raises(BrowserProtocolError, match="native Sync callbacks are unavailable"):
+    pipe.page.side_effect = ["version", "settings"]
+    pipe.call.return_value = {"frameId": "owned-frame"}
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY]
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    checks = dict.fromkeys(_SETTINGS_CHECKS, True)
+    checks["Callback Bridge"] = False
+    checks[
+        {"loading": "Document Loaded", "other-page": "Settings Page", "missing-callbacks": "Response Callback"}[state]
+    ] = False
+    pending = {"issued": False, "checks": checks}
+    code = " ".join(["synthetic"] * 24)
+    pipe.evaluate.side_effect = [pending, pending, issued(code)]
+    sleep = Mock()
+    monkeypatch.setattr(native.time, "sleep", sleep)
+
+    assert instance.code() == code
+
+    assert sleep.call_count == 2
+    if state == "loading":
+        pipe.call.assert_not_called()
+    else:
+        pipe.call.assert_called_once()
+        assert pipe.call.call_args.args == ("Page.navigate", {"url": "chrome://settings/braveSync/setup"}, "settings")
+        assert 0 < pipe.call.call_args.kwargs["timeout"] <= 30
+
+
+def test_settings_readiness_timeout_reports_only_fixed_missing_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing native callbacks have a bounded wait and never permit recovery-code access."""
+
+    pipe = Mock()
+    pipe.call.return_value = {"frameId": "owned-frame"}
+    checks = dict.fromkeys(_SETTINGS_CHECKS, False)
+    checks.update({"Settings Page": True, "Document Loaded": True})
+    pending = {"issued": False, "checks": checks}
+    # A now-ready reply must never be requested after the readiness deadline.
+    pipe.evaluate.side_effect = [True, pending, _CALLBACKS_READY]
+    ticks = iter([0, 0, 31])
+    monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(native.time, "sleep", Mock())
+
+    with pytest.raises(BrowserProtocolError) as error:
         native.NativeSync(pipe, "/fixture/Default")
+
+    assert str(error.value) == (
+        "Brave Sync could not finish initializing settings callbacks; unavailable: "
+        "Response Callback, Listener Callback, Native Sender, Callback Bridge"
+    )
+    assert pipe.call.call_count == 1
+    assert pipe.evaluate.call_count == 2
+    assert all("SyncSetupGetPureSyncCode" not in call.args[1] for call in pipe.evaluate.call_args_list)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"issued": True},
+        {"issued": False, "checks": {"private-page-data": False}},
+        {"issued": False, "checks": dict.fromkeys(_SETTINGS_CHECKS, "private-page-data")},
+        {"issued": False, "checks": dict.fromkeys(_SETTINGS_CHECKS, True)},
+    ],
+)
+def test_unsupported_readiness_cannot_authorize_retries_or_expose_page_data(response: dict) -> None:
+    """Only the exact boolean not-dispatched result can permit readiness recovery."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, response]
+    with pytest.raises(BrowserProtocolError, match="unsupported settings readiness diagnostics") as error:
+        native.NativeSync(pipe, "/fixture/Default")
+    assert "private" not in str(error.value)
+    pipe.call.assert_not_called()
+    assert pipe.evaluate.call_count == 2
+
+
+@pytest.mark.parametrize("result", [{"errorText": "private-url-and-error"}, {"isDownload": True}])
+def test_failed_settings_navigation_stops_without_reporting_browser_content(result: dict) -> None:
+    """A rejected fixed-page navigation never permits a native request or leaks its response."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, {"issued": False, "checks": dict.fromkeys(_SETTINGS_CHECKS, False)}]
+    pipe.call.return_value = result
+    with pytest.raises(BrowserProtocolError, match="could not reopen its native Sync settings page") as error:
+        native.NativeSync(pipe, "/fixture/Default")
+    assert "private" not in str(error.value)
     assert pipe.evaluate.call_count == 2
 
 
@@ -126,12 +216,12 @@ def test_native_request_failure_identifies_the_operation_without_recovery_words(
 
     pipe = object.__new__(BrowserPipe)
     monkeypatch.setattr(pipe, "page", Mock(return_value="fixture"))
-    response = Mock(side_effect=[{"result": {"value": value}} for value in (True, True, _ENCRYPTION_READY)])
+    response = Mock(side_effect=[{"result": {"value": value}} for value in (True, _CALLBACKS_READY, _ENCRYPTION_READY)])
     monkeypatch.setattr(pipe, "call", response)
     instance = native.NativeSync(pipe, "/fixture/Default")
     code = " ".join(["private"] * 24)
     response.side_effect = [
-        {"result": {"value": code + " suffix"}},
+        {"result": {"value": issued(code + " suffix")}},
         {"exceptionDetails": {"text": "private-browser-error"}},
         {"exceptionDetails": {"text": "private-diagnostic-error"}},
     ]
@@ -150,13 +240,17 @@ def test_native_mutation_failure_is_not_replayed_after_callback_reinstallation(
     code = " ".join(["private"] * 24)
     method = "SyncSetupReset" if reset else "SyncSetupSetSyncCode"
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY]
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY]
     instance = native.NativeSync(pipe, "/fixture/Default")
     pipe.evaluate.reset_mock()
+    pending_checks = dict.fromkeys(_SETTINGS_CHECKS, True)
+    pending_checks.update({"Document Loaded": False, "Callback Bridge": False})
     pipe.evaluate.side_effect = [
-        *([] if reset else [code + " suffix"]),
+        *([] if reset else [issued(code + " suffix")]),
+        {"issued": False, "checks": pending_checks},
         BrowserProtocolError("Brave's automation request timed out"),
     ]
+    monkeypatch.setattr(native.time, "sleep", Mock())
     monkeypatch.setattr(instance, "wait", Mock(side_effect=BrowserProtocolError("Brave's diagnostics unavailable")))
 
     with pytest.raises(BrowserProtocolError, match=f"calling {method}.*timed out") as error:
@@ -164,8 +258,10 @@ def test_native_mutation_failure_is_not_replayed_after_callback_reinstallation(
 
     assert "private" not in str(error.value)
     submitted = [call for call in pipe.evaluate.call_args_list if method in call.args[1]]
-    assert len(submitted) == 1
-    assert pipe.evaluate.call_args.kwargs == {"timeout": 120}
+    # One attempt observed pending readiness; the submitted request then failed
+    # with its complete acknowledgement budget and was not replayed.
+    assert len(submitted) == 2
+    assert all(call.kwargs == {"timeout": 120} for call in submitted)
 
 
 def test_recovery_code_access_waits_for_native_desktop_encryption(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -175,10 +271,10 @@ def test_recovery_code_access_waits_for_native_desktop_encryption(monkeypatch: p
     pipe = Mock()
     pipe.evaluate.side_effect = [
         True,
-        True,
-        {"available": False, "decryptionFailed": False},
+        _CALLBACKS_READY,
+        issued({"available": False, "decryptionFailed": False}),
         _ENCRYPTION_READY,
-        code,
+        issued(code),
     ]
     sleep = Mock()
     monkeypatch.setattr(native.time, "sleep", sleep)
@@ -195,7 +291,7 @@ def test_unavailable_encryption_stops_before_recovery_code_access(
     """A locked or unsupported encryption backend times out without reading or replacing a chain."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, status]
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, issued(status)]
     ticks = iter([0, 0, 31])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
@@ -208,7 +304,7 @@ def test_saved_seed_decryption_failure_stops_before_recovery_code_access() -> No
     """An available keyring must still decrypt an existing seed before any chain change is allowed."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, {"available": True, "decryptionFailed": True}]
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, issued({"available": True, "decryptionFailed": True})]
     with pytest.raises(BrowserProtocolError, match="could not decrypt its saved recovery code"):
         native.NativeSync(pipe, "/fixture/Default")
     assert pipe.evaluate.call_count == 3
@@ -231,7 +327,7 @@ def test_native_wait_rejects_errors_pending_uploads_and_stale_success(
     checks = dict.fromkeys(_DIAGNOSTIC_CHECKS, True)
     incomplete = "Entity Metadata" if dirty["pending"] else "Fresh Download" if not dirty["fresh"] else "Auth Error"
     checks[incomplete] = False
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks, []]
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY, True, dirty, checks, []]
     ticks = iter([0, 0, 0, 0, 0, 2, 2])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
@@ -249,7 +345,7 @@ def test_timeout_diagnostics_reject_unrecognized_fields_and_private_values(
     pipe = Mock()
     dirty = {"healthy": False, "pending": True, "fresh": False}
     checks = {**dict.fromkeys(_DIAGNOSTIC_CHECKS, True), **invalid}
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks]
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY, True, dirty, checks]
     ticks = iter([0, 0, 0, 0, 0, 2, 2])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
@@ -264,7 +360,16 @@ def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyP
 
     clean = {"healthy": True, "pending": False, "fresh": True}
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, clean, {**clean, "pending": True}, clean, clean]
+    pipe.evaluate.side_effect = [
+        True,
+        _CALLBACKS_READY,
+        _ENCRYPTION_READY,
+        True,
+        clean,
+        {**clean, "pending": True},
+        clean,
+        clean,
+    ]
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
     instance = native.NativeSync(pipe, "/fixture/Default")
     assert instance.wait() is True
@@ -280,7 +385,7 @@ def test_failed_sync_reports_only_known_commit_error_categories(
     pipe = Mock()
     dirty = {"healthy": False, "pending": True, "fresh": True}
     checks = {**dict.fromkeys(_DIAGNOSTIC_CHECKS, True), "Commit Step Result": False}
-    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY, True, dirty, checks, commit_errors]
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY, True, dirty, checks, commit_errors]
     pipe.call.return_value = {
         "histograms": [
             {
@@ -309,7 +414,18 @@ def test_restore_uses_native_pairing_and_checks_the_result() -> None:
 
     code = " ".join(["synthetic"] * 24)
     pipe = Mock()
-    responses = iter([True, True, _ENCRYPTION_READY, True, code + " suffix", True, code, True])
+    responses = iter(
+        [
+            True,
+            _CALLBACKS_READY,
+            _ENCRYPTION_READY,
+            issued(True),
+            issued(code + " suffix"),
+            issued(True),
+            issued(code),
+            issued(True),
+        ]
+    )
 
     def evaluate(_session: str, expression: str, timeout: float = 30) -> object:
         # Native leave/join completes only after contacting the server. Model
@@ -337,9 +453,9 @@ def test_failed_enrollment_reports_checks_without_accepting_a_healthy_engine(
     code = " ".join(["synthetic"] * 24)
     pipe.evaluate.side_effect = [
         True,
-        True,
+        _CALLBACKS_READY,
         _ENCRYPTION_READY,
-        code + " suffix",
+        issued(code + " suffix"),
         BrowserProtocolError("Native Sync request rejected"),
     ]
     instance = native.NativeSync(pipe, "/fixture/Default")
@@ -362,9 +478,9 @@ def test_enrollment_throttling_reports_an_action_without_server_payloads(
     code = " ".join(["private"] * 24)
     pipe.evaluate.side_effect = [
         True,
-        True,
+        _CALLBACKS_READY,
         _ENCRYPTION_READY,
-        code + " suffix",
+        issued(code + " suffix"),
         BrowserProtocolError("Native enrollment timed out"),
     ]
     pipe.call.return_value = {

@@ -61,8 +61,9 @@ def test_ambiguous_or_malformed_device_lists_cannot_authorize_cleanup(value: obj
 def native_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[NativeSync, Mock, Mock, Mock]:
     """Exercise cleanup with native callbacks and server observations isolated."""
 
+    encryption = {"available": True, "decryptionFailed": False}
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, {"available": True, "decryptionFailed": False}]
+    pipe.evaluate.side_effect = [True, {"issued": True, "value": True}, {"issued": True, "value": encryption}]
     instance = NativeSync(pipe, "/fixture/Default", disposable_names=["fixture-vm"])
     pipe.evaluate.side_effect = None
     pipe.evaluate.return_value = True
