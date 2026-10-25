@@ -31,3 +31,57 @@
       {{ workstation_manager_home_environment_chezmoi_status.stdout_lines
          | select('match', '^[AMD][AMD] ') | list }}
   no_log: true
+
+- name: Distinguish Chezmoi transformations from conflicting file replacements
+  when: workstation_manager_home_environment_chezmoi_local_changes | length > 0
+  vars:
+    workstation_manager_home_environment_chezmoi_metadata_command: >-
+      {{ workstation_manager_home_environment_chezmoi_command
+         + ['managed', '--include=files', '--path-style=all', '--format=json', '--']
+         + (workstation_manager_home_environment_chezmoi_local_changes
+            | map('regex_replace', '^[AMD][AMD] ', workstation_manager_resolved.user.home ~ '/') | list) }}
+  block:
+    - name: Inspect source metadata for conflicting Chezmoi paths
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      ansible.builtin.command:
+        argv: "{{ workstation_manager_home_environment_chezmoi_metadata_command }}"
+      register: workstation_manager_home_environment_chezmoi_metadata
+      changed_when: false
+      no_log: true
+      environment:
+        HOME: "{{ workstation_manager_resolved.user.home }}"
+        XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
+
+    - name: Inspect current Chezmoi conflict target types without following links
+      become: "{{ workstation_manager_use_become }}"
+      become_user: "{{ workstation_manager_resolved.user.name }}"
+      ansible.builtin.stat:
+        path: "{{ workstation_manager_resolved.user.home }}/{{ item[3:] }}"
+        follow: false
+        get_checksum: false
+        get_mime: false
+        get_attributes: false
+      loop: "{{ workstation_manager_home_environment_chezmoi_local_changes }}"
+      register: workstation_manager_home_environment_chezmoi_target_types
+      no_log: true
+
+    - name: Keep conflicts that replace locally changed Chezmoi files
+      ansible.builtin.set_fact:
+        workstation_manager_home_environment_chezmoi_local_changes: >-
+          {{ workstation_manager_home_environment_chezmoi_local_changes
+             | neilime.workstation_setup.chezmoi_replacement_conflicts(
+                 workstation_manager_home_environment_chezmoi_metadata.stdout,
+                 workstation_manager_home_environment_chezmoi_target_types.results
+                 | selectattr('stat.isreg', 'defined') | selectattr('stat.isreg', 'equalto', true)
+                 | map(attribute='item') | map('regex_replace', '^[AMD][AMD] ', '') | list) }}
+      no_log: true
+  rescue:
+    - name: Stop before applying dotfiles with unverified conflict metadata
+      ansible.builtin.fail:
+        msg: |
+          Chezmoi could not identify conflicting file types; setup cannot continue.
+          Run this read-only command in a terminal as {{ workstation_manager_resolved.user.name }}
+          to see the underlying error:
+          {{ workstation_manager_home_environment_chezmoi_metadata_command | map('quote') | join(' ') }}
+          Command output is hidden because templates can contain sensitive data.
