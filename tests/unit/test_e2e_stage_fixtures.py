@@ -83,6 +83,8 @@ def run_stage(
     tmp_path: pathlib.Path, environment: dict[str, str], phase: str, stage: str
 ) -> subprocess.CompletedProcess[str]:
     """Run one production script, preserving its real stage parsing and exit traps."""
+    # Keep subprocess isolation options explicit in this fixture-specific runner.
+    # pylint: disable=duplicate-code
     return subprocess.run(
         ["bash", str(tmp_path / f"scripts/e2e-{phase}.sh"), "fixture-vm", stage],
         env=environment,
@@ -91,6 +93,7 @@ def run_stage(
         check=False,
         timeout=10,
     )
+    # pylint: enable=duplicate-code
 
 
 @pytest.mark.parametrize("phase", ["backup", "setup", "cleanup"])
