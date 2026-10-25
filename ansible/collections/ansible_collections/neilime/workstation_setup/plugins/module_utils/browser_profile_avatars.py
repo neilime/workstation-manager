@@ -90,6 +90,8 @@ class BrowserAvatarRecovery:  # pylint: disable=too-few-public-methods
             try:
                 # Ansible's run_command has shared module state and no execution
                 # timeout. Each worker owns a bounded subprocess and private pipes.
+                # Generic Pylint does not load Ansible's additional sanity rules.
+                # pylint: disable=unknown-option-value
                 # pylint: disable-next=ansible-bad-function
                 result = subprocess.run(
                     [self.executable, "get", "attachment", attachment_id, "--itemid", item_id, "--raw"],
@@ -99,6 +101,7 @@ class BrowserAvatarRecovery:  # pylint: disable=too-few-public-methods
                     timeout=120,
                     check=True,
                 )
+                # pylint: enable=unknown-option-value
                 return profile_id, base64.b64encode(result.stdout).decode("ascii")
             except OSError, subprocess.SubprocessError:
                 if attempt < 3:
