@@ -128,10 +128,12 @@ Preserve these implementation contracts:
   recovery words in memory and vault credentials out of browser environments.
 - Await the internal page, its native profile-path response, and an exact profile
   match before accessing Sync. Use the settings page's existing callbacks and
-  canonical `chrome://` module URLs. Initialize callbacks in the current document
-  within each settings operation, so a page reload cannot leave a stale bridge.
-  Never replay a native mutation after a missing acknowledgement. Await OS
-  encryption readiness and stop on decryption failure without replacing the chain.
+  canonical `chrome://` module URLs. Bound readiness checks before dispatch and
+  recover only the automation-owned settings page at its fixed internal URL.
+  Initialize callbacks within each settings operation and never replay a native
+  mutation after a missing acknowledgement. Readiness failures expose only fixed
+  document and callback checks. Await OS encryption readiness and stop on
+  decryption failure without replacing the chain.
 - Read allowed desktop variables from the managed user's live systemd session.
   Keep raw session output and arbitrary browser errors out of task results.
 

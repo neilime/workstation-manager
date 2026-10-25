@@ -170,12 +170,21 @@ def test_native_restore_requires_readback_and_sync_evidence(monkeypatch: pytest.
     """Native writes cannot be reported as recovered until upload and a second read agree."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, {"available": True, "decryptionFailed": False}]
+    pipe.evaluate.side_effect = [
+        True,
+        {"issued": True, "value": True},
+        {"issued": True, "value": {"available": True, "decryptionFailed": False}},
+    ]
     native = NativeSync(pipe, "/fixture/Default")
     good = {"supported": True, "matches": True, "changed": False}
     pipe.evaluate.side_effect = [
-        None if failure == "unsupported" else {**good, "matches": failure != "mismatch", "changed": True},
-        {**good, "matches": failure != "changed-again"},
+        {
+            "issued": True,
+            "value": (
+                None if failure == "unsupported" else {**good, "matches": failure != "mismatch", "changed": True}
+            ),
+        },
+        {"issued": True, "value": {**good, "matches": failure != "changed-again"}},
     ]
     wait = Mock(return_value=failure != "pending")
     monkeypatch.setattr(native, "wait", wait)
@@ -192,9 +201,13 @@ def test_native_backup_verifies_without_changing_preferences(monkeypatch: pytest
     """Backup cannot silently restore a different saved choice onto the local browser."""
 
     pipe = Mock()
-    pipe.evaluate.side_effect = [True, True, {"available": True, "decryptionFailed": False}]
+    pipe.evaluate.side_effect = [
+        True,
+        {"issued": True, "value": True},
+        {"issued": True, "value": {"available": True, "decryptionFailed": False}},
+    ]
     native = NativeSync(pipe, "/fixture/Default")
-    pipe.evaluate.side_effect = [{"supported": True, "matches": False, "changed": False}]
+    pipe.evaluate.side_effect = [{"issued": True, "value": {"supported": True, "matches": False, "changed": False}}]
     wait = Mock()
     monkeypatch.setattr(native, "wait", wait)
     with pytest.raises(BrowserProtocolError, match="differ from Bitwarden"):
