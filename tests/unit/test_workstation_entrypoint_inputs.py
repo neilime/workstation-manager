@@ -27,6 +27,12 @@ def test_supplied_inputs_use_the_shared_bootstrap(input_runner, arguments, statu
     assert_supplied_inputs(input_runner, arguments, terminal=False, status=status)
 
 
+def test_unattended_setup_preserves_disabled_pipelining(input_runner):
+    """An explicit pipelining opt-out survives sudo during an unattended preview."""
+    input_runner[1]["ANSIBLE_PIPELINING"] = "false"
+    assert_supplied_inputs(input_runner, ["setup", "--dry-run"], terminal=False, status=0)
+
+
 @pytest.mark.parametrize(
     "missing",
     ["BITWARDEN_CLIENT_ID", "BITWARDEN_CLIENT_SECRET", "BITWARDEN_PASSWORD", "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR"],

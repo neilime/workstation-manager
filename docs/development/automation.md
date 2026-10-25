@@ -60,6 +60,11 @@ unless explicitly deferred. Browser Sync decisions still require interaction.
 
 ## Execution and credential safety
 
+The entrypoint enables Ansible pipelining for local module execution, including
+remote bootstrap and interactive capture. Set `ANSIBLE_PIPELINING=false` when a
+custom sudo policy requires a terminal for every operation. The explicit override
+survives privilege escalation.
+
 Setup starts one Flatpak application transaction after configuring its prerequisites
 and overlaps it with development tooling installation. It waits for completion,
 including retries, before restoring keys, dotfiles, or archives. A development

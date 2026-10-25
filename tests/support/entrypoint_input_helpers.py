@@ -26,6 +26,7 @@ def prepare_input_runner(tmp_path):
         'pathlib.Path(os.environ["TEST_SUDO_CALLED"]).touch()\n'
         'if args == ["-v"]: sys.exit(0)\n'
         'if args[0].startswith("--preserve-env="): args.pop(0)\n'
+        'os.environ.pop("ANSIBLE_PIPELINING", None)\n'
         "os.execvp(args[0], args)\n"
     )
     sudo.chmod(0o700)
@@ -41,7 +42,7 @@ def prepare_input_runner(tmp_path):
         '         "WORKSTATION_MANAGER_GHCR_TOKEN",\n'
         '         "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0",\n'
         '         "WORKSTATION_MANAGER_TTY", "WORKSTATION_MANAGER_BACKUP_OUTPUT_DIR",\n'
-        '         "WORKSTATION_MANAGER_RESTORE_ARCHIVE"]\n'
+        '         "WORKSTATION_MANAGER_RESTORE_ARCHIVE", "ANSIBLE_PIPELINING"]\n'
         'record = {"args": sys.argv[1:], "stdin_tty": sys.stdin.isatty(),\n'
         '          "environment": {name: os.environ.get(name) for name in names}}\n'
         'pathlib.Path(os.environ["TEST_INVOCATION"]).write_text(json.dumps(record))\n'
@@ -94,6 +95,7 @@ def assert_supplied_inputs(input_runner, arguments, terminal, status):
     assert result.returncode == status, result.stdout + result.stderr
     invocation = json.loads(Path(environment["TEST_INVOCATION"]).read_text(encoding="utf-8"))
     actual = invocation["environment"]
+    assert actual["ANSIBLE_PIPELINING"] == environment.get("ANSIBLE_PIPELINING", "true")
     assert actual["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
     encoded = base64.b64encode(f"x-access-token:{environment['WORKSTATION_MANAGER_GITHUB_TOKEN']}".encode()).decode()
     assert actual["GIT_CONFIG_VALUE_0"] == f"Authorization: Basic {encoded}"
