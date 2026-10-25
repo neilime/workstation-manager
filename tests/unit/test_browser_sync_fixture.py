@@ -115,59 +115,6 @@ def test_successful_setup_must_capture_every_recovered_identity(tmp_path: Path) 
     assert fixture.load()["phase"] == "prepared"
 
 
-@pytest.mark.parametrize("change", ["none", "missing", "replaced", "additional", "uninitialized"])
-def test_repeat_setup_preserves_the_exact_captured_identities(tmp_path: Path, monkeypatch, change: str) -> None:
-    """Verification detects device drift without claiming identities or exposing private metadata."""
-
-    root = tmp_path / "browser"
-    fixture = browser_fixture.BrowserSyncFixture(root, tmp_path / "fixture.json")
-    fixture.prepare()
-    write_device(root, "Default", "captured-device")
-    fixture.capture(require_initialized=True)
-    manifest_before = fixture.manifest.read_bytes()
-    saved = mock.Mock()
-    monkeypatch.setattr(browser_fixture, "write_private_json", saved)
-    if change == "missing":
-        (root / "Default/Preferences").unlink()
-    elif change == "replaced":
-        write_device(root, "Default", "replacement-device")
-    elif change == "additional":
-        write_device(root, "Additional", "additional-device")
-    elif change == "uninitialized":
-        write_device(root, "Default", "uninitialized-device", initialized=False)
-
-    if change == "none":
-        fixture.verify()
-    else:
-        message = "no initialized device identity" if change == "uninitialized" else "no longer match"
-        with pytest.raises(ValueError, match=message) as error:
-            fixture.verify()
-        assert all(
-            value not in str(error.value)
-            for value in (
-                "captured-device",
-                "replacement-device",
-                "additional-device",
-                "uninitialized-device",
-                "Default",
-            )
-        )
-
-    saved.assert_not_called()
-    assert fixture.manifest.read_bytes() == manifest_before
-
-
-def test_repeat_setup_requires_captured_fixture_ownership(tmp_path: Path) -> None:
-    """A prepared manifest cannot authorize setup to reuse uncaptured browser identities."""
-
-    fixture = browser_fixture.BrowserSyncFixture(tmp_path / "browser", tmp_path / "fixture.json")
-    fixture.prepare()
-    before = fixture.manifest.read_bytes()
-    with pytest.raises(ValueError, match="not captured"):
-        fixture.verify()
-    assert fixture.manifest.read_bytes() == before
-
-
 def test_browser_fixture_cli_refuses_the_development_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """The VM-only command fails before inspecting or changing host browser data."""
 

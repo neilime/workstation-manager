@@ -352,20 +352,6 @@ class BrowserSyncFixture:
         record["phase"] = "captured"
         write_private_json(self.manifest, record)
 
-    def verify(self) -> None:
-        """Require the exact captured identities without changing fixture ownership."""
-
-        record = self.load()
-        if record.get("phase") != "captured":
-            raise ValueError("Browser fixture identities were not captured; the VM must be retained")
-        current = {}
-        for preferences in sorted(self.root.glob("*/Preferences")):
-            identity = device_identity(preferences.parent, require_initialized=True)
-            if identity:
-                current[preferences.parent.name] = identity
-        if current != record["devices"]:
-            raise ValueError("Browser fixture identities no longer match the captured devices; the VM must be retained")
-
     def leave_captured_device(
         self, profile: Path, identity: str, executable: str, environment: dict[str, str], confirmed: Callable[[], None]
     ) -> None:
@@ -448,7 +434,7 @@ def main() -> None:
     if not platform.node().startswith("lima-"):
         raise SystemExit("Run browser fixture management inside the Lima VM.")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("prepare", "capture", "verify", "leave"))
+    parser.add_argument("action", choices=("prepare", "capture", "leave"))
     parser.add_argument("--require-initialized", action="store_true")
     arguments = parser.parse_args()
     fixture = BrowserSyncFixture(

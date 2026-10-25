@@ -10,11 +10,6 @@ if ! printf '%s\n' "$instances" | grep -Fxq "$E2E_VM_NAME"; then
 	exit 0
 fi
 
-if [[ -e "$HOME/.lima/$E2E_VM_NAME/setup-repeat.pending" ]]; then
-	printf '%s\n' 'Repeated setup did not verify its browser identities; the VM was retained for diagnosis.' >&2
-	exit 1
-fi
-
 status="$(limactl list "$E2E_VM_NAME" --format '{{.Status}}')"
 if [[ "$status" != "Running" ]]; then
 	# A stopped guest still owns its remote devices. Resume it before discarding
@@ -24,7 +19,7 @@ fi
 
 # Sync waits and retries are bounded per device. Let every captured profile
 # finish instead of interrupting the whole fixture during a leave or restoration.
-if ! run_e2e_timed_command browser-teardown run_e2e_lima_shell \
+if ! run_e2e_lima_shell \
 	env PYTHONPATH=/workspace/ansible/collections \
 	python3 /workspace/e2e-tests/browser_sync_fixture.py leave; then
 	printf '%s\n' 'Browser fixture teardown failed; the VM and recorded device identities were retained for diagnosis.' >&2

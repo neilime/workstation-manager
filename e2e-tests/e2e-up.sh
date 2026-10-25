@@ -51,7 +51,7 @@ PY
 	start_args+=("$runtime_config_file")
 fi
 
-if run_e2e_timed_command vm-start limactl start "${start_args[@]}"; then
+if limactl start "${start_args[@]}"; then
 	exit 0
 else
 	start_status=$?

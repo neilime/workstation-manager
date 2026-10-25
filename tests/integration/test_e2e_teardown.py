@@ -11,11 +11,9 @@ import pytest
 E2E_PATH = Path(__file__).parents[2] / "e2e-tests"
 
 
-@pytest.mark.parametrize("cleanup_status,repeat_pending", [(0, False), (17, False), (0, True)])
-def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(
-    tmp_path: Path, cleanup_status: int, repeat_pending: bool
-) -> None:
-    """Unverified repeat identities or failed device teardown must retain the VM for diagnosis."""
+@pytest.mark.parametrize("cleanup_status", [0, 17])
+def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(tmp_path: Path, cleanup_status: int) -> None:
+    """Failed device teardown must retain the VM and captured identities for diagnosis."""
 
     commands = tmp_path / "bin"
     commands.mkdir()
@@ -42,11 +40,6 @@ def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(
         '#!/bin/bash\nwhile [[ "$1" == -* ]]; do shift; done\nshift\nexec /usr/bin/timeout --kill-after=1s 0.2s "$@"\n'
     )
     timeout_command.chmod(0o700)
-    repeat_marker = tmp_path / ".lima/fixture/setup-repeat.pending"
-    if repeat_pending:
-        repeat_marker.parent.mkdir(parents=True)
-        repeat_marker.touch()
-
     result = subprocess.run(
         ["bash", str(E2E_PATH / "e2e-down.sh"), "fixture"],
         env={
@@ -62,12 +55,7 @@ def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(
         timeout=10,
     )
 
-    assert result.returncode == (1 if cleanup_status or repeat_pending else 0), result.stderr
-    if repeat_pending:
-        assert log.read_text().splitlines() == ["list"]
-        assert "VM was retained for diagnosis" in result.stderr
-        assert repeat_marker.exists()
-        return
+    assert result.returncode == (1 if cleanup_status else 0), result.stderr
     assert log.read_text().splitlines() == ["list", "list", "shell", *(["device-complete"] * 4)] + (
         [] if cleanup_status else ["stop", "delete"]
     )

@@ -43,11 +43,7 @@ kernel read permission above lets libguestfs create its appliance as your user; 
 
 The builder customizes a fresh download offline; it never opens an existing Lima
 instance. Without `E2E_BASE_IMAGE`, local startup installs desktop prerequisites
-from the cloud image. Existing instances keep their original base. The manual
-main CI workflow exposes `prepared-desktop`: disable it to compare the full suite
-against cold desktop provisioning at the same commit. Compare cache misses
-separately from cache hits, and run comparisons sequentially when using the same
-Sync chains.
+from the cloud image. Existing instances keep their original base.
 
 Readiness requires GNOME on Wayland and an unlocked fixture keyring.
 The fixture initializes its encrypted keyring privately, restarts the desktop
@@ -82,7 +78,7 @@ make e2e-down
 ```
 
 The suite runs backup, setup, and cleanup in order. Each phase separates
-Arrange, Act, and Assert, with a distinct CI step and timing record:
+Arrange, Act, and Assert, with a distinct CI step for each:
 
 | Phase   | Arrange                                                               | Act                                                                            | Assert                                        |
 | ------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
@@ -112,37 +108,6 @@ stages to succeed; they are not independent reruns. Always run
 `make e2e-stage STAGE=finish` afterward to remove any remaining backup fixture
 and report screenshot failures, then `make e2e-down`. The full `make e2e-test`
 command handles stage sequencing and fixture finishing automatically.
-
-## Measure setup in CI
-
-Run the manual **Main - Continuous Integration** workflow on the revision to
-measure, with `setup-benchmark=true`:
-
-```sh
-gh workflow run main-ci.yml --ref <published-branch> -f setup-benchmark=true
-```
-
-This mode adds a repeated setup and all setup assertions before cleanup in the
-same disposable VM. The repeat retains installed state and
-the same configuration; it does not remove restoration targets or replay the
-backup archive. Browser identities must match the original captured fixture
-before and after the repeat. An interrupted or unverifiable repeat retains the VM
-for diagnosis instead of discarding unverified remote devices.
-
-The benchmark adds separate `setup-repeat-act` and `setup-repeat-assert` timings
-and a separate JUnit report. `setup-command` and `setup-repeat-command` measure
-the entrypoint itself, excluding browser fixture bookkeeping and desktop
-assertion preparation. They are contained within their Act timings; do not add
-them to the stage totals. The repeat gets its own screenshot and deferred failure
-status. The manual benchmark has a 50-minute suite deadline and a 75-minute job
-limit; routine PR runs retain the original single setup and deadlines.
-
-Compare baseline and candidate revisions using the same VM resources and
-`prepared-desktop` setting. Run them sequentially with verified teardown because
-the credentials and recovery chains are shared. Record each commit and run URL;
-external downloads, package updates and Sync latency can vary between runs.
-Provider sign-in is deferred and a local private override is prepared by the end-to-end
-fixture, so these measurements do not include those interactive production steps.
 
 ## Teardown and reuse
 
@@ -197,24 +162,8 @@ Set `REPORTS_DIR=.reports` for syntax and test reports.
 The setup screenshot defaults to `.reports/screenshots/e2e-setup-desktop.png`;
 `SCREENSHOTS_DIR` changes its directory. CI publishes reports and the screenshot.
 
-The suite records each Arrange, Act, and Assert stage's duration and exit status.
-Setup also records desktop readiness, screenshot, and failure diagnostic timings;
-these are included in the Setup Act duration, so do not add them to stage totals.
-`E2E_PROFILE_TASKS=1` adds
-Ansible task timing; CI enables it and records failures as well as success.
-Temporary profiling changes are restored after each stage that runs Ansible.
-Assertion output includes
-the slowest tests. The native browser smoke test also prints elapsed time and
-status for API checks, recovery persistence, profile switching, teardown retry,
-and window restoration, including successful runs. These records contain fixed
-scenario labels only; browser state and recovery data stay excluded.
-
-With `REPORTS_DIR` set, each timed phase appends one JSON record to
-`e2e/phase-timings.jsonl` beneath that directory. Records contain only `phase`,
-`elapsed_seconds`, and `exit_status`; command arguments and credentials are
-excluded. CI uploads this report after teardown, including failed phases.
-Local invocations append to the same file; use a fresh report directory when
-comparing separate runs. Detailed Ansible task timings remain in the job log.
+GitHub Actions reports the duration of each Arrange, Act, and Assert step.
+Assertion output includes the slowest tests.
 
 Startup and setup failures produce bounded VM, memory, session, display-manager,
 and OOM diagnostics. They exclude action journals and process environments.

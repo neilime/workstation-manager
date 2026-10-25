@@ -1,19 +1,14 @@
-"""Keep E2E timing and temporary profiling transparent to action failures."""
+"""Protect E2E readiness, diagnostic privacy, and fixture startup failures."""
 
 from __future__ import annotations
 
-import configparser
 import importlib.util
-import json
 import os
 import pathlib
-import re
 import shlex
 import shutil
 import subprocess
-import tempfile
 import types
-import unittest
 from unittest import mock
 
 import pytest
@@ -31,9 +26,6 @@ def load_guest_module(name: str) -> types.ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-task_profiling = load_guest_module("task_profiling")
 
 
 def test_browser_metrics_expose_only_selected_numeric_buckets(capsys: pytest.CaptureFixture[str]) -> None:
@@ -135,7 +127,6 @@ def test_vm_start_preserves_failures_and_collects_diagnostics(
             )
     for diagnostic in ("serial boot diagnostic", "hostagent boot diagnostic", "guest boot diagnostic"):
         assert (diagnostic in result.stderr) == bool(start_status)
-    assert re.search(rf"phase=vm-start elapsed=\d+s status={start_status}", result.stderr)
     assert not list(tmp_path.glob("workstation-manager-lima-*"))
 
 
@@ -281,209 +272,6 @@ def test_vm_swap_preserves_active_pages_and_requires_successful_formatting(
         assert swapfile.stat().st_mode & 0o777 == 0o600
         assert active.exists() == (format_status == 0)
         assert trace.read_text().splitlines() == (["format", "format"] if format_status else ["format", "activate"])
-
-
-class ProfilingConfigurationTests(unittest.TestCase):
-    """Preserve guest configuration and recover from failed profiling preparation."""
-
-    def test_restores_existing_configuration_and_permissions(self) -> None:
-        """Existing settings and callbacks survive profiling, then restore byte-for-byte."""
-        original = b"# Keep this comment\n[defaults]\nforks = 3\ncallbacks_enabled = timer\n"
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            config = pathlib.Path(temporary_dir) / "ansible.cfg"
-            config.write_bytes(original)
-            config.chmod(0o640)
-            backup = task_profiling.prepare(config)
-            self.assertEqual(config.stat().st_mode & 0o777, 0o640)
-            parser = configparser.ConfigParser()
-            parser.read(config)
-            self.assertEqual(parser.getint("defaults", "forks"), 3)
-            self.assertEqual(
-                parser.get("defaults", "callbacks_enabled"),
-                "timer, ansible.posix.profile_tasks",
-            )
-            self.assertTrue(parser.getboolean("defaults", "bin_ansible_callbacks"))
-            task_profiling.restore(config, backup)
-            self.assertEqual(config.read_bytes(), original)
-            self.assertEqual(config.stat().st_mode & 0o777, 0o640)
-            self.assertFalse(backup.exists())
-
-    def test_removes_configuration_when_guest_had_none(self) -> None:
-        """A newly created Ansible configuration must not persist after the suite."""
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            config = pathlib.Path(temporary_dir) / "ansible" / "ansible.cfg"
-            backup = task_profiling.prepare(config)
-            self.assertTrue(config.is_file())
-            self.assertEqual(config.stat().st_mode & 0o777, 0o644)
-            task_profiling.restore(config, backup)
-            self.assertFalse(config.exists())
-            self.assertFalse(backup.exists())
-
-    def test_failed_install_restores_original_configuration(self) -> None:
-        """A failure between saving and replacing the config must restore the original."""
-        replace = pathlib.Path.replace
-
-        def fail_replacement(source: pathlib.Path, target: pathlib.Path) -> pathlib.Path:
-            if source.name == "profile.cfg":
-                raise OSError("synthetic install failure")
-            return replace(source, target)
-
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            config = pathlib.Path(temporary_dir) / "ansible.cfg"
-            config.write_text("[defaults]\nforks = 7\n")
-            with (
-                mock.patch.object(pathlib.Path, "replace", fail_replacement),
-                self.assertRaisesRegex(OSError, "synthetic install failure"),
-            ):
-                task_profiling.prepare(config)
-            self.assertEqual(config.read_text(), "[defaults]\nforks = 7\n")
-            self.assertEqual(list(config.parent.iterdir()), [config])
-
-
-class PhaseTimingTests(unittest.TestCase):
-    """Time commands without leaking their arguments or changing failure semantics."""
-
-    def test_preserves_status_and_hides_command_arguments(self) -> None:
-        """Timing records must retain failures while never printing credential arguments."""
-        for exit_status in (0, 37):
-            with self.subTest(exit_status=exit_status), tempfile.TemporaryDirectory() as temporary_dir:
-                summary = pathlib.Path(temporary_dir) / "summary.md"
-                report_dir = pathlib.Path(temporary_dir) / "reports"
-                result = subprocess.run(
-                    [
-                        "bash",
-                        "-c",
-                        (
-                            'set -euo pipefail; source "$1"; '
-                            "run_e2e_timed_command setup-act bash -c 'exit \"$1\"' "
-                            'fixture "$2" synthetic-vault-password'
-                        ),
-                        "timing-test",
-                        str(E2E_PATH / "e2e-common.sh"),
-                        str(exit_status),
-                    ],
-                    env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary), "REPORTS_DIR": str(report_dir)},
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=10,
-                )
-                self.assertEqual(result.returncode, exit_status, result.stderr)
-                self.assertRegex(result.stderr, rf"phase=setup-act elapsed=\d+s status={exit_status}")
-                self.assertRegex(summary.read_text(), rf"- E2E setup-act: \d+s \(exit {exit_status}\)")
-                report = (report_dir / "e2e/phase-timings.jsonl").read_text()
-                records = [json.loads(line) for line in report.splitlines()]
-                self.assertEqual(len(records), 1)
-                elapsed = records[0]["elapsed_seconds"]
-                self.assertIsInstance(elapsed, int)
-                self.assertGreaterEqual(elapsed, 0)
-                self.assertEqual(
-                    records[0], {"phase": "setup-act", "elapsed_seconds": elapsed, "exit_status": exit_status}
-                )
-                self.assertNotIn(
-                    "synthetic-vault-password", result.stdout + result.stderr + summary.read_text() + report
-                )
-
-    def test_report_appends_completed_phases_before_a_failure(self) -> None:
-        """A later action failure retains earlier phase measurements in the same report."""
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            result = subprocess.run(
-                [
-                    "bash",
-                    "-c",
-                    (
-                        'set -euo pipefail; source "$1"; run_e2e_timed_command backup-act true; '
-                        'run_e2e_timed_command setup-act bash -c "exit 37"'
-                    ),
-                    "timing-test",
-                    str(E2E_PATH / "e2e-common.sh"),
-                ],
-                env={**os.environ, "GITHUB_STEP_SUMMARY": "", "REPORTS_DIR": temporary_dir},
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10,
-            )
-            report = pathlib.Path(temporary_dir) / "e2e/phase-timings.jsonl"
-            records = [json.loads(line) for line in report.read_text().splitlines()]
-        self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertEqual(
-            [(record["phase"], record["exit_status"]) for record in records], [("backup-act", 0), ("setup-act", 37)]
-        )
-
-    def test_report_failure_preserves_action_status_and_summary(self) -> None:
-        """A report destination failure leaves successful and failed action results unchanged."""
-        for exit_status in (0, 37):
-            with self.subTest(exit_status=exit_status), tempfile.TemporaryDirectory() as temporary_dir:
-                report_dir = pathlib.Path(temporary_dir) / "blocked"
-                report_dir.touch()
-                summary = pathlib.Path(temporary_dir) / "summary.md"
-                result = subprocess.run(
-                    [
-                        "bash",
-                        "-c",
-                        (
-                            'set -euo pipefail; source "$1"; '
-                            'run_e2e_timed_command setup-act bash -c \'exit "$1"\' fixture "$2"'
-                        ),
-                        "timing-test",
-                        str(E2E_PATH / "e2e-common.sh"),
-                        str(exit_status),
-                    ],
-                    env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary), "REPORTS_DIR": str(report_dir)},
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=10,
-                )
-                self.assertEqual(result.returncode, exit_status, result.stderr)
-                self.assertIn("Could not append E2E timing to the JSONL report.", result.stderr)
-                self.assertIn(f"(exit {exit_status})", summary.read_text())
-
-    def test_unrecognized_phase_cannot_leak_into_reports(self) -> None:
-        """Only public phase labels are recorded, while unsupported labels preserve action failure."""
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            summary = pathlib.Path(temporary_dir) / "summary.md"
-            result = subprocess.run(
-                [
-                    "bash",
-                    "-c",
-                    'set -euo pipefail; source "$1"; run_e2e_timed_command "$2" bash -c "exit 37"',
-                    "timing-test",
-                    str(E2E_PATH / "e2e-common.sh"),
-                    'synthetic-private-label"\n',
-                ],
-                env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary), "REPORTS_DIR": temporary_dir},
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10,
-            )
-            self.assertFalse(summary.exists())
-            self.assertFalse((pathlib.Path(temporary_dir) / "e2e").exists())
-        self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertNotIn("synthetic-private-label", result.stdout + result.stderr)
-        self.assertIn("Unsupported E2E timing phase", result.stderr)
-
-    def test_summary_failure_preserves_the_action_status(self) -> None:
-        """An unavailable summary destination must not replace the original action failure."""
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            result = subprocess.run(
-                [
-                    "bash",
-                    "-c",
-                    'set -euo pipefail; source "$1"; run_e2e_timed_command setup-act bash -c "exit 37"',
-                    "timing-test",
-                    str(E2E_PATH / "e2e-common.sh"),
-                ],
-                env={**os.environ, "GITHUB_STEP_SUMMARY": temporary_dir},
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10,
-            )
-        self.assertEqual(result.returncode, 37, result.stderr)
-        self.assertIn("Could not append E2E timing", result.stderr)
 
 
 @pytest.mark.parametrize("state,expected", [("ACTIVE", 0), ("ERROR", 1)])
