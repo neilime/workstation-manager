@@ -81,13 +81,18 @@ make e2e-test
 make e2e-down
 ```
 
-The suite runs three phases:
+The suite runs backup, setup, and cleanup in order. Each phase separates
+Arrange, Act, and Assert, with a distinct CI step and timing record:
 
-1. **Backup:** create isolated project fixtures and a published Chezmoi source,
-   restore keys, and require recovery checks without prompts or skips.
-2. **Setup:** remove the recovery fixture, restore its archive, and verify installed
-   behavior. The override defers provider sign-in explicitly.
-3. **Cleanup:** verify the report and preservation of user data.
+| Phase   | Arrange                                                               | Act                                                                            | Assert                                        |
+| ------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
+| Backup  | Create project fixtures and a published Chezmoi source; restore keys. | Run backup with recovery checks, then remove the temporary Chezmoi fixture.    | Verify archive contents and recovery results. |
+| Setup   | Validate the archive and remove the fixture files to restore.         | Run setup, capture browser device identities, and prepare the desktop session. | Verify restored files and installed behavior. |
+| Cleanup | Create browser preservation markers.                                  | Run cleanup.                                                                   | Verify the report and preserved user data.    |
+
+The setup override explicitly defers provider sign-in. Browser ownership
+preparation and capture remain together around the setup action, including when
+it fails. Assertions are unchanged between the full local flow and CI stages.
 
 The backup fixture requires a fresh VM without Chezmoi or Brave profile state.
 Setup uses configured Bitwarden collections and requires live Brave Sync recovery.
@@ -99,6 +104,14 @@ part of normal setup.
 Use `make e2e-prepare` to build tooling and start the VM concurrently.
 `make e2e-backup`, `make e2e-setup`, and `make e2e-cleanup` run individual actions
 without assertions; setup expects the backup fixture archive.
+
+After `make e2e-prepare`, `make e2e-stage STAGE=backup-arrange` runs a single
+stage. Use `backup`, `setup`, or `cleanup` followed by `-arrange`, `-act`, or
+`-assert`, in the table's order. Stages share the same VM and require earlier
+stages to succeed; they are not independent reruns. Always run
+`make e2e-stage STAGE=finish` afterward to remove any remaining backup fixture
+and report screenshot failures, then `make e2e-down`. The full `make e2e-test`
+command handles stage sequencing and fixture finishing automatically.
 
 ## Teardown and reuse
 
@@ -138,7 +151,8 @@ Each device's Sync waits and retries are bounded. Teardown lets these
 finish for every captured profile; its total duration grows with the number of
 devices and retries. The SSH wrapper detects an unresponsive connection, and CI
 allows 60 minutes for the full job, including VM preparation and verified
-teardown, while the assertion step remains limited to 35 minutes. Connection
+teardown. The nine stages share a 35-minute deadline, with bounded signal
+cleanup afterward; fixture finishing and verified VM teardown run outside that deadline. Connection
 failures and native operation failures retain the VM.
 
 Use separate Sync chains for concurrent runs. Setup removes duplicate devices
@@ -152,9 +166,13 @@ Set `REPORTS_DIR=.reports` for syntax and test reports.
 The setup screenshot defaults to `.reports/screenshots/e2e-setup-desktop.png`;
 `SCREENSHOTS_DIR` changes its directory. CI publishes reports and the screenshot.
 
-The suite records phase duration and exit status. `E2E_PROFILE_TASKS=1` adds
+The suite records each Arrange, Act, and Assert stage's duration and exit status.
+Setup also records desktop readiness, screenshot, and failure diagnostic timings;
+these are included in the Setup Act duration, so do not add them to stage totals.
+`E2E_PROFILE_TASKS=1` adds
 Ansible task timing; CI enables it and records failures as well as success.
-Temporary profiling changes are restored afterward. Assertion output includes
+Temporary profiling changes are restored after each stage that runs Ansible.
+Assertion output includes
 the slowest tests. The native browser smoke test also prints elapsed time and
 status for API checks, recovery persistence, profile switching, teardown retry,
 and window restoration, including successful runs. These records contain fixed
@@ -172,6 +190,9 @@ and OOM diagnostics. They exclude action journals and process environments.
 After failed setup, browser diagnostics use numeric metrics and redacted checks;
 a separate disposable chain is verified and removed without replacing the
 original failure or saved recovery chains.
+Screenshot-only failures are reported after assertions and cleanup finish, so
+they do not skip test coverage. Action or assertion failures stop later stages;
+CI still runs fixture finishing and verified browser teardown.
 
 CI caches public Lima downloads by upstream image checksum and saves its offline
 desktop base before authenticated phases. Running guest disks and authenticated

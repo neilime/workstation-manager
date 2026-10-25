@@ -7,6 +7,31 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_dir/e2e-common.sh"
 
 vm_name="${1:-workstation-manager-v1}"
+stage="${2:-all}"
+stages=(backup-arrange backup-act backup-assert setup-arrange setup-act setup-assert cleanup-arrange cleanup-act cleanup-assert)
+case "$stage" in
+all | finish | backup-arrange | backup-act | backup-assert | setup-arrange | setup-act | setup-assert | cleanup-arrange | cleanup-act | cleanup-assert) ;;
+*)
+	printf '%s\n' 'Unsupported E2E stage.' >&2
+	exit 2
+	;;
+esac
+
+# CI shares one deadline across all nine steps, leaving verified teardown outside it.
+if [[ "$stage" != all && "$stage" != finish && -n "${E2E_SUITE_DEADLINE:-}" ]]; then
+	if [[ ! "$E2E_SUITE_DEADLINE" =~ ^[0-9]{1,10}$ ]]; then
+		printf '%s\n' 'E2E suite deadline must be an epoch timestamp.' >&2
+		exit 2
+	fi
+	remaining_seconds=$((10#$E2E_SUITE_DEADLINE - $(date +%s)))
+	if [[ $remaining_seconds -le 0 ]]; then
+		printf '%s\n' 'E2E stages exhausted their shared deadline.' >&2
+		exit 124
+	fi
+	exec timeout --kill-after=60s "${remaining_seconds}s" \
+		env -u E2E_SUITE_DEADLINE bash "$0" "$vm_name" "$stage"
+fi
+
 ssh_host="lima-${vm_name}"
 tooling_image="${TOOLING_IMAGE:-workstation-manager-tooling:local}"
 host_home="${HOME}"
@@ -14,6 +39,7 @@ workspace_dir="$(cd -- "$script_dir/.." && pwd)"
 ssh_config_path="${host_home}/.lima/${vm_name}/ssh.config"
 report_dir="${REPORTS_DIR:-}"
 screenshot_dir="${SCREENSHOTS_DIR:-${report_dir:-.reports}/screenshots}"
+screenshot_status_path="$screenshot_dir/e2e-setup-desktop.status"
 cleanup_phase_timeout_seconds="${E2E_CLEANUP_PHASE_TIMEOUT_SECONDS:-720}"
 setup_test_paths=()
 
@@ -80,55 +106,110 @@ run_phase_tests() {
 		"$@"
 }
 
-finish_e2e_suite() {
-	local suite_status=$?
+finish_e2e_stage() {
+	local stage_status=$?
 	local restore_status=0
 
 	restore_e2e_task_profiling || restore_status=$?
+	if [[ $stage_status -eq 0 ]]; then
+		stage_status=$restore_status
+	fi
+	exit "$stage_status"
+}
+
+run_setup_action() {
+	local setup_status=0
+	local capture_status=0
+
+	bash "$script_dir/e2e-setup.sh" "$vm_name" act || setup_status=$?
+	if [[ $setup_status -eq 0 ]]; then
+		run_e2e_timed_command desktop-restart restart_e2e_desktop_session || setup_status=$?
+	fi
+	if [[ $setup_status -eq 0 ]]; then
+		run_e2e_timed_command clipboard-extension wait_for_e2e_clipboard_extension || setup_status=$?
+	fi
+	run_e2e_timed_command setup-screenshot capture_phase_screenshot setup || capture_status=$?
+	# Defer screenshot-only failure until after all assertions and cleanup.
+	if ! printf '%s\n' "$capture_status" >"$screenshot_status_path"; then
+		printf '%s\n' 'Could not record the E2E screenshot status.' >&2
+		if [[ $setup_status -eq 0 ]]; then
+			setup_status=1
+		fi
+	fi
+	if [[ $setup_status -ne 0 ]]; then
+		run_e2e_timed_command desktop-diagnostics print_e2e_desktop_diagnostics ||
+			printf '%s\n' 'Desktop diagnostics could not complete.' >&2
+		run_e2e_timed_command browser-diagnostics run_e2e_lima_shell \
+			env PYTHONPATH=/workspace/ansible/collections \
+			python3 /workspace/e2e-tests/browser_sync_diagnostics.py ||
+			printf '%s\n' 'Browser initialization diagnostics could not complete.' >&2
+	fi
+	return "$setup_status"
+}
+
+run_cleanup_action() {
+	local cleanup_status=0
+	timeout --kill-after=15s "${cleanup_phase_timeout_seconds}s" \
+		bash "$script_dir/e2e-cleanup.sh" "$vm_name" act || cleanup_status=$?
+	if [[ $cleanup_status -eq 124 || $cleanup_status -eq 137 ]]; then
+		printf '%s\n' "E2E cleanup phase exceeded its ${cleanup_phase_timeout_seconds}s hard deadline" >&2
+	fi
+	return "$cleanup_status"
+}
+
+finish_e2e_fixtures() {
+	local finish_status=0
+	timeout --kill-after=5s 60s bash "$script_dir/e2e-backup.sh" "$vm_name" finish || finish_status=$?
+	if [[ -f "$screenshot_status_path" && "$(cat "$screenshot_status_path")" != 0 ]]; then
+		printf '%s\n' 'E2E setup screenshot failed; see the screenshot diagnostics.' >&2
+		if [[ $finish_status -eq 0 ]]; then
+			finish_status=1
+		fi
+	fi
+	return "$finish_status"
+}
+
+finish_e2e_suite() {
+	local suite_status=$?
+	local finish_status=0
+	finish_e2e_fixtures || finish_status=$?
 	if [[ $suite_status -eq 0 ]]; then
-		suite_status=$restore_status
+		suite_status=$finish_status
 	fi
 	exit "$suite_status"
 }
 
-trap finish_e2e_suite EXIT
-prepare_e2e_task_profiling
+trap 'exit 143' TERM
+trap 'exit 130' INT
+if [[ "$stage" == all ]]; then
+	trap finish_e2e_suite EXIT
+	for suite_stage in "${stages[@]}"; do
+		bash "$0" "$vm_name" "$suite_stage"
+	done
+	exit 0
+fi
+if [[ "$stage" == finish ]]; then
+	finish_e2e_fixtures
+	exit 0
+fi
+if [[ "$stage" == backup-arrange ]]; then
+	rm -f "$screenshot_status_path"
+fi
 
-run_e2e_timed_command backup bash "$script_dir/e2e-backup.sh" "$vm_name"
-run_e2e_timed_command backup-assertions run_phase_tests backup e2e-tests/test_backup.py
-setup_status=0
-run_e2e_timed_command setup bash "$script_dir/e2e-setup.sh" "$vm_name" || setup_status=$?
-if [[ $setup_status -eq 0 ]]; then
-	run_e2e_timed_command desktop-restart restart_e2e_desktop_session || setup_status=$?
-fi
-if [[ $setup_status -eq 0 ]]; then
-	run_e2e_timed_command clipboard-extension wait_for_e2e_clipboard_extension || setup_status=$?
-fi
-capture_status=0
-run_e2e_timed_command setup-screenshot capture_phase_screenshot setup || capture_status=$?
-if [[ $setup_status -ne 0 ]]; then
-	run_e2e_timed_command desktop-diagnostics print_e2e_desktop_diagnostics ||
-		printf '%s\n' 'Desktop diagnostics could not complete.' >&2
-	run_e2e_timed_command browser-diagnostics run_e2e_lima_shell \
-		env PYTHONPATH=/workspace/ansible/collections \
-		python3 /workspace/e2e-tests/browser_sync_diagnostics.py ||
-		printf '%s\n' 'Browser initialization diagnostics could not complete.' >&2
-	exit "$setup_status"
-fi
-run_e2e_timed_command setup-assertions run_phase_tests setup "${setup_test_paths[@]}"
-cleanup_status=0
-run_e2e_timed_command cleanup timeout \
-	--kill-after=15s \
-	"${cleanup_phase_timeout_seconds}s" \
-	bash "$script_dir/e2e-cleanup.sh" "$vm_name" || cleanup_status=$?
-if [[ $cleanup_status -ne 0 ]]; then
-	if [[ $cleanup_status -eq 124 || $cleanup_status -eq 137 ]]; then
-		printf '%s\n' \
-			"E2E cleanup phase exceeded its ${cleanup_phase_timeout_seconds}s hard deadline" >&2
-	fi
-	exit "$cleanup_status"
-fi
-run_e2e_timed_command cleanup-assertions run_phase_tests cleanup e2e-tests/test_cleanup.py
-if [[ $capture_status -ne 0 ]]; then
-	exit "$capture_status"
-fi
+case "$stage" in
+backup-arrange | backup-act | setup-act | cleanup-act)
+	trap finish_e2e_stage EXIT
+	prepare_e2e_task_profiling
+	;;
+esac
+
+case "$stage" in
+backup-arrange | backup-act | setup-arrange | cleanup-arrange)
+	run_e2e_timed_command "$stage" bash "$script_dir/e2e-${stage%-*}.sh" "$vm_name" "${stage##*-}"
+	;;
+setup-act) run_e2e_timed_command "$stage" run_setup_action ;;
+cleanup-act) run_e2e_timed_command "$stage" run_cleanup_action ;;
+backup-assert) run_e2e_timed_command "$stage" run_phase_tests backup e2e-tests/test_backup.py ;;
+setup-assert) run_e2e_timed_command "$stage" run_phase_tests setup "${setup_test_paths[@]}" ;;
+cleanup-assert) run_e2e_timed_command "$stage" run_phase_tests cleanup e2e-tests/test_cleanup.py ;;
+esac

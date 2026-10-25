@@ -213,6 +213,8 @@ jobs:
       E2E_VM_CPUS: "4"
       E2E_VM_MEMORY_GIB: "8"
       REPORTS_DIR: .reports
+      E2E_PROFILE_TASKS: "1"
+      E2E_REPOSITORY_URL: ${{ format('https://github.com/{0}.git', github.repository) }}
       # yamllint disable rule:line-length
       E2E_BASE_IMAGE: ${{ inputs.prepared-desktop && format('{0}/.cache/e2e-base/desktop.qcow2', github.workspace) || '' }}
       # yamllint enable rule:line-length
@@ -304,23 +306,65 @@ jobs:
           path: ~/.cache/lima
           key: ${{ steps.lima-cache.outputs.cache-primary-key }}
 
-      - name: Run phased e2e assertions
-        timeout-minutes: 35
-        env:
-          # yamllint disable rule:line-length
-          E2E_REPOSITORY_URL: ${{ format('https://github.com/{0}.git', github.repository) }}
-          WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
-          WORKSTATION_MANAGER_GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # yamllint enable rule:line-length
-          BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
-          BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
-          BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
-          E2E_PROFILE_TASKS: "1"
+      - name: Initialize e2e stages
         run: |
           # Bootstrap the same commit that supplies the assertions, including PR merge commits.
           E2E_REPOSITORY_REF="$(git rev-parse HEAD)"
-          export E2E_REPOSITORY_REF
-          REPORTS_DIR=.reports make e2e-test
+          printf 'E2E_REPOSITORY_REF=%s\n' "$E2E_REPOSITORY_REF" >> "$GITHUB_ENV"
+          # Share the original 35-minute budget across Arrange, Act, and Assert.
+          printf 'E2E_SUITE_DEADLINE=%s\n' "$(($(date +%s) + 35 * 60))" >> "$GITHUB_ENV"
+
+      - name: Backup - Arrange fixtures and recovery keys
+        env:
+          WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
+          BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
+          BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
+          BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+        run: make e2e-stage STAGE=backup-arrange
+
+      - name: Backup - Act
+        env:
+          WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
+          BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
+          BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
+          BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+        run: make e2e-stage STAGE=backup-act
+
+      - name: Backup - Assert
+        run: make e2e-stage STAGE=backup-assert
+
+      - name: Setup - Arrange archive restoration
+        run: make e2e-stage STAGE=setup-arrange
+
+      - name: Setup - Act and prepare desktop assertions
+        env:
+          WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
+          WORKSTATION_MANAGER_GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
+          BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
+          BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+        run: make e2e-stage STAGE=setup-act
+
+      - name: Setup - Assert
+        run: make e2e-stage STAGE=setup-assert
+
+      - name: Cleanup - Arrange preservation fixtures
+        run: make e2e-stage STAGE=cleanup-arrange
+
+      - name: Cleanup - Act
+        env:
+          WORKSTATION_MANAGER_GITHUB_TOKEN: ${{ secrets.WORKSTATION_MANAGER_GITHUB_TOKEN }}
+          BITWARDEN_CLIENT_ID: ${{ secrets.BITWARDEN_CLIENT_ID }}
+          BITWARDEN_CLIENT_SECRET: ${{ secrets.BITWARDEN_CLIENT_SECRET }}
+          BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
+        run: make e2e-stage STAGE=cleanup-act
+
+      - name: Cleanup - Assert
+        run: make e2e-stage STAGE=cleanup-assert
+
+      - name: Finish e2e fixtures
+        if: ${{ always() }}
+        run: make e2e-stage STAGE=finish
 
       - name: Parse e2e reports
         if: ${{ always() }}
