@@ -76,6 +76,10 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "        sys.exit(98)\n"
             "    print((root / 'items.json').read_text())\n"
             "elif command[:2] == ['get', 'attachment']:\n"
+            "    if os.environ.get('BITWARDENCLI_APPDATA_DIR') != str(root / '.config/Bitwarden CLI'):\n"
+            "        sys.exit(97)\n"
+            "    if session != 'fixture-session' or os.environ.get('BW_NOINTERACTION') != 'true':\n"
+            "        sys.exit(96)\n"
             "    failures = root / 'attachment-failures'\n"
             "    if failures.exists() and int(failures.read_text()) > 0:\n"
             "        failures.write_text(str(int(failures.read_text()) - 1))\n"
@@ -84,7 +88,12 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
             "    if (root / 'attachment-unavailable').exists():\n"
             f"        print({ATTACHMENT_ERROR!r}, file=sys.stderr)\n"
             "        sys.exit(1)\n"
-            "    sys.stdout.buffer.write((root / 'avatar').read_bytes())\n"
+            "    missing = root / 'attachment-missing'\n"
+            "    if missing.exists() and missing.read_text() == command[2]:\n"
+            f"        print({ATTACHMENT_ERROR!r}, file=sys.stderr)\n"
+            "        sys.exit(1)\n"
+            "    avatar = root / 'avatars' / command[2]\n"
+            "    sys.stdout.buffer.write((avatar if avatar.exists() else root / 'avatar').read_bytes())\n"
             "else:\n"
             "    sys.exit(99)\n"
         )
@@ -212,6 +221,80 @@ class BrowserProfileCollectionRoleTests(unittest.TestCase):
                 self.assertEqual(base64.b64decode(inventory["profiles"][0]["avatar_png"]), AVATAR)
                 calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
                 self.assertEqual(sum(call[:2] == ["get", "attachment"] for call in calls), 2)
+
+    def test_multiple_avatars_keep_their_profile_association_during_apply_and_preview(self) -> None:
+        """Batch recovery publishes every configured image while preserving profiles without managed logos."""
+
+        first = self.items[0]
+        self.items = [
+            {
+                **first,
+                "id": f"11111111-1111-4111-8111-{index:012d}",
+                "name": f"Profile {index}",
+                "fields": [
+                    {"name": "id", "value": f"profile-{index}"},
+                    {"name": "directory", "value": f"Profile {index}"},
+                ],
+                "attachments": [{"id": f"avatar-{index}", "fileName": "avatar.png"}] if index < 2 else [],
+            }
+            for index in range(3)
+        ]
+        (self.fixture / "avatars").mkdir()
+        for index in range(2):
+            (self.fixture / f"avatars/avatar-{index}").write_bytes(AVATAR + bytes([index]))
+        for check in (False, True):
+            with self.subTest(check=check):
+                (self.fixture / "calls").write_text("")
+
+                result = self.run_loader(cleanup=False, check=check)
+
+                self.assertEqual(result.returncode, 0, result.stdout)
+                profiles = json.loads((self.fixture / "result.json").read_text())["profiles"]
+                for index in range(2):
+                    self.assertEqual(profiles[index]["id"], f"profile-{index}")
+                    self.assertEqual(base64.b64decode(profiles[index]["avatar_png"]), AVATAR + bytes([index]))
+                self.assertNotIn("avatar_png", profiles[2])
+                calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
+                self.assertCountEqual(
+                    [call[2] for call in calls if call[:2] == ["get", "attachment"]], ["avatar-0", "avatar-1"]
+                )
+
+    def test_a_missing_configured_avatar_prevents_partial_batch_publication(self) -> None:
+        """One unavailable attachment remains fatal even when another profile was recovered successfully."""
+
+        self.items.append(
+            {
+                **self.items[0],
+                "id": "22222222-2222-4222-8222-222222222222",
+                "fields": [{"name": "id", "value": "work"}, {"name": "directory", "value": "Profile 1"}],
+                "attachments": [{"id": "missing-avatar", "fileName": "avatar.png"}],
+            }
+        )
+        (self.fixture / "attachment-missing").write_text("missing-avatar")
+
+        result = self.run_loader(cleanup=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Browser avatar recovery failed after retrying", result.stdout)
+        calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
+        downloads = [call[2] for call in calls if call[:2] == ["get", "attachment"]]
+        self.assertEqual(downloads.count("fixture-avatar"), 1)
+        self.assertEqual(downloads.count("missing-avatar"), 4)
+        self.assertFalse((self.fixture / "result.json").exists())
+
+    def test_profiles_without_managed_avatars_keep_metadata_without_downloads(self) -> None:
+        """An absent optional logo does not require an image recovery process."""
+
+        self.items[0]["attachments"] = []
+
+        result = self.run_loader(cleanup=False)
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        profiles = json.loads((self.fixture / "result.json").read_text())["profiles"]
+        self.assertEqual(profiles[0]["id"], "personal")
+        self.assertNotIn("avatar_png", profiles[0])
+        calls = [json.loads(line) for line in (self.fixture / "calls").read_text().splitlines()]
+        self.assertFalse(any(call[:2] == ["get", "attachment"] for call in calls))
 
     def test_unlock_rejection_surfaces_a_retryable_marker(self) -> None:
         """A rejected vault password must fail without exposing secrets and leave a retry marker."""

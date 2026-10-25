@@ -7,31 +7,15 @@
     - name: Read encrypted browser avatar attachments into memory
       become: "{{ workstation_manager_use_become }}"
       become_user: "{{ workstation_manager_resolved.user.name }}"
-      ansible.builtin.command:
-        argv:
-          - python3
-          - -c
-          - >-
-            import base64, subprocess, sys;
-            print(base64.b64encode(subprocess.check_output(sys.argv[1:], timeout=120)).decode('ascii'))
-          - bw
-          - get
-          - attachment
-          - "{{ item.avatar_attachment_id }}"
-          - --itemid
-          - "{{ item.item_id }}"
-          - --raw
+      neilime.workstation_setup.browser_profile_avatars:
+        profiles: "{{ workstation_manager_browser_profiles }}"
+        session: "{{ bitwarden_collection_session }}"
+        appdata_dir: "{{ bitwarden_collection_appdata_dir }}"
       environment:
         HOME: "{{ workstation_manager_resolved.user.home }}"
         XDG_CONFIG_HOME: "{{ workstation_manager_resolved.user.home }}/.config"
-        BW_SESSION: "{{ bitwarden_collection_session }}"
-      loop: "{{ workstation_manager_browser_profiles | selectattr('avatar_attachment_id', 'defined') | list }}"
       register: browser_profile_collection_avatars
-      until: browser_profile_collection_avatars.rc == 0
-      retries: 3
-      delay: 5
-      check_mode: false
-      changed_when: false
+      when: workstation_manager_browser_profiles | selectattr('avatar_attachment_id', 'defined') | list | length > 0
       no_log: true
   rescue:
     - name: Stop when browser avatar recovery remains incomplete
@@ -41,10 +25,8 @@
           Check network access and that the configured browser profiles' avatar.png
           attachments can be downloaded from Bitwarden, then rerun the command.
 
-- name: Attach browser avatar data to its profile # noqa: var-naming[no-role-prefix]
+- name: Publish complete browser avatar recovery # noqa: var-naming[no-role-prefix]
   ansible.builtin.set_fact:
-    workstation_manager_browser_profiles: >-
-      {{ (workstation_manager_browser_profiles | rejectattr('id', 'equalto', item.item.id) | list
-          + [item.item | combine({'avatar_png': item.stdout})]) | sort(attribute='id') }}
-  loop: "{{ browser_profile_collection_avatars.results }}"
+    workstation_manager_browser_profiles: "{{ browser_profile_collection_avatars.profiles }}"
+  when: browser_profile_collection_avatars is not skipped
   no_log: true

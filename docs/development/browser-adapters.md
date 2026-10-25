@@ -62,7 +62,12 @@ Use `neilime.workstation_setup.browser_profile_collection` to populate
 `[]`, while a configured collection must be accessible and nonempty.
 See the [vault record schema](../usage/browser.md#configure-recovery).
 
-The default entrypoint loads metadata and avatar attachments into memory.
+The default entrypoint loads metadata and avatar attachments into memory. Avatar
+recovery uses at most two concurrent CLI processes with four attempts per image,
+a 120-second timeout per attempt, and five seconds between attempts. It publishes
+the complete profile list only after every configured attachment succeeds; no
+partial image results or asynchronous job files are stored. These read-only
+downloads still run during previews.
 Cleanup uses `tasks_from: metadata` because drift inspection needs no images.
 Run collection loading, avatar downloads, and live recovery as the same resolved
 user with its `HOME` and `XDG_CONFIG_HOME`, so they share the CLI account cache.
