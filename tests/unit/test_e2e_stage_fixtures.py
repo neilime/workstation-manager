@@ -33,11 +33,20 @@ run_e2e_lima_shell() {
             printf '%s\n' "${@: -1}" >>"$TEST_FIXTURE/trace"
             return "$TEST_CAPTURE_STATUS"
             ;;
+        verify)
+            printf 'verify\n' >>"$TEST_FIXTURE/trace"
+            if [[ -f "$TEST_FIXTURE/verified-before" ]]; then
+                return "$TEST_VERIFY_AFTER_STATUS"
+            fi
+            touch "$TEST_FIXTURE/verified-before"
+            return "$TEST_VERIFY_BEFORE_STATUS"
+            ;;
         *) return 99 ;;
     esac
 }
 run_e2e_workstation_action() {
     printf '%s\n' "$1" >>"$TEST_FIXTURE/trace"
+    printf '%s\n' "$@" >"$TEST_FIXTURE/action-arguments"
     if [[ -n "${TEST_ACTION_SIGNAL:-}" ]]; then kill -"$TEST_ACTION_SIGNAL" "$$"; fi
     return "$TEST_ACTION_STATUS"
 }
@@ -55,6 +64,18 @@ run_e2e_detached_workstation_action() { run_e2e_workstation_action "$@"; }
         "TEST_FIXTURE": str(tmp_path),
         "TEST_ACTION_STATUS": "0",
         "TEST_CAPTURE_STATUS": "0",
+        "TEST_VERIFY_BEFORE_STATUS": "0",
+        "TEST_VERIFY_AFTER_STATUS": "0",
+    }
+
+
+def credentials(environment: dict[str, str]) -> dict[str, str]:
+    """Supply synthetic credentials only for action stages."""
+    return {
+        **environment,
+        "BITWARDEN_CLIENT_ID": "fixture-client",
+        "BITWARDEN_CLIENT_SECRET": "fixture-secret",
+        "BITWARDEN_PASSWORD": "fixture-password",
     }
 
 
@@ -70,16 +91,6 @@ def run_stage(
         check=False,
         timeout=10,
     )
-
-
-def credentials(environment: dict[str, str]) -> dict[str, str]:
-    """Supply synthetic credentials only for action stages."""
-    return {
-        **environment,
-        "BITWARDEN_CLIENT_ID": "fixture-client",
-        "BITWARDEN_CLIENT_SECRET": "fixture-secret",
-        "BITWARDEN_PASSWORD": "fixture-password",
-    }
 
 
 @pytest.mark.parametrize("phase", ["backup", "setup", "cleanup"])
@@ -110,15 +121,10 @@ def test_setup_arranges_without_credentials_and_captures_only_during_act(
 
 
 @pytest.mark.parametrize(
-    "action_status,capture_status,signal,expected",
-    [(37, 42, "", 37), (0, 42, "", 42), (0, 0, "TERM", 143)],
+    "action_status,capture_status,signal,expected", [(37, 42, "", 37), (0, 42, "", 42), (0, 0, "TERM", 143)]
 )
 def test_setup_act_always_captures_devices_and_preserves_primary_failure(
-    stage_environment: dict[str, str],
-    action_status: int,
-    capture_status: int,
-    signal: str,
-    expected: int,
+    stage_environment: dict[str, str], action_status: int, capture_status: int, signal: str, expected: int
 ) -> None:
     """Failed or interrupted setup captures partial identities, while successful setup requires initialization."""
     tmp_path = pathlib.Path(stage_environment["TEST_FIXTURE"])
@@ -150,6 +156,62 @@ def test_setup_act_revalidates_its_restore_preconditions(
     result = run_stage(tmp_path, credentials(stage_environment), "setup", "act")
     assert result.returncode != 0
     assert not (tmp_path / "trace").exists()
+
+
+def test_setup_repeat_preserves_installed_data_and_existing_device_ownership(
+    tmp_path: pathlib.Path, stage_environment: dict[str, str]
+) -> None:
+    """An unchanged rerun requires no archive or arrangement and only verifies captured devices."""
+    user_home = pathlib.Path(stage_environment["HOME"])
+    targets = [user_home / "Documents/dev-projects", user_home / ".config/workstation-manager"]
+    for target in targets:
+        target.mkdir(parents=True)
+        (target / "installed-data").write_text("preserve")
+    (tmp_path / "backup/workstation-manager-backup-fixture.tar.gz").unlink()
+
+    result = run_stage(tmp_path, credentials(stage_environment), "setup", "repeat")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "trace").read_text().splitlines() == ["verify", "setup", "verify"]
+    assert all((target / "installed-data").read_text() == "preserve" for target in targets)
+    arguments = (tmp_path / "action-arguments").read_text().splitlines()
+    assert not any(argument.startswith("WORKSTATION_MANAGER_RESTORE_ARCHIVE=") for argument in arguments)
+    assert not (user_home / ".lima/fixture-vm/setup-repeat.pending").exists()
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        (37, 0, 0, "", 37, False),
+        (0, 0, 42, "", 42, True),
+        (37, 0, 42, "", 37, True),
+        (0, 43, 0, "", 43, True),
+        (0, 0, 0, "TERM", 143, True),
+        (0, 0, 0, "INT", 130, True),
+    ],
+)
+def test_setup_repeat_preserves_failures_and_retains_unverified_or_interrupted_devices(
+    stage_environment: dict[str, str], scenario: tuple[int, int, int, str, int, bool]
+) -> None:
+    """Identity checks run around setup while failed verification or interruption prevents VM deletion."""
+    action_status, before_status, after_status, signal, expected, retained = scenario
+    tmp_path = pathlib.Path(stage_environment["TEST_FIXTURE"])
+    environment = {
+        **credentials(stage_environment),
+        "TEST_ACTION_STATUS": str(action_status),
+        "TEST_VERIFY_BEFORE_STATUS": str(before_status),
+        "TEST_VERIFY_AFTER_STATUS": str(after_status),
+        "TEST_ACTION_SIGNAL": signal,
+    }
+
+    result = run_stage(tmp_path, environment, "setup", "repeat")
+
+    assert result.returncode == expected, result.stdout + result.stderr
+    assert (tmp_path / "trace").read_text().splitlines() == (
+        ["verify"] if before_status else ["verify", "setup", "verify"]
+    )
+    marker = pathlib.Path(stage_environment["HOME"]) / ".lima/fixture-vm/setup-repeat.pending"
+    assert marker.exists() == retained
 
 
 def test_cleanup_arranges_preservation_markers_without_credentials(

@@ -11,6 +11,10 @@ name: Main - Continuous Integration
         description: Use the prepared desktop base (disable to compare cold provisioning).
         type: boolean
         default: true
+      setup-benchmark:
+        description: Measure fresh setup and an unchanged rerun in the same disposable VM.
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,6 +28,7 @@ jobs:
     uses: $/.github/workflows/__shared-ci.yml
     with:
       prepared-desktop: ${{ github.event_name != 'workflow_dispatch' || inputs.prepared-desktop }}
+      setup-benchmark: ${{ github.event_name == 'workflow_dispatch' && inputs.setup-benchmark }}
     permissions:
       actions: read
       attestations: write

@@ -58,6 +58,7 @@ for argument in "$@"; do
     case "$argument" in
         e2e-tests/test_backup.py) phase=backup-assert ;;
         e2e-tests/test_cleanup.py) phase=cleanup-assert ;;
+        --junitxml=*/e2e-setup-repeat.junit.xml) phase=setup-repeat-assert ;;
     esac
 done
 printf '%s\n' "$phase" >>"$TEST_TRACE"
@@ -103,6 +104,7 @@ def test_separate_stages_match_full_flow_and_select_all_assertions(suite):
     assert result.returncode == 0, result.stderr
     complete_trace = trace.read_text().splitlines()
     assert [event for event in complete_trace if event in STAGES] == STAGES
+    assert not any("setup-repeat" in event for event in complete_trace)
     assert complete_trace[-1] == "backup-finish"
     trace.write_text("")
     for stage in [*STAGES, "finish"]:
@@ -120,6 +122,49 @@ def test_separate_stages_match_full_flow_and_select_all_assertions(suite):
     records = [json.loads(line) for line in (fixture / "reports/e2e/phase-timings.jsonl").read_text().splitlines()]
     assert [record["phase"] for record in records if record["phase"] in STAGES] == STAGES * 2
     assert all(record["exit_status"] == 0 for record in records)
+
+
+def test_setup_repeat_runs_all_setup_assertions_with_separate_reports(suite):
+    """Optional repeat stages preserve setup coverage and keep fresh-run reports available."""
+    run, fixture, trace = suite
+    assert run("setup-assert").returncode == 0
+    original_arguments = (fixture / "arguments/setup-assert").read_text().splitlines()
+    trace.write_text("")
+
+    for stage in ("setup-repeat-act", "setup-repeat-assert"):
+        result = run(stage)
+        assert result.returncode == 0, result.stderr
+
+    assert trace.read_text().splitlines() == [
+        "prepare:setup-repeat-act",
+        "setup-repeat",
+        "screenshot",
+        "restore:setup-repeat-act",
+        "setup-repeat-assert",
+    ]
+    repeated_arguments = (fixture / "arguments/setup-repeat-assert").read_text().splitlines()
+    assert [argument for argument in repeated_arguments if argument.startswith("e2e-tests/test_")] == [
+        argument for argument in original_arguments if argument.startswith("e2e-tests/test_")
+    ]
+    assert "--junitxml=/workspace/reports/tests/e2e-setup-repeat.junit.xml" in repeated_arguments
+    assert (fixture / "arguments/setup-assert").read_text().splitlines() == original_arguments
+    assert (fixture / "reports/screenshots/e2e-setup-repeat-desktop.png").read_text() == "image"
+    records = [json.loads(line) for line in (fixture / "reports/e2e/phase-timings.jsonl").read_text().splitlines()]
+    assert [record["phase"] for record in records if record["phase"].startswith("setup-repeat")] == [
+        "setup-repeat-act",
+        "setup-repeat-assert",
+    ]
+
+
+def test_setup_repeat_screenshot_failure_does_not_skip_assertions(suite):
+    """An unavailable repeat screenshot fails fixture finishing after installed behavior is checked."""
+    run, _, trace = suite
+    assert run("setup-repeat-act", TEST_SCREENSHOT_STATUS="1").returncode == 0
+    assert run("setup-repeat-assert").returncode == 0
+    result = run("finish")
+    assert result.returncode == 1
+    assert "screenshot failed" in result.stderr
+    assert "setup-repeat-assert" in trace.read_text().splitlines()
 
 
 @pytest.mark.parametrize("failed_stage", ["backup-arrange", "setup-act", "setup-assert", "cleanup-act"])

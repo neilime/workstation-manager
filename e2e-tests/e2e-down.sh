@@ -10,6 +10,11 @@ if ! printf '%s\n' "$instances" | grep -Fxq "$E2E_VM_NAME"; then
 	exit 0
 fi
 
+if [[ -e "$HOME/.lima/$E2E_VM_NAME/setup-repeat.pending" ]]; then
+	printf '%s\n' 'Repeated setup did not verify its browser identities; the VM was retained for diagnosis.' >&2
+	exit 1
+fi
+
 status="$(limactl list "$E2E_VM_NAME" --format '{{.Status}}')"
 if [[ "$status" != "Running" ]]; then
 	# A stopped guest still owns its remote devices. Resume it before discarding

@@ -78,7 +78,9 @@ class E2EWorkflowRevisionTests(unittest.TestCase):
             for step in job["steps"]
             if shlex.split(step.get("run", ""))[:2] == ["make", "e2e-stage"]
             and "STAGE=finish" not in shlex.split(step["run"])
+            and step.get("if") != "inputs.setup-benchmark"
         ]
+        self.repeat_stages = [step for step in job["steps"] if step.get("if") == "inputs.setup-benchmark"]
 
     def git(self, *arguments: str) -> str:
         """Create fixture history without network access or workstation changes."""
@@ -87,13 +89,19 @@ class E2EWorkflowRevisionTests(unittest.TestCase):
             ["git", *arguments], cwd=self.fixture, env=self.environment, stderr=subprocess.PIPE, text=True
         ).strip()
 
-    def run_step(self, step: dict, directory: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    def run_step(
+        self, step: dict, directory: pathlib.Path, *, benchmark: bool = False
+    ) -> subprocess.CompletedProcess[str]:
         """Run production workflow shell with only make intercepted."""
 
         return subprocess.run(
             ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
             cwd=directory,
-            env={**self.environment, **{key: str(value) for key, value in step.get("env", {}).items()}},
+            env={
+                **self.environment,
+                **{key: str(value) for key, value in step.get("env", {}).items()},
+                "E2E_SETUP_BENCHMARK": str(benchmark).lower(),
+            },
             check=False,
             capture_output=True,
             text=True,
@@ -161,3 +169,23 @@ class E2EWorkflowRevisionTests(unittest.TestCase):
         self.assertFalse(self.initialization.get("continue-on-error", False))
         for step in self.stages:
             self.assertIn(step.get("if"), (None, "success()", "${{ success() }}"))
+
+    def test_optional_repeat_uses_same_revision_and_separate_bounded_budget(self) -> None:
+        """The manual benchmark adds one repeat with unchanged revision and retains normal stage ordering."""
+        started = int(time.time())
+        result = self.run_step(self.initialization, self.fixture, benchmark=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        exported = dict(line.split("=", 1) for line in (self.fixture / "github-env").read_text().splitlines())
+        self.environment.update(exported)
+        deadline = int(exported["E2E_SUITE_DEADLINE"])
+        self.assertGreaterEqual(deadline, started + 50 * 60)
+        self.assertLessEqual(deadline, int(time.time()) + 50 * 60)
+        self.environment["TEST_SUITE_DEADLINE"] = str(deadline)
+        for step in self.repeat_stages:
+            self.assertFalse(step.get("continue-on-error", False))
+            result = self.run_step(step, self.fixture, benchmark=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines()[1], exported["E2E_REPOSITORY_REF"])
+        self.assertEqual(
+            (self.fixture / "stage-calls").read_text().splitlines(), ["setup-repeat-act", "setup-repeat-assert"]
+        )
