@@ -102,6 +102,11 @@ without changing recovery words; the separate live Sync action can save a code
 into an existing note and verify its readback. Backup's browser export sidecar
 contains local bookmarks and sanitized preferences; setup does not replay it.
 
+Setup restores metadata and performs live recovery within one graceful browser
+close/reopen lifecycle. It inspects the restored, flushed settings before starting
+native synchronization. Backup keeps metadata reconciliation and chain recovery
+as separately approved operations.
+
 Preserve these implementation contracts:
 
 - Close only the managed user's matching browser through graceful shutdown,

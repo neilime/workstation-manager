@@ -215,15 +215,184 @@ def test_failed_approved_changes_stop_instead_of_returning_verified(fixture: tup
     pipe.return_value.__exit__.assert_called_once()
 
 
-def test_preview_does_not_launch_brave_or_access_the_vault(fixture: tuple) -> None:
+@pytest.mark.parametrize("restore_metadata", [False, True])
+def test_preview_does_not_launch_brave_or_access_the_vault(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch, restore_metadata: bool
+) -> None:
     """A dry run never starts native Sync, stores a code, or certifies recovery."""
 
     vault, pipe, native, lifecycle = fixture
-    result = live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault, check_mode=True)
+    repair = Mock()
+    monkeypatch.setattr(live, "sync_browser_profiles", repair)
+    result = live.sync_browser_recovery(
+        "/fixture", [PROFILE], "restore", vault, check_mode=True, restore_metadata=restore_metadata
+    )
     assert result["verified"] is False and result["changed"] is False
     pipe.assert_not_called()
     native.code.assert_not_called()
     native.prune_devices.assert_not_called()
+    lifecycle.assert_not_called()
+    vault.run.assert_not_called()
+    repair.assert_not_called()
+
+
+@pytest.mark.parametrize("metadata", ["unchanged", "renamed", "missing"])
+def test_setup_restores_metadata_and_verifies_sync_before_reopening(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch, metadata: str
+) -> None:
+    """Setup repairs flushed metadata and missing profiles inside one lifecycle without skipping fresh Sync."""
+
+    vault, _pipe, native, lifecycle = fixture
+    clean = live.inspect_browser_profiles("/fixture", [PROFILE])
+    initial = copy.deepcopy(clean)
+    if metadata != "unchanged":
+        initial["drift"] = [{"kind": metadata, "id": "fixture", "directory": "Default"}]
+    if metadata == "missing":
+        initial["profiles"] = []
+    monkeypatch.setattr(live, "inspect_browser_profiles", Mock(side_effect=[initial, clean, clean]))
+    events = []
+
+    def record_event(event: str, result: object) -> object:
+        events.append(event)
+        return result
+
+    context = MagicMock()
+    context.__enter__.side_effect = lambda: record_event("close", ("brave-browser", {"DISPLAY": ":0"}))
+    context.__exit__.side_effect = lambda *_arguments: record_event("reopen", False)
+    lifecycle.return_value = context
+    repair = Mock(side_effect=lambda *_arguments: record_event("metadata", metadata != "unchanged"))
+    monkeypatch.setattr(live, "sync_browser_profiles", repair)
+    native.wait.side_effect = lambda: record_event("verify", True)
+
+    result = live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault, restore_metadata=True)
+
+    assert result["verified"] is True and result["changed"] is True
+    lifecycle.assert_called_once_with("/fixture")
+    repair.assert_called_once_with("/fixture", [PROFILE], "restore", vault)
+    assert events == ["close", "metadata", "verify", "reopen"]
+    assert vault.selected_item.call_count == 2
+
+
+@pytest.mark.parametrize("failure", ["metadata", "live"])
+def test_combined_setup_exits_the_lifecycle_after_failed_recovery(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Both metadata and live failures unwind the shared lifecycle and cannot certify recovery."""
+
+    vault, pipe, native, lifecycle = fixture
+    context = MagicMock()
+    context.__enter__.return_value = ("brave-browser", {"DISPLAY": ":0"})
+    context.__exit__.return_value = False
+    lifecycle.return_value = context
+    repair = Mock(return_value=True)
+    monkeypatch.setattr(live, "sync_browser_profiles", repair)
+    if failure == "metadata":
+        repair.side_effect = ValueError("fixture recovery failure")
+    else:
+        native.wait.side_effect = ValueError("fixture recovery failure")
+
+    with pytest.raises(ValueError, match="fixture recovery failure"):
+        live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault, restore_metadata=True)
+
+    context.__exit__.assert_called_once()
+    if failure == "metadata":
+        pipe.assert_not_called()
+    else:
+        pipe.return_value.__exit__.assert_called_once()
+
+
+def test_combined_setup_rejects_metadata_drift_remaining_after_restoration(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reinspect closed-browser settings after restoration before any native Sync operation."""
+
+    vault, pipe, _native, _lifecycle = fixture
+    clean = live.inspect_browser_profiles("/fixture", [PROFILE])
+    changed = {**clean, "drift": [{"kind": "renamed", "id": "fixture", "directory": "Default"}]}
+    monkeypatch.setattr(live, "inspect_browser_profiles", Mock(side_effect=[clean, changed]))
+    monkeypatch.setattr(live, "sync_browser_profiles", Mock(return_value=True))
+
+    with pytest.raises(ValueError, match="metadata changed while closing"):
+        live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault, restore_metadata=True)
+    pipe.assert_not_called()
+
+
+def test_chain_restore_does_not_approve_metadata_reconciliation(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Backup's existing restore action must still stop for metadata drift requiring its own approval."""
+
+    vault, _pipe, _native, lifecycle = fixture
+    inspection = live.inspect_browser_profiles("/fixture", [PROFILE])
+    inspection["drift"] = [{"kind": "renamed", "id": "fixture", "directory": "Default"}]
+    repair = Mock()
+    monkeypatch.setattr(live, "sync_browser_profiles", repair)
+
+    with pytest.raises(ValueError, match="reconcile profiles before live"):
+        live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault)
+    repair.assert_not_called()
+    lifecycle.assert_not_called()
+    vault.run.assert_not_called()
+
+
+@pytest.mark.parametrize("check_mode", [False, True])
+def test_combined_setup_rejects_undeclared_profiles_before_any_mutation(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch, check_mode: bool
+) -> None:
+    """Neither setup nor its preview may silently omit unmanaged profiles from recovery validation."""
+
+    vault, pipe, _native, lifecycle = fixture
+    inspection = live.inspect_browser_profiles("/fixture", [PROFILE])
+    inspection["profiles"].append({**PROFILE, "id": None, "directory": "Profile 9"})
+    inspection["drift"] = [{"kind": "undeclared", "id": None, "directory": "Profile 9"}]
+    repair = Mock()
+    monkeypatch.setattr(live, "sync_browser_profiles", repair)
+
+    with pytest.raises(ValueError, match="reconcile profiles before live"):
+        live.sync_browser_recovery(
+            "/fixture", [PROFILE], "restore", vault, restore_metadata=True, check_mode=check_mode
+        )
+
+    repair.assert_not_called()
+    pipe.assert_not_called()
+    lifecycle.assert_not_called()
+    vault.run.assert_not_called()
+
+
+def test_combined_preview_accepts_missing_declared_profiles_without_creating_them(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh setup can preview declared recovery without requiring existing browser files."""
+
+    vault, pipe, _native, lifecycle = fixture
+    inspection = live.inspect_browser_profiles("/fixture", [PROFILE])
+    inspection["profiles"] = []
+    inspection["drift"] = [{"kind": "missing", "id": "fixture", "directory": "Default"}]
+    repair = Mock()
+    monkeypatch.setattr(live, "sync_browser_profiles", repair)
+
+    result = live.sync_browser_recovery("/fixture", [PROFILE], "restore", vault, restore_metadata=True, check_mode=True)
+
+    assert result["verified"] is False and result["changed"] is False
+    repair.assert_not_called()
+    pipe.assert_not_called()
+    lifecycle.assert_not_called()
+    vault.run.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["sync", "save", "retry"])
+def test_metadata_restoration_requires_explicit_restore_action(
+    fixture: tuple, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """Invalid combinations fail before inspection, browser access, or vault operations."""
+
+    vault, pipe, _native, lifecycle = fixture
+    inspect = Mock()
+    monkeypatch.setattr(live, "inspect_browser_profiles", inspect)
+    with pytest.raises(ValueError, match="metadata restoration requires the restore action"):
+        live.sync_browser_recovery("/fixture", [PROFILE], action, vault, restore_metadata=True)
+    inspect.assert_not_called()
+    pipe.assert_not_called()
     lifecycle.assert_not_called()
     vault.run.assert_not_called()
 

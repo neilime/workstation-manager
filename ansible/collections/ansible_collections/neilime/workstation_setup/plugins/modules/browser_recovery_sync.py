@@ -33,6 +33,13 @@ options:
     type: str
     required: true
     choices: [sync, save, restore, retry]
+  restore_metadata:
+    description:
+      - Restore saved profile metadata and enable Sync everything before live recovery.
+      - Metadata restoration and live recovery share the same closed-browser session.
+      - Only valid with C(action=restore); backup keeps metadata reconciliation separate unless explicitly requested.
+    type: bool
+    default: false
   collection_id:
     description: Recovery collection containing the selected browser notes.
     type: str
@@ -101,6 +108,7 @@ def main() -> None:
     arguments.update(
         {
             "action": {"type": "str", "required": True, "choices": ["sync", "save", "restore", "retry"]},
+            "restore_metadata": {"type": "bool", "default": False},
             "collection_id": {"type": "str", "required": True},
             "session": {"type": "str", "required": True, "no_log": True},
             "disposable_device_names": {"type": "list", "elements": "str", "default": []},
@@ -120,6 +128,7 @@ def main() -> None:
             vault,
             check_mode=module.check_mode,
             disposable_names=module.params["disposable_device_names"],
+            restore_metadata=module.params["restore_metadata"],
         )
     except browser_lifecycle.BrowserLifecycleBlocked as error:
         module.exit_json(
