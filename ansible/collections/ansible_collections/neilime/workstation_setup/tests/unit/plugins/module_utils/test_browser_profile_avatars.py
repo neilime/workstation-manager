@@ -9,7 +9,9 @@ import threading
 from unittest import mock
 
 import pytest
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import browser_profile_avatars
+from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
+    browser_profile_avatars,
+)
 
 
 def profile(index: int, *, avatar: bool = True) -> dict:
