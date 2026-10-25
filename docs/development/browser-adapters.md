@@ -128,8 +128,10 @@ Preserve these implementation contracts:
   recovery words in memory and vault credentials out of browser environments.
 - Await the internal page, its native profile-path response, and an exact profile
   match before accessing Sync. Use the settings page's existing callbacks and
-  canonical `chrome://` module URLs. Await OS encryption readiness and stop on
-  decryption failure without replacing the chain.
+  canonical `chrome://` module URLs. Initialize callbacks in the current document
+  within each settings operation, so a page reload cannot leave a stale bridge.
+  Never replay a native mutation after a missing acknowledgement. Await OS
+  encryption readiness and stop on decryption failure without replacing the chain.
 - Read allowed desktop variables from the managed user's live systemd session.
   Keep raw session output and arbitrary browser errors out of task results.
 
@@ -191,9 +193,9 @@ limactl shell --workdir /workspace workstation-manager-v1 -- \
 
 Replace the VM name if using a custom `VM_NAME`. The test uses a disposable
 profile and disabled Sync endpoint. It exercises native code access, private IPC,
-profile identity, tab preservation, callbacks, and production diagnostic
-JavaScript with synthetic success, failure, stale, upload, deletion and delayed
-response states. It does not certify public Sync connectivity; the
+profile identity, tab preservation, callbacks after a page reload, and production
+diagnostic JavaScript with synthetic success, failure, stale, upload, deletion and
+delayed response states. It does not certify public Sync connectivity; the
 [full VM flow](e2e-tests.md#run-the-flow) checks live recovery.
 
 [brave-role]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_brave

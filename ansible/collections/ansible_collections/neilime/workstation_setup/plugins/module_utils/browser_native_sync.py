@@ -354,12 +354,28 @@ class NativeSync:
         except BrowserProtocolError as error:
             raise BrowserProtocolError(f"Brave Sync failed while {operation}: {error}") from error
 
+    def _evaluate_settings(self, expression: str, operation: str, timeout: float = 30) -> object:
+        """Install callbacks in the current page context before issuing one native operation."""
+
+        # Settings can reload after startup. A bridge installed by the constructor
+        # belongs to that document, not the DevTools session. Install it and issue
+        # the request in one evaluation; never replay an operation whose reply fails.
+        return self._evaluate(
+            self.settings,
+            "(() => {"
+            f" if (!{_SETTINGS_BRIDGE}) throw new Error('Native Sync callbacks are unavailable');"
+            f" return {expression};"
+            " })()",
+            operation,
+            timeout=timeout,
+        )
+
     def _wait_for_encryption(self, timeout: float = 30) -> None:
         """Wait for asynchronous OS encryption before reading or changing a recovery chain."""
 
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            status = self._evaluate(self.settings, _ENCRYPTION_STATUS, "waiting for desktop encryption")
+            status = self._evaluate_settings(_ENCRYPTION_STATUS, "waiting for desktop encryption")
             if isinstance(status, dict) and status.get("available") is True:
                 if status.get("decryptionFailed") is not False:
                     raise BrowserProtocolError(
@@ -371,8 +387,7 @@ class NativeSync:
 
     def _request(self, method: str, *arguments: object, timeout: float = 30) -> object:
         encoded = ", ".join(json.dumps(value) for value in (method, *arguments))
-        return self._evaluate(
-            self.settings,
+        return self._evaluate_settings(
             f"window.workstationSyncSettings.sendWithPromise({encoded})",
             f"calling {method}",
             timeout=timeout,
@@ -393,8 +408,7 @@ class NativeSync:
         """Verify saved per-profile choices, restoring them through native settings only during setup."""
 
         expected = json.dumps(native_profile_preferences(choices))
-        result = self._evaluate(
-            self.settings,
+        result = self._evaluate_settings(
             f"{PROFILE_PREFERENCES_SCRIPT}({expected}, {json.dumps(restore)})",
             "checking profile preferences",
         )
@@ -505,7 +519,7 @@ class NativeSync:
             raise BrowserProtocolError("Brave did not join the selected recovery chain")
         # Joining resets Brave's selected types to its defaults. Restore explicitly
         # re-enables the full selection required by backup, through the native API.
-        if self._evaluate(self.settings, _ENABLE_EVERYTHING, "enabling Sync everything") is not True:
+        if self._evaluate_settings(_ENABLE_EVERYTHING, "enabling Sync everything") is not True:
             raise BrowserProtocolError("Brave did not enable Sync everything after joining the recovery chain")
 
     def wait(self, timeout: float = 120) -> bool:

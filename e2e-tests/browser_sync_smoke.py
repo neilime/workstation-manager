@@ -495,13 +495,13 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     )
 
 
-def navigate_teardown_page(pipe: BrowserPipe, page: str, url: str) -> None:
-    """Wait for the owned diagnostic tab to finish its requested navigation."""
+def navigate_native_page(pipe: BrowserPipe, page: str, url: str) -> None:
+    """Wait for the owned internal tab to finish its requested navigation."""
 
     pipe.call("Page.navigate", {"url": url}, page)
     deadline = time.monotonic() + 10
     while not pipe.evaluate(page, f"location.href === {json.dumps(url)} && document.readyState === 'complete'"):
-        assert time.monotonic() < deadline, "Teardown diagnostic page did not finish navigation"
+        assert time.monotonic() < deadline, "Native page did not finish navigation"
         time.sleep(0.1)
 
 
@@ -549,7 +549,7 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
         },
         page,
     )
-    navigate_teardown_page(pipe, page, "chrome://sync-internals/")
+    navigate_native_page(pipe, page, "chrome://sync-internals/")
     for resource in ("chrome://sync-internals/about.js", "chrome://resources/js/cr.js"):
         assert pipe.evaluate(page, f"import({json.dumps(resource)}).then(() => false, () => true)") is True
     # Exercise the callback contract independently of the page's module loader.
@@ -630,7 +630,7 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
     acknowledged = device_removal_acknowledgement(pipe, page)
     # A navigation discards all observer state. Recover the owned page and require
     # fresh evidence; a previously ready context must not authorize device removal.
-    navigate_teardown_page(pipe, page, "about:blank")
+    navigate_native_page(pipe, page, "about:blank")
     assert pipe.evaluate(page, _START_TEARDOWN) is False
     assert teardown_snapshot() == unavailable
     assert pipe.evaluate(page, "typeof window.workstationDeviceRemoval === 'undefined'") is True
@@ -640,7 +640,7 @@ def teardown_readiness(pipe: BrowserPipe) -> None:
     pipe.call("Runtime.removeBinding", {"name": _REMOVAL_BINDING}, page)
     assert acknowledged() is True
     pipe.call("Network.setBlockedURLs", {"urlPatterns": []}, page)
-    navigate_teardown_page(pipe, page, "chrome://sync-internals/")
+    navigate_native_page(pipe, page, "chrome://sync-internals/")
     # This short snapshot can remain pending or receive fresh Disabled status.
     # Both must recover the page without certifying an active device for removal.
     assert {**teardown_snapshot(), "stopped": False} == pending
@@ -824,6 +824,19 @@ def settings_callbacks(pipe: BrowserPipe) -> None:
     )
 
 
+def reloaded_settings_callbacks(pipe: BrowserPipe, native: NativeSync) -> None:
+    """Read the same recovery code after a completed reload discards the document's callback bridge."""
+
+    code = native.code()
+    # An intermediate completed navigation proves that the old document is gone;
+    # readiness cannot accidentally accept its already-complete settings URL.
+    navigate_native_page(pipe, native.settings, "about:blank")
+    navigate_native_page(pipe, native.settings, "chrome://settings/braveSync/setup")
+    assert pipe.evaluate(native.settings, "window.workstationSyncSettings === undefined") is True
+    assert native.code() == code, "Settings reload changed the native recovery code"
+    print("Native recovery code read reinstalls callbacks after settings reload.", flush=True)
+
+
 def sync_selection(pipe: BrowserPipe, page: str) -> None:
     """Exercise the production selection code against native-shaped WebUI callbacks."""
 
@@ -941,6 +954,7 @@ def main() -> None:
             native = delayed_profile_identity(pipe, directory + "/Default")
             assert len(native.code().split()) == 24
             settings_callbacks(pipe)
+            reloaded_settings_callbacks(pipe, native)
             pipe.call("Target.createTarget", {"url": "data:text/plain,workstation-session-fixture"})
             diagnostics(pipe, pipe.page("brave://sync-internals"))
             teardown_readiness(pipe)
