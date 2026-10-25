@@ -91,10 +91,24 @@ def fixture_chezmoi_setup(
         "    sys.exit(0)\n"
         "if not source.is_dir():\n"
         "    sys.exit(4)\n"
+        "modifier = source / 'dot_codex/modify_private_config.toml'\n"
+        "shared = destination / '.codex/config.toml'\n"
+        "def modified_contents():\n"
+        "    contents = shared.read_text() if shared.exists() else ''\n"
+        "    for project in sorted((destination / 'projects').glob('*/.git')):\n"
+        "        declaration = f'\\n[projects.{json.dumps(str(project.parent))}]\\ntrust_level = \"trusted\"\\n'\n"
+        "        if declaration not in contents:\n"
+        "            contents += declaration\n"
+        "    return contents\n"
         "if 'status' in args:\n"
         "    if (root / 'fail-status').exists():\n"
         "        print('fixture-private-value', file=sys.stderr)\n"
         "        sys.exit(5)\n"
+        "    if modifier.exists() and (root / 'applied').exists() and "
+        "(shared.is_symlink() or not shared.is_file()):\n"
+        "        print(('MM' if shared.exists() or shared.is_symlink() else 'DM') + ' .codex/config.toml')\n"
+        "    elif modifier.exists() and (not shared.exists() or shared.read_text() != modified_contents()):\n"
+        "        print(('MM' if shared.exists() else ' A') + ' .codex/config.toml')\n"
         "    if (root / 'local-conflict').exists():\n"
         "        if (root / 'directory-conflict').exists():\n"
         "            print('MM .config')\n"
@@ -111,6 +125,24 @@ def fixture_chezmoi_setup(
         "        print(' A .zshrc')\n"
         "    if not (root / 'applied').exists():\n"
         "        print(' R run_fixture')\n"
+        "elif 'managed' in args:\n"
+        "    if (root / 'fail-managed').exists():\n"
+        "        sys.exit('fixture-private-value')\n"
+        "    if (root / 'invalid-managed').exists():\n"
+        "        print('fixture-private-value')\n"
+        "        sys.exit(0)\n"
+        "    if not {'--include=files', '--path-style=all', '--format=json'} <= set(args):\n"
+        "        sys.exit(11)\n"
+        "    entries = {}\n"
+        "    for target in args[args.index('--') + 1:]:\n"
+        "        relative = pathlib.Path(target).relative_to(destination).as_posix()\n"
+        "        if relative == '.codex/config.toml' and modifier.exists():\n"
+        "            entries[relative] = {'sourceRelative': 'dot_codex/modify_private_config.toml'}\n"
+        "        elif relative == '.config':\n"
+        "            entries['.config/settings'] = {'sourceRelative': 'dot_config/modify_settings'}\n"
+        "        else:\n"
+        "            entries[relative] = {'sourceRelative': 'dot_' + relative.lstrip('.')}\n"
+        "    print(json.dumps(entries))\n"
         "elif 'apply' in args:\n"
         "    if (root / 'fail-apply').exists():\n"
         "        print('fixture-private-value', file=sys.stderr)\n"
@@ -129,6 +161,10 @@ def fixture_chezmoi_setup(
         "    else:\n"
         "        if (root / 'local-conflict').exists() or (root / 'new-conflict').exists():\n"
         "            sys.exit(10)\n"
+        "        if modifier.exists():\n"
+        "            shared.parent.mkdir(exist_ok=True)\n"
+        "            shared.write_text(modified_contents())\n"
+        "            shared.chmod(0o600)\n"
         "        (root / 'applied').touch()\n"
         "    (destination / '.zshrc').write_text((source / 'dot_zshrc').read_text())\n"
         "else:\n"
@@ -185,6 +221,22 @@ def run_setup(fixture: tuple[pathlib.Path, dict[str, str]], *options: str) -> su
     )
 
 
+@pytest.fixture(name="chezmoi_modifier")
+def fixture_chezmoi_modifier(chezmoi_setup) -> pathlib.Path:
+    """Publish and initially apply a synthetic modifier before exercising current target changes."""
+    root, _env = chezmoi_setup
+    published = root / "published"
+    modifier = published / "dot_codex/modify_private_config.toml"
+    modifier.parent.mkdir()
+    modifier.write_text("# Fixture current-input transformation\n")
+    git(published, "add", ".")
+    git(published, "commit", "-m", "Publish shared configuration modifier")
+    git(published, "push", "origin", "fixture")
+    result = run_setup(chezmoi_setup)
+    assert result.returncode == 0, result.stdout + result.stderr
+    return root / "home/.codex/config.toml"
+
+
 @pytest.mark.parametrize("authenticated", [False, True])
 def test_explicit_paths_apply_dotfiles_and_repeated_setup_is_unchanged(chezmoi_setup, authenticated: bool) -> None:
     """Pin source, target, and permissions independently of inherited shell and IDE settings."""
@@ -204,7 +256,112 @@ def test_explicit_paths_apply_dotfiles_and_repeated_setup_is_unchanged(chezmoi_s
     assert "changed=0" in repeated.stdout
     calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
     assert sum("apply" in call for call in calls) == 1
+    assert not any("managed" in call for call in calls)
     assert "fixture-token" not in initial.stdout + initial.stderr
+
+
+def test_modifier_reruns_preserve_shared_values_and_respect_ordinary_conflict_skip(
+    chezmoi_setup, chezmoi_modifier
+) -> None:
+    """Transform current input without force, preserve unchanged reruns, and honor a later conflict skip."""
+    root, env = chezmoi_setup
+    config = chezmoi_modifier
+    shared_values = 'private_setting = "fixture-private-value"\n[mcp_servers.fixture]\ncommand = "fixture-mcp"\n'
+    config.write_text(shared_values)
+    project = root / "home/projects/new project"
+    (project / ".git").mkdir(parents=True)
+
+    result = run_setup(chezmoi_setup)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    contents = config.read_text()
+    assert contents.startswith(shared_values)
+    assert str(project) in contents
+    assert config.stat().st_mode & 0o777 == 0o600
+    assert "fixture-private-value" not in result.stdout + result.stderr
+    result = run_setup(chezmoi_setup)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "changed=0" in result.stdout
+    calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
+    metadata_calls = [call for call in calls if "managed" in call]
+    assert len(metadata_calls) == 1
+    assert metadata_calls[0][metadata_calls[0].index("--") + 1 :] == [str(config)]
+    apply_calls = [call for call in calls if "apply" in call]
+    assert len(apply_calls) == 2
+    assert all("--error-on-conflict" in call and "--force" not in call for call in apply_calls)
+
+    # A separate ordinary conflict must still stop all application when skipped.
+    (root / "local-conflict").touch()
+    (root / "home/projects/another project/.git").mkdir(parents=True)
+    env["WORKSTATION_MANAGER_INTERACTIVE"] = "1"
+    returncode, output = run_interactive(
+        ["ansible-playbook", "--inventory", "localhost,", str(root / "playbook.json")],
+        root,
+        env,
+        [("Type apply, skip, or abort", "skip")],
+    )
+    assert returncode == 0, output
+    assert "MM .zshrc" in output
+    assert "MM .codex/config.toml" not in output
+    assert config.read_text() == contents
+    calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
+    assert [call for call in calls if "apply" in call] == apply_calls
+
+
+@pytest.mark.parametrize("target_type", ["symlink", "directory", "missing"])
+def test_modifier_type_changes_remain_conflicts_without_replacing_user_data(
+    chezmoi_setup, chezmoi_modifier, target_type
+):
+    """Real link, directory, and deletion changes require approval despite modifier source metadata."""
+    root, _env = chezmoi_setup
+    config = chezmoi_modifier
+    config.unlink()
+    external = root / "external-config.toml"
+    external.write_text('personal_value = "fixture-private-value"\n')
+    if target_type == "symlink":
+        config.symlink_to(external)
+    elif target_type == "directory":
+        config.mkdir()
+        (config / "user-file").write_text("preserve user data\n")
+
+    failed = run_setup(chezmoi_setup)
+
+    output = failed.stdout + failed.stderr
+    assert failed.returncode != 0
+    assert "local changes that differ from the source dotfiles" in output
+    assert ".codex/config.toml" in output
+    assert "fixture-private-value" not in output
+    assert external.read_text() == 'personal_value = "fixture-private-value"\n'
+    if target_type == "symlink":
+        assert config.is_symlink()
+        assert config.readlink() == external
+    elif target_type == "directory":
+        assert (config / "user-file").read_text() == "preserve user data\n"
+    else:
+        assert not config.exists()
+    calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
+    assert sum("apply" in call for call in calls) == 1
+
+
+@pytest.mark.parametrize("failure", ["fail-managed", "invalid-managed"])
+def test_unverified_conflict_metadata_stops_before_apply_and_keeps_output_private(chezmoi_setup, failure):
+    """Failed commands and malformed metadata cannot authorize replacements or reveal diagnostics."""
+    root, _env = chezmoi_setup
+    (root / "local-conflict").touch()
+    (root / failure).touch()
+    startup = root / "home/.zshrc"
+    startup.write_text("# preserve local edit\n")
+
+    failed = run_setup(chezmoi_setup)
+
+    output = failed.stdout + failed.stderr
+    assert failed.returncode != 0
+    assert "could not identify conflicting file types" in output
+    assert "fixture-private-value" not in output
+    assert "--include=files" in output
+    assert startup.read_text() == "# preserve local edit\n"
+    calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
+    assert not any("apply" in call for call in calls)
 
 
 def test_preview_does_not_apply_dotfiles(chezmoi_setup) -> None:

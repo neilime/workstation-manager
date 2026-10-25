@@ -176,6 +176,14 @@ prompts separately: `apply` replaces them with source versions and permissions,
 `skip` skips all Chezmoi dotfiles and scripts, and `abort` stops. Empty answers
 abort. Unattended runs stop on either kind of conflict without replacing files.
 
+Chezmoi `modify_` files transform the current file contents, so their pending
+transformations follow normal Chezmoi application without a replacement prompt.
+Use these templates for shared configuration such as [Codex settings](ai-tools.md#configuration-ownership-and-reruns)
+that must preserve values managed by other tools. Ordinary file replacements
+still require the conflict decision above.
+Deleting a managed modifier target or replacing it with a symlink or directory
+also retains the conflict guard.
+
 Dry runs do not fetch, update the checkout, apply dotfiles, or run their scripts.
 Failures print a diagnostic command to run as the managed user. Keep its output
 private because templates and scripts can contain sensitive data. Existing
