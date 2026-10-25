@@ -17,8 +17,7 @@ def test_ci_stages_limit_credentials_to_actions_that_need_external_authenticatio
     assert not any(marker in str(value) for value in job["env"].values() for marker in ("secrets.", "github.token"))
     assert job["env"]["E2E_REPOSITORY_URL"]
     assert job["env"]["REPORTS_DIR"] == ".reports"
-    assert str(job["env"]["E2E_PROFILE_TASKS"]) == "1"
-    authenticated = {"backup-arrange", "backup-act", "setup-act", "setup-repeat-act", "cleanup-act"}
+    authenticated = {"backup-arrange", "backup-act", "setup-act", "cleanup-act"}
     vault_credentials = {
         "BITWARDEN_CLIENT_ID": "${{ secrets.BITWARDEN_CLIENT_ID }}",
         "BITWARDEN_CLIENT_SECRET": "${{ secrets.BITWARDEN_CLIENT_SECRET }}",
@@ -32,7 +31,7 @@ def test_ci_stages_limit_credentials_to_actions_that_need_external_authenticatio
             continue
         stage = next(argument.removeprefix("STAGE=") for argument in arguments if argument.startswith("STAGE="))
         expected = vault_credentials if stage in authenticated else {}
-        if stage in {"setup-act", "setup-repeat-act"}:
+        if stage == "setup-act":
             expected = {**expected, "WORKSTATION_MANAGER_GHCR_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
         environment = {**job["env"], **step.get("env", {})}
         credentials = {
@@ -77,7 +76,6 @@ def test_ci_registry_token_has_write_access_and_reaches_vm_setup_privately(tmp_p
         "resolve_e2e_target_user_home() { printf '/fixture/home'; }\n"
         "run_e2e_vm_shell() { case $1 in *archives=*) printf '/fixture/archive.tar.gz';; esac; }\n"
         "run_e2e_lima_shell() { :; }\n"
-        'run_e2e_timed_command() { shift; "$@"; }\n'
         'run_e2e_workstation_action() { printf \'%s\\0\' "$@" >"$TEST_ARGUMENTS"; }\n'
     )
     token = "synthetic-job-registry-token"
