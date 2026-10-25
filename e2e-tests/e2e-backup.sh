@@ -6,23 +6,94 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=e2e-common.sh
 source "$script_dir/e2e-common.sh"
 
+stage="${2:-all}"
+case "$stage" in
+all | arrange | act | finish) ;;
+*)
+	printf '%s\n' 'Expected backup stage: all, arrange, act, or finish.' >&2
+	exit 2
+	;;
+esac
+if [[ $# -gt 2 ]]; then
+	printf '%s\n' 'Too many backup arguments.' >&2
+	exit 2
+fi
+
 resolve_e2e_workstation_context "${1:-workstation-manager-v1}"
-require_e2e_env_vars \
-	BITWARDEN_CLIENT_ID \
-	BITWARDEN_CLIENT_SECRET \
-	BITWARDEN_PASSWORD
 
 backup_root="/tmp/workstation-manager-e2e-backup"
+recovery_fixture_dir="/tmp/workstation-manager-e2e-recovery"
+
+cleanup_recovery_fixture() {
+	run_e2e_lima_control_command 20 env sh -lc "
+		set -eu
+		if [ ! -e '$recovery_fixture_dir' ] && [ ! -L '$recovery_fixture_dir' ]; then
+			exit 0
+		fi
+		if [ -L '$recovery_fixture_dir' ] || [ ! -d '$recovery_fixture_dir' ] ||
+			[ ! -f '$recovery_fixture_dir/fixture-owned' ]; then
+			printf '%s\\n' 'Refusing to remove an unowned backup recovery fixture.' >&2
+			exit 1
+		fi
+		if [ -f '$recovery_fixture_dir/source-created' ]; then
+			rm -rf \"\$HOME/.local/share/chezmoi\"
+		fi
+		if [ -f '$recovery_fixture_dir/config-created' ]; then
+			rm -f \"\$HOME/.config/chezmoi/chezmoi.yaml\"
+		fi
+		rm -rf '$recovery_fixture_dir'
+	"
+}
+
+finish_backup() {
+	local backup_status=$?
+	local cleanup_status=0
+
+	cleanup_recovery_fixture || cleanup_status=$?
+	if [[ $backup_status -eq 0 ]]; then
+		backup_status=$cleanup_status
+	fi
+	exit "$backup_status"
+}
+
+if [[ "$stage" == finish ]]; then
+	cleanup_recovery_fixture
+	exit 0
+fi
+
 target_user_home="$(resolve_e2e_target_user_home)"
 projects_dir="${target_user_home}/Documents/dev-projects/client-restore"
 managed_config_dir="${target_user_home}/.config/workstation-manager"
 git_remote_dir="/tmp/workstation-manager-e2e-origin-client-restore.git"
 git_seed_dir="/tmp/workstation-manager-e2e-seed-client-restore"
 
-run_e2e_vm_shell "rm -rf '$backup_root' '$git_remote_dir' '$git_seed_dir'"
+if [[ "$stage" == act ]]; then
+	run_e2e_vm_shell "
+		set -eu
+		if [ -L '$recovery_fixture_dir' ] || [ ! -d '$recovery_fixture_dir' ] ||
+			[ ! -f '$recovery_fixture_dir/fixture-owned' ] || [ ! -f '$recovery_fixture_dir/ready' ]; then
+			printf '%s\\n' 'Run backup arrange before backup act.' >&2
+			exit 1
+		fi
+	"
+else
+	# Refuse reuse before installing cleanup: another fixture is not ours to remove.
+	run_e2e_vm_shell "set -eu; mkdir -m 700 '$recovery_fixture_dir'; touch '$recovery_fixture_dir/fixture-owned'"
+fi
+trap finish_backup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
-run_e2e_vm_shell "$(
-	cat <<EOF
+require_e2e_env_vars \
+	BITWARDEN_CLIENT_ID \
+	BITWARDEN_CLIENT_SECRET \
+	BITWARDEN_PASSWORD
+
+if [[ "$stage" != act ]]; then
+	run_e2e_vm_shell "rm -rf '$backup_root' '$git_remote_dir' '$git_seed_dir'"
+
+	run_e2e_vm_shell "$(
+		cat <<EOF
 mkdir -p '$managed_config_dir'
 git init --bare '$git_remote_dir'
 git init --initial-branch main '$git_seed_dir'
@@ -49,38 +120,23 @@ printf '%s\n' 'local-untracked' >'$projects_dir/local-note.txt'
 printf '%s\n' 'local-change' >>'$projects_dir/tracked.txt'
 printf '%s\n' 'managed-config-fixture' >'$managed_config_dir/restore-fixture.txt'
 EOF
-)"
+	)"
 
-# Build a published, empty Chezmoi state before exercising the real remote backup
-# wrapper. Do not replace an existing workstation's dotfiles checkout or config.
-recovery_fixture_dir="$(run_e2e_vm_shell 'mktemp -d /tmp/workstation-manager-e2e-recovery.XXXXXX')"
-cleanup_recovery_fixture() {
-	run_e2e_vm_shell "
-		set -eu
-		if [ -f '$recovery_fixture_dir/source-created' ]; then
-			rm -rf '$target_user_home/.local/share/chezmoi'
-		fi
-		if [ -f '$recovery_fixture_dir/config-created' ]; then
-			rm -f '$target_user_home/.config/chezmoi/chezmoi.yaml'
-		fi
-		rm -rf '$recovery_fixture_dir'
-	"
-}
-trap cleanup_recovery_fixture EXIT
+	# Build a published, empty Chezmoi state before exercising the real remote backup
+	# wrapper. Do not replace an existing workstation's dotfiles checkout or config.
+	stream_e2e_entrypoint_script | sed '$d' |
+		run_e2e_lima_shell sh -c "umask 077; cat >'$recovery_fixture_dir/wrapper-definitions.sh'"
 
-stream_e2e_entrypoint_script | sed '$d' |
-	run_e2e_lima_shell sh -c "umask 077; cat >'$recovery_fixture_dir/wrapper-definitions.sh'"
-
-run_e2e_lima_shell env \
-	E2E_RECOVERY_FIXTURE_DIR="$recovery_fixture_dir" \
-	E2E_REPOSITORY_PATH="$E2E_REPOSITORY_PATH" \
-	REPOSITORY_URL="$E2E_REPOSITORY_URL" \
-	REPOSITORY_BRANCH="$E2E_BRANCH_NAME" \
-	WORKSTATION_MANAGER_GITHUB_TOKEN="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}" \
-	BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID" \
-	BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET" \
-	BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD" \
-	bash -s <<'FIXTURE'
+	run_e2e_lima_shell env \
+		E2E_RECOVERY_FIXTURE_DIR="$recovery_fixture_dir" \
+		E2E_REPOSITORY_PATH="$E2E_REPOSITORY_PATH" \
+		REPOSITORY_URL="$E2E_REPOSITORY_URL" \
+		REPOSITORY_BRANCH="$E2E_BRANCH_NAME" \
+		WORKSTATION_MANAGER_GITHUB_TOKEN="${WORKSTATION_MANAGER_GITHUB_TOKEN:-}" \
+		BITWARDEN_CLIENT_ID="$BITWARDEN_CLIENT_ID" \
+		BITWARDEN_CLIENT_SECRET="$BITWARDEN_CLIENT_SECRET" \
+		BITWARDEN_PASSWORD="$BITWARDEN_PASSWORD" \
+		bash -s <<'FIXTURE'
 set -euo pipefail
 umask 077
 fixture_dir="$E2E_RECOVERY_FIXTURE_DIR"
@@ -147,6 +203,12 @@ test -z "$(CHEZMOI_CONFIG_FILE="$config_path" "$fixture_dir/chezmoi" status)"
 PRIVATE_OVERRIDE_LOCAL_FILE="$source_dir/private.override.yml"
 run_ansible_pull ansible/prepare_e2e_backup.yml 0 </dev/null
 FIXTURE
+	run_e2e_vm_shell "touch '$recovery_fixture_dir/ready'"
+	if [[ "$stage" == arrange ]]; then
+		trap - EXIT
+		exit 0
+	fi
+fi
 
 run_e2e_workstation_action \
 	backup \

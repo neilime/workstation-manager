@@ -16,8 +16,9 @@ run_e2e_timed_command() (
 
 	# Only these public labels may enter logs and reports. Never record arguments.
 	case "$phase_name" in
-	base-build | vm-start | backup | backup-assertions | setup | desktop-restart | clipboard-extension | setup-screenshot | \
-		desktop-diagnostics | browser-diagnostics | setup-assertions | cleanup | cleanup-assertions | browser-teardown) ;;
+	base-build | vm-start | backup-arrange | backup-act | backup-assert | setup-arrange | setup-act | setup-assert | \
+		cleanup-arrange | cleanup-act | cleanup-assert | desktop-restart | clipboard-extension | setup-screenshot | \
+		desktop-diagnostics | browser-diagnostics | browser-teardown) ;;
 	*)
 		printf '%s\n' 'Unsupported E2E timing phase; timing was not recorded.' >&2
 		"$@"
