@@ -825,15 +825,15 @@ def settings_callbacks(pipe: BrowserPipe) -> None:
 
 
 def reloaded_settings_callbacks(pipe: BrowserPipe, native: NativeSync) -> None:
-    """Read the same recovery code after a completed reload discards the document's callback bridge."""
+    """Read a valid recovery code after a completed reload discards the document's callback bridge."""
 
-    code = native.code()
     # An intermediate completed navigation proves that the old document is gone;
     # readiness cannot accidentally accept its already-complete settings URL.
     navigate_native_page(pipe, native.settings, "about:blank")
     navigate_native_page(pipe, native.settings, "chrome://settings/braveSync/setup")
     assert pipe.evaluate(native.settings, "window.workstationSyncSettings === undefined") is True
-    assert native.code() == code, "Settings reload changed the native recovery code"
+    # An unenrolled profile generates a new code on each read until a chain is saved.
+    assert len(native.code().split()) == 24
     print("Native recovery code read reinstalls callbacks after settings reload.", flush=True)
 
 
