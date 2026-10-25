@@ -141,6 +141,33 @@ def test_native_request_failure_identifies_the_operation_without_recovery_words(
     assert "private" not in str(error.value)
 
 
+@pytest.mark.parametrize("reset", [False, True])
+def test_native_mutation_failure_is_not_replayed_after_callback_reinstallation(
+    reset: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lost acknowledgement cannot authorize issuing a native chain mutation twice."""
+
+    code = " ".join(["private"] * 24)
+    method = "SyncSetupReset" if reset else "SyncSetupSetSyncCode"
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, True, _ENCRYPTION_READY]
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    pipe.evaluate.reset_mock()
+    pipe.evaluate.side_effect = [
+        *([] if reset else [code + " suffix"]),
+        BrowserProtocolError("Brave's automation request timed out"),
+    ]
+    monkeypatch.setattr(instance, "wait", Mock(side_effect=BrowserProtocolError("Brave's diagnostics unavailable")))
+
+    with pytest.raises(BrowserProtocolError, match=f"calling {method}.*timed out") as error:
+        instance.restore(code, reset=reset)
+
+    assert "private" not in str(error.value)
+    submitted = [call for call in pipe.evaluate.call_args_list if method in call.args[1]]
+    assert len(submitted) == 1
+    assert pipe.evaluate.call_args.kwargs == {"timeout": 120}
+
+
 def test_recovery_code_access_waits_for_native_desktop_encryption(monkeypatch: pytest.MonkeyPatch) -> None:
     """Code generation starts only after Brave's asynchronous OS encryption initialization completes."""
 
