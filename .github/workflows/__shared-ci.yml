@@ -225,12 +225,6 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Lima
-        id: lima-setup
-        # yamllint disable rule:line-length
-        uses: lima-vm/lima-actions/setup@55627e31b78637bf254a8b2a14da8ea7d12564e5 # v1.1.0
-        # yamllint enable rule:line-length
-
       - name: Identify desktop base image inputs
         id: desktop-base
         run: make e2e-base-inputs
@@ -243,7 +237,7 @@ jobs:
         with:
           path: ~/.cache/lima
           # yamllint disable rule:line-length
-          key: lima-downloads-${{ runner.os }}-${{ runner.arch }}-${{ steps.lima-setup.outputs.version }}-${{ steps.desktop-base.outputs.source-digest }}
+          key: lima-downloads-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.desktop-base.outputs.source-digest }}
           # yamllint enable rule:line-length
 
       - name: Restore desktop prerequisite image
@@ -259,7 +253,7 @@ jobs:
         if: steps.desktop-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libguestfs-tools dhcpcd-base
+          sudo apt-get install -y --no-install-recommends libguestfs-tools dhcpcd-base qemu-utils
           # Select QEMU user networking for the build appliance on this runner.
           sudo apt-get remove -y passt # codespell:ignore passt
           # Include the maintained DHCP client in the appliance, not just the host.
@@ -282,8 +276,22 @@ jobs:
           path: .cache/e2e-base
           key: ${{ steps.desktop-base.outputs.key }}
 
-      - name: Prepare e2e VM and tooling
-        run: make e2e-prepare
+      - name: Prepare e2e tooling and VM configuration
+        run: |
+          make setup
+          python3 -m ci.e2e_vm_config \
+            --repository "$GITHUB_REPOSITORY" --revision "$(git rev-parse HEAD)" \
+            --image "$E2E_BASE_IMAGE" --cpus "$E2E_VM_CPUS" \
+            --memory-gib "$E2E_VM_MEMORY_GIB" --output .cache/e2e-vm.json
+
+      - name: Create e2e VM
+        id: vm
+        # yamllint disable rule:line-length
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@8da9bb824a80cdb0d61e0d6f1d7b5fe70c39085f
+        # yamllint enable rule:line-length
+        with:
+          vm-config: .cache/e2e-vm.json
+          startup-timeout-minutes: 20
 
       # Save public downloads before authenticated actions, even if tests later fail.
       - name: Save Lima download cache
@@ -296,12 +304,19 @@ jobs:
           key: ${{ steps.lima-cache.outputs.cache-primary-key }}
 
       - name: Initialize e2e stages
+        env:
+          VM_DIRECTORY: ${{ steps.vm.outputs.vm }}
+          VM_INSTANCE: ${{ steps.vm.outputs.name }}
         run: |
           # Bootstrap the same commit that supplies the assertions, including PR merge commits.
           E2E_REPOSITORY_REF="$(git rev-parse HEAD)"
-          printf 'E2E_REPOSITORY_REF=%s\n' "$E2E_REPOSITORY_REF" >> "$GITHUB_ENV"
-          # Share one deadline across the nine stages; teardown stays outside.
-          printf 'E2E_SUITE_DEADLINE=%s\n' "$(($(date +%s) + 35 * 60))" >> "$GITHUB_ENV"
+          {
+            printf 'E2E_REPOSITORY_REF=%s\n' "$E2E_REPOSITORY_REF"
+            printf 'LIMA_HOME=%s\n' "$VM_DIRECTORY"
+            printf 'VM_NAME=%s\n' "$VM_INSTANCE"
+            # Share one deadline across the nine stages; teardown stays outside.
+            printf 'E2E_SUITE_DEADLINE=%s\n' "$(($(date +%s) + 35 * 60))"
+          } >> "$GITHUB_ENV"
 
       - name: Backup - Arrange fixtures and recovery keys
         env:
@@ -352,7 +367,10 @@ jobs:
         run: make e2e-stage STAGE=cleanup-assert
 
       - name: Finish e2e fixtures
-        if: ${{ always() }}
+        if: ${{ always() && steps.vm.outcome == 'success' }}
+        env:
+          LIMA_HOME: ${{ steps.vm.outputs.vm }}
+          VM_NAME: ${{ steps.vm.outputs.name }}
         run: make e2e-stage STAGE=finish
 
       - name: Parse e2e reports
@@ -391,6 +409,20 @@ jobs:
               steps.upload-e2e-desktop-screenshot.outputs.artifact-url
             }})
 
-      - name: Stop e2e VM
-        if: ${{ always() }}
-        run: make e2e-down
+      - name: Verify browser device removal
+        id: browser-teardown
+        if: ${{ always() && steps.vm.outcome == 'success' }}
+        env:
+          LIMA_HOME: ${{ steps.vm.outputs.vm }}
+          VM_NAME: ${{ steps.vm.outputs.name }}
+        run: make e2e-leave
+
+      - name: Destroy e2e VM
+        if: >-
+          ${{ always() && steps.vm.outputs.vm != '' &&
+            (steps.vm.outcome != 'success' || steps.browser-teardown.outcome == 'success') }}
+        # yamllint disable rule:line-length
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@8da9bb824a80cdb0d61e0d6f1d7b5fe70c39085f
+        # yamllint enable rule:line-length
+        with:
+          vm: ${{ steps.vm.outputs.vm }}

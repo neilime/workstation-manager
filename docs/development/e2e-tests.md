@@ -67,7 +67,16 @@ Set `E2E_REPOSITORY_URL` and `E2E_REPOSITORY_REF` to select another repository o
 Publish the intended changes first; uncommitted host edits are not deployed.
 
 CI uses the exact checked-out workflow commit, including PR merge commits.
-Bootstrap explicitly fetches pinned commits.
+Bootstrap explicitly fetches pinned commits. The CI guest also downloads a
+read-only copy of that public commit for its fixture scripts before receiving
+any credentials. Local VM fixtures use the live read-only workspace mount.
+
+CI uses the shared `hoverkraft-tech/ci-github-iac` VM create and destroy actions,
+pinned in the [workflow](../../.github/workflows/__shared-ci.yml). The workstation
+repository supplies its desktop template, verified image, and resource settings.
+The guest runs in plain mode without host mounts or forwarded agents. Host-side
+SSH assertions use the returned VM name and isolated `LIMA_HOME`; their reports
+and screenshots remain owned by this repository.
 
 ## Run the flow
 
@@ -115,6 +124,13 @@ Run `make e2e-down` after failures too. It resumes a stopped VM, asks only the
 captured test devices to leave their Sync chains, verifies deletion, then removes
 the VM. Failed browser teardown retains the VM and its recorded identities for
 diagnosis; hosted CI runners still expire after the job.
+
+CI runs `make e2e-leave` with the shared action's VM name and runtime directory.
+This command resumes the VM if necessary and verifies remote browser-device
+removal without deleting it. Only a successful verification allows the shared
+destroy action to delete a started VM. Failed startup cleanup does not need this
+gate because authenticated fixture work has not begun. See
+[ADR 0006](adr/adr-0006-shared-vm-lifecycle.md) for these ownership boundaries.
 
 Teardown follows the shared
 [Sync verification and deletion contract](browser-adapters.md#verification-and-device-removal).
@@ -178,4 +194,5 @@ CI caches public Lima downloads by upstream image checksum and saves its offline
 desktop base before authenticated phases. Running guest disks and authenticated
 state are never cached. Each assertion phase uses its own SSH
 control socket and a read-only Lima configuration. The read-only workspace mount
-uses QEMU 9p without caching and leaves AppArmor enabled.
+used by local VMs uses QEMU 9p without caching. AppArmor remains enabled in both
+local and CI guests.

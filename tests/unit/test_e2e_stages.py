@@ -112,6 +112,18 @@ def test_separate_stages_match_full_flow_and_select_all_assertions(suite):
         assert f"--junitxml=/workspace/reports/tests/e2e-{phase}.junit.xml" in arguments
 
 
+def test_assertions_use_the_selected_vm_runtime_for_ssh(suite):
+    """Host assertions can reach a VM created outside the default Lima home."""
+    run, fixture, _ = suite
+    runtime = str(fixture / "isolated runtime")
+    result = run("backup-assert", LIMA_HOME=runtime)
+    assert result.returncode == 0, result.stderr
+    arguments = (fixture / "arguments/backup-assert").read_text().splitlines()
+    assert f"{runtime}:{runtime}:ro" in arguments
+    assert f"{runtime}/fixture/ssh.config" in arguments
+    assert "--hosts=ssh://lima-fixture" in arguments
+
+
 @pytest.mark.parametrize("failed_stage", ["backup-arrange", "setup-act", "setup-assert", "cleanup-act"])
 def test_stage_failure_stops_later_work_and_preserves_original_error(suite, failed_stage):
     """Failed arrangements, actions, and assertions stop dependents but still finish fixtures."""

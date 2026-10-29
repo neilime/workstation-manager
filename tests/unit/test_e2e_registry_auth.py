@@ -32,7 +32,10 @@ def test_ci_stages_limit_credentials_to_actions_that_need_external_authenticatio
         stage = next(argument.removeprefix("STAGE=") for argument in arguments if argument.startswith("STAGE="))
         expected = vault_credentials if stage in authenticated else {}
         if stage == "setup-act":
-            expected = {**expected, "WORKSTATION_MANAGER_GHCR_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+            expected = {
+                **expected,
+                "WORKSTATION_MANAGER_GHCR_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+            }
         environment = {**job["env"], **step.get("env", {})}
         credentials = {
             key: value
@@ -46,16 +49,26 @@ def test_ci_stages_limit_credentials_to_actions_that_need_external_authenticatio
     assert {"backup-assert", "setup-assert", "cleanup-assert", "finish"}.issubset(observed)
 
 
-def test_ci_finishes_fixtures_before_reports_and_always_stops_the_vm():
-    """Stage failures still finish backup fixtures before report collection and VM teardown."""
+def test_ci_finishes_fixtures_and_requires_verified_browser_removal_before_vm_deletion():
+    """Failures still run recovery; a started VM is kept when remote device removal fails."""
     workflow = DataLoader().load_from_file(str(ROOT / ".github/workflows/__shared-ci.yml"))
     steps = workflow["jobs"]["e2e"]["steps"]
     finish = next(step for step in steps if shlex.split(step.get("run", "")) == ["make", "e2e-stage", "STAGE=finish"])
-    teardown = next(step for step in steps if shlex.split(step.get("run", "")) == ["make", "e2e-down"])
+    teardown = next(step for step in steps if shlex.split(step.get("run", "")) == ["make", "e2e-leave"])
+    destroy = next(step for step in steps if "/actions/vm/destroy@" in step.get("uses", ""))
     reports = next(step for step in steps if "e2e-*.junit.xml" in step.get("with", {}).get("report-paths", ""))
-    assert steps.index(finish) < steps.index(reports) < steps.index(teardown)
-    for step in (finish, reports, teardown):
-        assert step["if"] in ("always()", "${{ always() }}")
+    assert steps.index(finish) < steps.index(reports) < steps.index(teardown) < steps.index(destroy)
+    assert reports["if"] == "${{ always() }}"
+    for step in (finish, teardown):
+        assert step["if"] == "${{ always() && steps.vm.outcome == 'success' }}"
+        assert step["env"]["LIMA_HOME"] == "${{ steps.vm.outputs.vm }}"
+        assert step["env"]["VM_NAME"] == "${{ steps.vm.outputs.name }}"
+    assert " ".join(destroy["if"].split()) == (
+        "${{ always() && steps.vm.outputs.vm != '' && "
+        "(steps.vm.outcome != 'success' || steps.browser-teardown.outcome == 'success') }}"
+    )
+    assert destroy["with"]["vm"] == "${{ steps.vm.outputs.vm }}"
+    for step in (finish, reports, teardown, destroy):
         assert not step.get("continue-on-error", False)
 
 

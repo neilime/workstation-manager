@@ -11,8 +11,18 @@ import pytest
 E2E_PATH = Path(__file__).parents[2] / "e2e-tests"
 
 
-@pytest.mark.parametrize("cleanup_status", [0, 17])
-def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(tmp_path: Path, cleanup_status: int) -> None:
+@pytest.mark.parametrize(
+    "script,cleanup_status",
+    [
+        ("e2e-down.sh", 0),
+        ("e2e-down.sh", 17),
+        ("e2e-leave.sh", 0),
+        ("e2e-leave.sh", 17),
+    ],
+)
+def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(
+    tmp_path: Path, script: str, cleanup_status: int
+) -> None:
     """Failed device teardown must retain the VM and captured identities for diagnosis."""
 
     commands = tmp_path / "bin"
@@ -41,7 +51,7 @@ def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(tmp_path: Pa
     )
     timeout_command.chmod(0o700)
     result = subprocess.run(
-        ["bash", str(E2E_PATH / "e2e-down.sh"), "fixture"],
+        ["bash", str(E2E_PATH / script), "fixture"],
         env={
             **os.environ,
             "HOME": str(tmp_path),
@@ -56,7 +66,9 @@ def test_e2e_teardown_waits_for_guest_completion_before_vm_deletion(tmp_path: Pa
     )
 
     assert result.returncode == (1 if cleanup_status else 0), result.stderr
-    assert log.read_text().splitlines() == ["list", "list", "shell", *(["device-complete"] * 4)] + (
-        [] if cleanup_status else ["stop", "delete"]
-    )
+    assert log.read_text().splitlines() == (["list"] if script == "e2e-down.sh" else []) + [
+        "list",
+        "shell",
+        *(["device-complete"] * 4),
+    ] + (["stop", "delete"] if script == "e2e-down.sh" and not cleanup_status else [])
     assert ("VM and recorded device identities were retained" in result.stderr) == bool(cleanup_status)

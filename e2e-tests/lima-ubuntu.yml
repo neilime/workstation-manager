@@ -4,6 +4,12 @@ cpus: 2
 memory: "6GiB"
 disk: "40GiB"
 
+# CI fills these with the public repository and exact checkout commit. Local
+# tests keep the live read-only workspace mount instead.
+param:
+  repository: ""
+  revision: ""
+
 video:
   display: "vnc"
 
@@ -27,6 +33,36 @@ mounts:
       cache: "none"
 
 provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      repository="{{.Param.repository}}"
+      revision="{{.Param.revision}}"
+      if [[ -z "$repository" && -z "$revision" ]]; then
+        exit 0
+      fi
+      [[ "$repository" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]
+      [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+      # Plain mode has no host mounts. Fetch only the public, tested source
+      # before desktop provisioning and before any credentialed stages.
+      if [[ -e /workspace ]]; then
+        test "$(cat /workspace/.e2e-source)" = "$repository@$revision"
+        exit 0
+      fi
+      archive="$(mktemp)"
+      checkout="$(mktemp -d)"
+      trap 'rm -f "$archive"; rm -rf "$checkout"' EXIT
+      curl --fail --silent --show-error --location --retry 3 \
+        --connect-timeout 10 --max-time 120 \
+        "https://codeload.github.com/$repository/tar.gz/$revision" -o "$archive"
+      tar --extract --gzip --file "$archive" --directory "$checkout" \
+        --strip-components=1 --no-same-owner
+      printf '%s\n' "$repository@$revision" >"$checkout/.e2e-source"
+      chmod 0755 "$checkout"
+      chmod -R a-w "$checkout"
+      mv "$checkout" /workspace
+
   - mode: system
     script: |
       #!/bin/bash
