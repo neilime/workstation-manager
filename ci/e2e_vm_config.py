@@ -12,6 +12,8 @@ from ci.e2e_base_image import DesktopBaseImage
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Rendering is the only operation; image verification belongs to DesktopBaseImage.
+# pylint: disable-next=too-few-public-methods
 class WorkstationVMConfig:
     """Keep CI resource settings and verified public image data in the consumer."""
 

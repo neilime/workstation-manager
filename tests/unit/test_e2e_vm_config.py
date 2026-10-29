@@ -10,6 +10,7 @@ import tarfile
 from pathlib import Path
 
 import pytest
+import yaml
 from ansible.parsing.dataloader import DataLoader
 
 from ci.e2e_vm_config import WorkstationVMConfig
@@ -67,6 +68,17 @@ def test_vm_configuration_rejects_modified_image(configuration):
     image.write_bytes(b"truncated image")
     with pytest.raises(ValueError, match="checksum"):
         renderer.render("fixture/repo", REVISION, image, 4, 8)
+
+
+def test_desktop_template_can_be_embedded_as_the_second_yaml_document(configuration):
+    """Lima prefixes a base with a separator; an empty intervening document drops its provisioning."""
+    renderer, image, _ = configuration
+    config = renderer.render("fixture/repo", REVISION, image, 4, 8)
+    template = (WORKSPACE / "e2e-tests/lima-ubuntu.yml").read_text()
+    documents = list(yaml.safe_load_all(json.dumps(config) + "\n---\n" + template))
+    assert len(documents) == 2
+    assert documents[1]["provision"]
+    assert documents[1]["probes"]
 
 
 @pytest.fixture(name="source_provision")

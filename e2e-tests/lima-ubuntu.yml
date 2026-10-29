@@ -1,4 +1,5 @@
----
+# Lima's base merger inserts a document separator before this template.
+# yamllint disable rule:document-start
 vmType: qemu
 cpus: 2
 memory: "6GiB"
