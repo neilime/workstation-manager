@@ -107,8 +107,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: syntax
-            collection: ""
           - name: workstation_setup
             collection: ansible/collections/ansible_collections/neilime/workstation_setup
           - name: workstation_backup
@@ -125,25 +123,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Select playbooks
-        if: matrix.collection == ''
-        id: ansible
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const playbooks = await glob.create('ansible/*.yml\n!ansible/inventory.yml', { matchDirectories: false });
-            core.setOutput('playbooks', (await playbooks.glob()).join('\n'));
-
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@8ed3c99f0b2dba75f9854c2646a7c2b3447c7472 # feat/ansible-test-action
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@00d7ffa3c60b79a58995625223580e4b25a0e3f8 # feat/ansible-test-action
         with:
           ansible-requirements: ansible/requirements.txt
-          playbooks: ${{ steps.ansible.outputs.playbooks }}
           collection: ${{ matrix.collection }}
-          target-python-version: ${{ matrix.collection != '' && needs.build-tooling-image.outputs.python-version || '' }}
-          inventory: ansible/inventory.yml
-          ansible-config: ansible/ansible.cfg
-          collections-path: ansible/collections
+          target-python-version: ${{ needs.build-tooling-image.outputs.python-version }}
           galaxy-requirements: ansible/collections/requirements.yml
           report-name: Ansible - ${{ matrix.name }}
 

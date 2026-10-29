@@ -98,10 +98,10 @@ link checks. Do not edit generated caches, reports, vendored collections, or
 test output.
 
 CI runs the linter and Ansible validation in separate jobs. The Ansible matrix uses
-Hoverkraft's `ci-github-iac/actions/ansible/test` to compose official Ansible Lint
-syntax checks and the Ansible community's collection sanity action. Native SARIF
-and JUnit reports feed summaries, annotations, PR comments and artifacts. The
-Ansible Core version comes from `ansible/requirements.txt`; upstream actions own
+Hoverkraft's `ci-github-iac/actions/ansible/test` to compose the Ansible community's
+collection sanity action. Native JUnit reports feed summaries, annotations, PR
+comments and artifacts. Ansible Lint, including syntax checks, stays in the linter
+job. The Ansible Core version comes from `ansible/requirements.txt`; upstream actions own
 Python setup, test containers and their dependency caches. Collection sanity uses
 the Python major/minor read from the resolved tooling image, matching the supported
 Ubuntu environment and local checks without duplicating a runtime pin. Local
