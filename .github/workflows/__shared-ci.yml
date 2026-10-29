@@ -237,7 +237,7 @@ jobs:
         with:
           path: ~/.cache/lima
           # yamllint disable rule:line-length
-          key: lima-downloads-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.desktop-base.outputs.source-digest }}
+          key: lima-downloads-${{ runner.os }}-${{ runner.arch }}-${{ steps.desktop-base.outputs.source-digest }}
           # yamllint enable rule:line-length
 
       - name: Restore desktop prerequisite image
