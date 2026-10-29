@@ -125,7 +125,7 @@ jobs:
             core.setOutput('playbooks', (await playbooks.glob()).join('\n'));
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@8c0133170818c92808c59e856dc4e6a17217d19e # feat/ansible-test-action
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@6020d664c7714af9bb76b3702d865d45ad5bcea1 # feat/ansible-test-action
         with:
           ansible-requirements: ansible/requirements.txt
           playbooks: ${{ steps.ansible.outputs.playbooks }}
