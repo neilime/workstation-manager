@@ -124,7 +124,7 @@ jobs:
           persist-credentials: false
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@00d7ffa3c60b79a58995625223580e4b25a0e3f8 # feat/ansible-test-action
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # main
         with:
           ansible-requirements: ansible/requirements.txt
           collection: ${{ matrix.collection }}
