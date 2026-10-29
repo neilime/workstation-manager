@@ -107,6 +107,11 @@ build layers. Input-addressed registry tags are retained and share image layers.
 The Ansible job caches only sanity virtual environments, keyed by runner
 architecture and tooling filesystem layers.
 
+The Ansible job uses Hoverkraft's `ci-github-iac/actions/ansible/test` for native
+syntax and collection sanity checks, JUnit/SARIF reports, annotations, PR comments
+and artifacts. Local `make check-ansible` and `make check-collections` remain
+available. Unit/integration and VM scenarios run in their existing jobs.
+
 ## Detailed guides
 
 - [Documentation rules](documentation.md): audience, current behavior, ADR history, and review checklist.

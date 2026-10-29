@@ -94,7 +94,7 @@ jobs:
       actions: read
       contents: read
       packages: read
-      security-events: write
+      pull-requests: write
     env:
       TOOLING_IMAGE: >-
         ${{ fromJSON(needs.build-tooling-image.outputs.built-images).tooling.images[0] }}
@@ -133,19 +133,30 @@ jobs:
           path: .cache/ansible-test
           key: ansible-test-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.tooling-runtime.outputs.layers }}
 
-      - name: Run Ansible syntax checks
-        run: REPORTS_DIR=.reports make check-ansible
-
-      - name: Run Ansible sanity checks
-        run: REPORTS_DIR=.reports make check-collections
-
-      - name: Parse static reports
-        if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@44f6108cef0e9884ea7735f3d62932c2310745d4 # 0.39.1
+      - name: Select Ansible targets
+        id: ansible
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
-          report-paths: .reports/checks/*.sarif,.reports/tests/*.xml
+          script: |
+            const playbooks = await glob.create('ansible/*.yml\n!ansible/inventory.yml', { matchDirectories: false });
+            core.setOutput('playbooks', (await playbooks.glob()).join('\n'));
+
+      - name: Test Ansible
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@d2673efa2d13247d9a7ccf9fc2b6876fbf2d3435 # feat/ansible-test-action
+        with:
+          container-image: ${{ env.TOOLING_IMAGE }}
+          playbooks: ${{ steps.ansible.outputs.playbooks }}
+          inventory: ansible/inventory.yml
+          collections: |
+            ansible/collections/ansible_collections/neilime/workstation_setup
+            ansible/collections/ansible_collections/neilime/workstation_backup
+            ansible/collections/ansible_collections/neilime/workstation_restore
+            ansible/collections/ansible_collections/neilime/workstation_cleanup
+            ansible/collections/ansible_collections/neilime/workstation_state
+          environment: |
+            ANSIBLE_COLLECTIONS_PATH=/opt/ansible/collections:/workspace/ansible/collections
+          cache-directory: ${{ env.ANSIBLE_TEST_CACHE_DIR }}
           report-name: Static Validation
-          path-mapping: /workspace:.
 
   static-host:
     name: Unit and integration tests
