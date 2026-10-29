@@ -129,8 +129,7 @@ CI runs `make e2e-leave` with the shared action's VM name and runtime directory.
 This command resumes the VM if necessary and verifies remote browser-device
 removal without deleting it. Only a successful verification allows the shared
 destroy action to delete a started VM. Failed startup cleanup does not need this
-gate because authenticated fixture work has not begun. See
-[ADR 0006](adr/adr-0006-shared-vm-lifecycle.md) for these ownership boundaries.
+gate because authenticated fixture work has not begun.
 
 Teardown follows the shared
 [Sync verification and deletion contract](browser-adapters.md#verification-and-device-removal).
