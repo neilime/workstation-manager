@@ -19,7 +19,7 @@ COLLECTION_UNIT_TEST_DIRS := $(wildcard $(addsuffix /tests/unit,$(FIRST_PARTY_CO
 UNIT_TEST_DIRS := tests/unit $(COLLECTION_UNIT_TEST_DIRS)
 
 .PHONY: help setup tool-shell lint lint-fix check-ansible check-collections test test-unit test-integration test-host test-collections ci
-.PHONY: e2e-prepare e2e-base-inputs e2e-base e2e-stage
+.PHONY: e2e-prepare e2e-base-inputs e2e-base e2e-stage e2e-leave
 
 help: ## Display help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -126,6 +126,9 @@ e2e-stage: ## Run STAGE=phase-arrange, phase-act, phase-assert, or finish after 
 
 e2e-down: ## Stop and remove the Lima end-to-end test VM
 	@bash "$(CURDIR)/e2e-tests/e2e-down.sh" "$(VM_NAME)"
+
+e2e-leave: ## Verify remote browser-device removal before shared VM destruction
+	@bash "$(CURDIR)/e2e-tests/e2e-leave.sh" "$(VM_NAME)"
 
 e2e-reset: e2e-down e2e-up ## Recreate the Lima end-to-end test VM
 

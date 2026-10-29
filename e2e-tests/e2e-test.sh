@@ -35,8 +35,9 @@ fi
 ssh_host="lima-${vm_name}"
 tooling_image="${TOOLING_IMAGE:-workstation-manager-tooling:local}"
 host_home="${HOME}"
+lima_home="${LIMA_HOME:-$host_home/.lima}"
 workspace_dir="$(cd -- "$script_dir/.." && pwd)"
-ssh_config_path="${host_home}/.lima/${vm_name}/ssh.config"
+ssh_config_path="${lima_home}/${vm_name}/ssh.config"
 report_dir="${REPORTS_DIR:-}"
 screenshot_dir="${SCREENSHOTS_DIR:-${report_dir:-.reports}/screenshots}"
 screenshot_status_path="$screenshot_dir/e2e-setup-desktop.status"
@@ -94,7 +95,7 @@ run_phase_tests() {
 		--volume /etc/passwd:/etc/passwd:ro \
 		--volume /etc/group:/etc/group:ro \
 		--volume "$workspace_dir:/workspace" \
-		--volume "$host_home/.lima:$host_home/.lima:ro" \
+		--volume "$lima_home:$lima_home:ro" \
 		--workdir /workspace \
 		"$tooling_image" \
 		bash /workspace/e2e-tests/run-assertions.sh "$ssh_config_path" \
