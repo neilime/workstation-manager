@@ -97,20 +97,21 @@ review its diff. Documentation-only changes require applicable lint and local
 link checks. Do not edit generated caches, reports, vendored collections, or
 test output.
 
-CI runs the linter independently and starts syntax/sanity, unit/integration, and
-VM jobs after resolving the tooling image. Images are reused by a fingerprint of
-the Dockerfile, its copied inputs, ignore files, Ubuntu base digest, architecture,
-and UTC calendar week. A miss builds the image; registry and authentication
-failures stop resolution. Each job consumes the selected immutable digest and
-mounts the current checkout. The weekly refresh also invalidates package-install
-build layers. Input-addressed registry tags are retained and share image layers.
-The Ansible job caches only sanity virtual environments, keyed by runner
-architecture and tooling filesystem layers.
+CI runs the linter and Ansible validation independently. The Ansible matrix uses
+Hoverkraft's `ci-github-iac/actions/ansible/test` to compose official Ansible Lint
+syntax checks and the Ansible community's collection sanity action. Native SARIF
+and JUnit reports feed summaries, annotations, PR comments and artifacts. The
+Ansible Core version comes from `ansible/requirements.txt`; upstream actions own
+Python setup, test containers and their dependency caches. Local
+`make check-ansible` and `make check-collections` remain available.
 
-The Ansible job uses Hoverkraft's `ci-github-iac/actions/ansible/test` for native
-syntax and collection sanity checks, JUnit/SARIF reports, annotations, PR comments
-and artifacts. Local `make check-ansible` and `make check-collections` remain
-available. Unit/integration and VM scenarios run in their existing jobs.
+Unit/integration and VM jobs resolve and reuse the consumer tooling image. Images
+are reused by a fingerprint of the Dockerfile, its copied inputs, ignore files,
+Ubuntu base digest, architecture, and UTC calendar week. A miss builds the image;
+registry and authentication failures stop resolution. These jobs consume the
+selected immutable digest and mount the current checkout. The weekly refresh
+also invalidates package-install build layers. Input-addressed registry tags are
+retained and share image layers.
 
 ## Detailed guides
 
