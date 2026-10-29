@@ -124,7 +124,7 @@ jobs:
           persist-credentials: false
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # main
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # 0.2.0
         with:
           ansible-requirements: ansible/requirements.txt
           collection: ${{ matrix.collection }}
@@ -272,7 +272,7 @@ jobs:
       - name: Create e2e VM
         id: vm
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@70843368d5f5f7b0a2cec1e8435d81cc40beee64 # 0.1.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # 0.2.0
         # yamllint enable rule:line-length
         with:
           vm-config: .cache/e2e-vm.json
@@ -407,7 +407,7 @@ jobs:
           ${{ always() && steps.vm.outputs.vm != '' &&
             (steps.vm.outcome != 'success' || steps.browser-teardown.outcome == 'success') }}
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@70843368d5f5f7b0a2cec1e8435d81cc40beee64 # 0.1.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # 0.2.0
         # yamllint enable rule:line-length
         with:
           vm: ${{ steps.vm.outputs.vm }}
