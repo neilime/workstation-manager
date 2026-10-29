@@ -55,7 +55,7 @@ Select tests with `TEST_ARGS="-k desired_state"`. Integration tests use two
 workers; set `HOST_TEST_WORKERS=1` for sequential runs. `make test-host` selects
 `tests/unit/` and `tests/integration/`; `make test-collections` selects collection
 sanity and unit checks. These convenience targets overlap `make test`; CI runs
-`make check-collections` and `make test` once each.
+the shared Ansible action and `make test` once each.
 VM tests use the separate [end-to-end workflow](e2e-tests.md).
 
 ### Coverage ownership
@@ -97,12 +97,14 @@ review its diff. Documentation-only changes require applicable lint and local
 link checks. Do not edit generated caches, reports, vendored collections, or
 test output.
 
-CI runs the linter and Ansible validation independently. The Ansible matrix uses
+CI runs the linter and Ansible validation in separate jobs. The Ansible matrix uses
 Hoverkraft's `ci-github-iac/actions/ansible/test` to compose official Ansible Lint
 syntax checks and the Ansible community's collection sanity action. Native SARIF
 and JUnit reports feed summaries, annotations, PR comments and artifacts. The
 Ansible Core version comes from `ansible/requirements.txt`; upstream actions own
-Python setup, test containers and their dependency caches. Local
+Python setup, test containers and their dependency caches. Collection sanity uses
+the Python major/minor read from the resolved tooling image, matching the supported
+Ubuntu environment and local checks without duplicating a runtime pin. Local
 `make check-ansible` and `make check-collections` remain available.
 
 Unit/integration and VM jobs resolve and reuse the consumer tooling image. Images

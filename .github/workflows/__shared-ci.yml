@@ -42,6 +42,7 @@ jobs:
       pull-requests: read
     outputs:
       built-images: ${{ steps.selected.outputs.built-images }}
+      python-version: ${{ steps.runtime.outputs.python-version }}
     steps:
       - name: Checkout
         # yamllint disable rule:line-length
@@ -86,8 +87,17 @@ jobs:
           TOOLING_BUILT_IMAGE: ${{ steps.build.outputs.built-image }}
         run: python3 ci/tooling_image.py select
 
+      - name: Read the tooling Python runtime
+        id: runtime
+        env:
+          TOOLING_IMAGE: ${{ fromJSON(steps.selected.outputs.built-images).tooling.images[0] }}
+        run: |
+          python_version=$(docker run --rm --entrypoint python3 "$TOOLING_IMAGE" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+          echo "python-version=$python_version" >> "$GITHUB_OUTPUT"
+
   static-ansible:
     name: Ansible checks - ${{ matrix.name }}
+    needs: [build-tooling-image]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -125,11 +135,12 @@ jobs:
             core.setOutput('playbooks', (await playbooks.glob()).join('\n'));
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@6020d664c7714af9bb76b3702d865d45ad5bcea1 # feat/ansible-test-action
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@8ed3c99f0b2dba75f9854c2646a7c2b3447c7472 # feat/ansible-test-action
         with:
           ansible-requirements: ansible/requirements.txt
           playbooks: ${{ steps.ansible.outputs.playbooks }}
           collection: ${{ matrix.collection }}
+          target-python-version: ${{ matrix.collection != '' && needs.build-tooling-image.outputs.python-version || '' }}
           inventory: ansible/inventory.yml
           ansible-config: ansible/ansible.cfg
           collections-path: ansible/collections
