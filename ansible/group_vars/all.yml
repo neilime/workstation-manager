@@ -1,6 +1,6 @@
 ---
 # Setup-owned framework pin; Renovate follows the upstream master branch.
-workstation_manager_oh_my_zsh_revision: "2100c630ba4bd67bb48802c3e7da893a4fdaa1a0"
+workstation_manager_oh_my_zsh_revision: "17a2b4c3a5855524ad4772a17ada0dc474e2fdf3"
 
 workstation_manager:
   user:
@@ -79,16 +79,16 @@ workstation_manager:
       credential_helper_version: "0.9.12"
     # Complete system runtime, available without shell or mise activation.
     node:
-      version: "24.22.1"
+      version: "26.13.0"
     github:
       host: github.com
       # Required GitHub username; set it in ansible/private.override.yml.
       account: ""
       extensions:
         # renovate: datasource=github-releases depName=nektos/gh-act
-        nektos/gh-act: "0.2.89"
+        nektos/gh-act: "0.2.92"
         # renovate: datasource=github-releases depName=github/gh-stack
-        github/gh-stack: "0.2.1"
+        github/gh-stack: "0.3.0"
     packages:
       - git
       - zsh
@@ -117,7 +117,7 @@ workstation_manager:
     editor_packages:
       - code
     mise:
-      version: "2026.10.17"
+      version: "2026.10.23"
       # Project mise.toml files may select their own tools and versions.
       tools:
         # renovate: datasource=github-releases depName=starship/starship
@@ -129,16 +129,16 @@ workstation_manager:
         # Renovate follows stable php-* tags; use the maintained backend explicitly.
         "vfox:jdx/vfox-php": "8.5.12"
         # renovate: datasource=github-releases depName=composer/composer
-        "github:composer/composer": "2.10.3"
+        "github:composer/composer": "2.11.0"
         # renovate: datasource=github-releases depName=runkids/skillshare
-        "github:runkids/skillshare": "0.26.2"
+        "github:runkids/skillshare": "0.28.0"
     # Define AI applications and extensions here.
     ai_tools:
       # Set false only when provider sign-in will be completed separately.
       authenticate: true
       orca:
         # renovate: datasource=github-releases depName=stablyai/orca
-        version: "1.4.237"
+        version: "1.4.244"
         # Seed only missing settings; preserve existing workspaces and preferences.
         settings:
           theme: system
@@ -148,12 +148,12 @@ workstation_manager:
         codex:
           npm: "@openai/codex"
           # renovate: datasource=npm depName=@openai/codex
-          version: "0.163.0"
+          version: "0.166.0"
           command: codex
         copilot:
           npm: "@github/copilot"
           # renovate: datasource=npm depName=@github/copilot
-          version: "1.0.103"
+          version: "1.0.105"
           command: copilot
       # Agent Skills (SKILL.md) shared by providers; custom skills come from workstation-config.
       skills:
