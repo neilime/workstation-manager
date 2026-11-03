@@ -48,6 +48,30 @@ _DIAGNOSTIC_CHECKS = (
     "Fresh Download",
 )
 
+# Native type names are mapped to fixed labels before crossing the pipe. Unknown
+# names remain unlabelled; arbitrary browser strings never enter task errors.
+_DIAGNOSTIC_TYPES = (
+    "Bookmarks",
+    "Passwords",
+    "Preferences",
+    "Priority Preferences",
+    "Extensions",
+    "Extension Settings",
+    "Apps",
+    "App Settings",
+    "Autofill",
+    "Autofill Profiles",
+    "Contact Info",
+    "History",
+    "Typed URLs",
+    "History Delete Directives",
+    "Sessions",
+    "Device Info",
+    "Nigori",
+    "Reading List",
+    "Saved Tab Group",
+)
+
 _SETTINGS_URL = "chrome://settings/braveSync/setup"
 _SETTINGS_CHECKS = (
     "Settings Page",
@@ -62,7 +86,9 @@ _SETTINGS_CHECKS = (
 # browsing data: reduce it inside the browser, never return it over the pipe.
 _START = r"""(async () => {
   const {addWebUiListener} = await import('chrome://resources/js/cr.js');
-  const state = window.workstationSync = {since: Date.now(), downloaded: false, commitErrors: []};
+  const state = window.workstationSync = {
+    since: Date.now(), downloaded: false, commitErrors: [], entityCoverage: []
+  };
   addWebUiListener('onProtocolEvent', event => {
     if (typeof event.time !== 'number' || event.time < state.since) return;
     if (event.type === 'GetUpdates Response') {
@@ -169,6 +195,8 @@ _SNAPSHOT = (
     checks['Entity Counts'] = false;
     checks['Entity Coverage'] = false;
     checks['Entity Metadata'] = false;
+    let entityCoverage;
+    let pendingChanges = false;
     let pending = true;
     if (healthy) {
       // Native node aggregation waits for every data type and may lose a callback
@@ -179,10 +207,23 @@ _SNAPSHOT = (
       // Counts also cover tombstones omitted by getAllNodes. A deletion must have
       // been acknowledged and removed from the native tracker before we succeed.
       const countsReady = active.every(row => Number.isInteger(row.num_entries)
-        && Number.isInteger(row.num_live) && row.num_entries === row.num_live);
-      const coverageReady = Array.isArray(groups) && active.every(row => groups.some(group =>
-        group.type === row.name && Array.isArray(group.nodes)
-          && group.nodes.filter(node => node.metadata).length === row.num_live));
+        && Number.isInteger(row.num_live) && row.num_live >= 0 && row.num_entries === row.num_live);
+      if (Array.isArray(groups)) {
+        entityCoverage = active.flatMap(row => {
+          const matching = groups.filter(group => group.type === row.name && Array.isArray(group.nodes));
+          const counts = matching.map(group => group.nodes.filter(node => node.metadata).length);
+          // SessionStore serializes the session tracker, which omits tab nodes
+          // without a valid tab ID. Its export is not a census of live metadata.
+          // Require a nonempty bounded export for live Sessions; other types
+          // must match exactly. All exported metadata is still checked below.
+          const covered = counts.length === 1 && (counts[0] === row.num_live
+            || (row.name === 'Sessions' && counts[0] > 0 && counts[0] < row.num_live));
+          if (covered) return [];
+          return [{type: DIAGNOSTIC_TYPES.indexOf(row.name), live: row.num_live,
+            nodes: counts.length === 1 ? counts[0] : -1}];
+        });
+      }
+      const coverageReady = entityCoverage !== undefined && entityCoverage.length === 0;
       const nodesReady = Array.isArray(groups) && groups.every(group =>
         Array.isArray(group.nodes) && group.nodes.every(node => {
           if (!node.metadata && node.PARENT_ID === 'r' && node.IS_DIR === true && group.type !== 'Nigori') return true;
@@ -197,17 +238,25 @@ _SNAPSHOT = (
       checks['Entity Coverage'] = coverageReady;
       checks['Entity Metadata'] = nodesReady;
       pending = !countsReady || !coverageReady || !nodesReady;
+      pendingChanges = !countsReady || (checks['Entity Response'] && !nodesReady);
     }
     if (aboutInfo !== latest) {
       checks['Status Response'] = false;
       healthy = false;
       pending = true;
     }
+    // Retain the last coherent counts for timeout reporting only. Busy cycles,
+    // missing replies and replaced status cannot erase or certify this evidence.
+    if (checks['Status Response'] && entityCoverage !== undefined) {
+      window.workstationSync.entityCoverage = entityCoverage;
+    }
     // Initialization can discard a refresh. An idle active engine also needs retries
     // after failed downloads or while uploads and deletions await acknowledgement.
-    // Native refresh schedules both download and commit work; verification stays strict.
+    // A diagnostic coverage mismatch alone does not justify starting another cycle.
+    const retryCycle = pendingChanges || !window.workstationSync.downloaded
+      || !checks['Download Step Result'] || !checks['Commit Step Result'];
     if (checks['Status Response'] && stats['Transport State'] === 'Active' && stats['Sync Cycle Ongoing'] === false
-        && (pending || !window.workstationSync.downloaded)) chrome.send('triggerRefresh');
+        && retryCycle) chrome.send('triggerRefresh');
     checks['Fresh Download'] = window.workstationSync.downloaded === true;
     window.workstationSync.checks = checks;
     return {healthy, pending, fresh: window.workstationSync.downloaded === true};
@@ -215,7 +264,29 @@ _SNAPSHOT = (
 })""".replace("BOUNDED_NODES", _GET_NODES)
     .replace("BOUNDED_ABOUT", _GET_ABOUT)
     .replace("START_SYNC", _START)
+    .replace("DIAGNOSTIC_TYPES", json.dumps(_DIAGNOSTIC_TYPES))
 )
+
+
+def _entity_coverage_summary(coverage: object) -> str:
+    """Report only allowlisted type labels and validated numeric mismatch counts."""
+
+    if not isinstance(coverage, list):
+        raise BrowserProtocolError("Brave returned unsupported entity coverage diagnostics")
+    details = []
+    for row in coverage:
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"type", "live", "nodes"}
+            or any(not isinstance(value, int) or isinstance(value, bool) for value in row.values())
+        ):
+            raise BrowserProtocolError("Brave returned unsupported entity coverage diagnostics")
+        if not -1 <= row["type"] < len(_DIAGNOSTIC_TYPES) or row["live"] < 0 or row["nodes"] < -1:
+            raise BrowserProtocolError("Brave returned unsupported entity coverage diagnostics")
+        label = _DIAGNOSTIC_TYPES[row["type"]] if row["type"] >= 0 else "Other data type"
+        observed = str(row["nodes"]) if row["nodes"] >= 0 else "unavailable"
+        details.append(f"{label}: live={row['live']}, nodes={observed}")
+    return "; ".join(details)
 
 
 # Settings bundles cr.js, whose standalone module rejects a second initialization.
@@ -603,6 +674,12 @@ class NativeSync:
             if clean >= 2:
                 return True
             time.sleep(min(2, max(0, deadline - time.monotonic())))
+        self.pending_reason = self._incomplete_reason(session)
+        return False
+
+    def _incomplete_reason(self, session: str) -> str:
+        """Distinguish current failures from retained diagnostic evidence without exposing browser data."""
+
         checks = self._evaluate(session, "window.workstationSync.checks", "reading incomplete Sync checks")
         if (
             not isinstance(checks, dict)
@@ -610,17 +687,26 @@ class NativeSync:
             or any(not isinstance(value, bool) for value in checks.values())
         ):
             raise BrowserProtocolError("Brave returned unsupported Sync diagnostics")
-        self.pending_reason = ", ".join(name for name in _DIAGNOSTIC_CHECKS if not checks[name]) or (
-            "two consecutive clean observations"
-        )
+        entity_checks = {name for name in _DIAGNOSTIC_CHECKS if name.startswith("Entity ")}
+        prerequisites = set(_DIAGNOSTIC_CHECKS) - entity_checks - {"Fresh Download"}
+        unavailable = entity_checks if any(not checks[name] for name in prerequisites) else set()
+        incomplete = [name for name in _DIAGNOSTIC_CHECKS if not checks[name] and name not in unavailable]
+        reason = ", ".join(incomplete) or "two consecutive clean observations"
+        if not checks["Entity Coverage"]:
+            coverage = self._evaluate(
+                session, "window.workstationSync.entityCoverage", "reading entity coverage counts"
+            )
+            detail = _entity_coverage_summary(coverage)
+            if detail:
+                reason += "; last complete entity observation: " + detail
         errors = self._evaluate(session, "window.workstationSync.commitErrors", "reading commit result categories")
         known_errors = {"CONFLICT", "RETRY", "INVALID_MESSAGE", "OVER_QUOTA", "TRANSIENT_ERROR"}
         if isinstance(errors, list) and all(isinstance(error, str) and error in known_errors for error in errors):
             if errors:
-                self.pending_reason += "; commit responses: " + ", ".join(sorted(set(errors)))
+                reason += "; commit responses: " + ", ".join(sorted(set(errors)))
         else:
             raise BrowserProtocolError("Brave returned unsupported commit diagnostics")
         codes = self.protocol_error_codes()
         if codes:
-            self.pending_reason += "; Sync protocol error codes: " + ", ".join(map(str, codes))
-        return False
+            reason += "; Sync protocol error codes: " + ", ".join(map(str, codes))
+        return reason
