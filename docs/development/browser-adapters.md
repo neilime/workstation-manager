@@ -144,7 +144,7 @@ The [native Sync helper][native-sync] owns enrollment and recovery;
 
 Verification requires a fresh successful GetUpdates response, healthy native
 Sync diagnostics, required data types running, and two observations without
-unacknowledged entity sequences or pending tombstones. Stale success, partial
+unacknowledged exported entity sequences or pending tombstones. Stale success, partial
 responses, errors, and timeouts remain unverified. An existing matching seed must
 not be rejoined even when saved transport flags indicate incomplete setup.
 
@@ -177,6 +177,24 @@ allowlisted error categories. Never return entity contents, scripts, recovery
 words or arbitrary native error messages. Upstream API changes fail closed;
 saved preferences alone cannot prove server upload. Throttled enrollment points
 to the [device-limit recovery procedure](../usage/browser.md#restore-on-another-computer).
+Entity coverage failures report each mismatched type's live-entity count and
+number of diagnostic nodes with metadata. Type labels are allowlisted; unknown
+types use a fixed label, and missing or ambiguous node groups are unavailable.
+Require exact counts except for Sessions: Chromium's session tracker deliberately
+omits tab nodes without a valid tab ID from its diagnostic export. A Sessions
+group must be present, nonempty when live entities exist, and contain no more
+metadata nodes than the live count. Check every exported node's acknowledgement
+and the full tracker counts for pending deletions. Omitted Sessions metadata is
+not exposed by the native API and cannot be independently verified. See the
+[upstream serializer][session-serializer] and its [regression test][session-serializer-test].
+Keep the last complete observation for timeout reporting across later busy cycles
+or missing replies, but never reuse it for verification. If native health checks
+prevent entity inspection, report those prerequisites without presenting skipped
+entity checks as failures. Retry refreshes for missing successful downloads and
+unacknowledged changes; a coverage mismatch alone must not start another cycle.
+
+[session-serializer]: https://github.com/chromium/chromium/blob/156.0.8078.80/components/sync_sessions/synced_session_tracker.cc#L891-L903
+[session-serializer-test]: https://github.com/chromium/chromium/blob/156.0.8078.80/components/sync_sessions/synced_session_tracker_unittest.cc#L1034-L1076
 
 ## Validation
 

@@ -54,6 +54,8 @@ update its note or save the change during backup before running setup.
    reported desktop, vault, policy, or server error and rerun setup.
 3. Check bookmarks, extensions, settings, and important tabs in each profile.
    Successful Sync cannot prove that another device saved everything you expected.
+   Brave can omit unmapped tab entries from its diagnostics, so verification of
+   tab acknowledgements covers the entries it exports.
 
 Setup reuses an existing matching chain or switches a configured profile to its
 stored chain. It preserves unrelated browser data and does not update Bitwarden
@@ -64,6 +66,15 @@ Recovery needs an active desktop and unlocked keyring. Setup over SSH can discov
 the managed user's existing GNOME session; log in to the desktop first. Failed
 vault downloads are retried; persistent failures stop recovery without marking it
 verified. Resolve policies that block Sync with your administrator.
+
+If recovery reports `Entity Coverage`, include the accompanying per-type `live`
+and `nodes` counts when reporting the failure. This means the verifier could not
+match Brave's entity counts to its diagnostic nodes; it does not by itself prove
+data loss. The error contains no browsing data or recovery words. Keep the
+existing profile and saved chain while investigating.
+If the final check reports `Sync Cycle Ongoing`, Sync was still active when the
+verification deadline expired. The error may include counts from the last
+complete entity observation; those counts do not certify the current state.
 
 If enrollment reports server throttling, open **Settings → Sync → Manage your
 synced devices** on a connected device. Remove only devices you no longer use,

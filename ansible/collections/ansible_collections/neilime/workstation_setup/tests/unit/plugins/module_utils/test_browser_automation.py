@@ -28,7 +28,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
     _DIAGNOSTIC_CHECKS,
+    _DIAGNOSTIC_TYPES,
     _SETTINGS_CHECKS,
+    _entity_coverage_summary,
 )
 
 
@@ -374,6 +376,69 @@ def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyP
     instance = native.NativeSync(pipe, "/fixture/Default")
     assert instance.wait() is True
     assert pipe.evaluate.call_count == 8
+
+
+@pytest.mark.parametrize("busy,has_counts", [(False, True), (True, True), (True, False)])
+def test_timeout_reports_complete_entity_evidence_without_reusing_it_for_verification(
+    busy: bool, has_counts: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A final busy cycle cannot hide earlier counts or present skipped entity checks as failures."""
+
+    pipe = Mock()
+    checks = {**dict.fromkeys(_DIAGNOSTIC_CHECKS, True), "Entity Coverage": False}
+    if busy:
+        checks.update({name: False for name in checks if name.startswith("Entity ") or name == "Sync Cycle Ongoing"})
+    coverage = [{"type": _DIAGNOSTIC_TYPES.index("Bookmarks"), "live": 4, "nodes": 2}] if has_counts else []
+    pipe.evaluate.side_effect = [
+        True,
+        _CALLBACKS_READY,
+        _ENCRYPTION_READY,
+        True,
+        {"healthy": not busy, "pending": True, "fresh": True},
+        checks,
+        coverage,
+        [],
+    ]
+    ticks = iter([0, 0, 0, 0, 0, 2, 2])
+    monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    assert instance.wait(timeout=1) is False
+    expected = "Sync Cycle Ongoing" if busy else "Entity Coverage"
+    if has_counts:
+        expected += "; last complete entity observation: Bookmarks: live=4, nodes=2"
+    assert instance.pending_reason == expected
+
+
+def test_unknown_entity_types_and_missing_groups_use_fixed_diagnostic_labels() -> None:
+    """Unsupported native type names and missing node evidence never expose arbitrary strings."""
+
+    assert _entity_coverage_summary([{"type": -1, "live": 3, "nodes": -1}]) == (
+        "Other data type: live=3, nodes=unavailable"
+    )
+
+
+@pytest.mark.parametrize(
+    "coverage",
+    [
+        "private-browser-data",
+        [None],
+        [{"type": "private-type", "live": 1, "nodes": 0}],
+        [{"type": 0, "live": "private-count", "nodes": 0}],
+        [{"type": 0, "live": True, "nodes": 0}],
+        [{"type": 0, "live": -1, "nodes": 0}],
+        [{"type": 0, "live": 1, "nodes": -2}],
+        [{"type": len(_DIAGNOSTIC_TYPES), "live": 1, "nodes": 0}],
+        [{"type": -2, "live": 1, "nodes": 0}],
+        [{"type": 0, "live": 1, "nodes": 0, "contents": "private-entity"}],
+    ],
+)
+def test_entity_coverage_diagnostics_reject_private_or_malformed_values(coverage: object) -> None:
+    """Only the exact numeric schema can be included in an uncensored recovery error."""
+
+    with pytest.raises(BrowserProtocolError, match="unsupported entity coverage diagnostics") as error:
+        _entity_coverage_summary(coverage)
+    assert "private" not in str(error.value)
 
 
 @pytest.mark.parametrize("commit_errors", [["TRANSIENT_ERROR"], ["private-server-error"]])
