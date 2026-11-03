@@ -17,6 +17,7 @@ import tempfile
 import time
 import unittest
 
+import pytest
 from ansible.parsing.dataloader import DataLoader
 from ansible_test_helpers import ansible_environment, write_local_playbook
 from entrypoint_test_helpers import (
@@ -111,6 +112,69 @@ def initialize_git_repository(repository: pathlib.Path, environment: dict[str, s
             check=True,
             capture_output=True,
         )
+
+
+@pytest.mark.parametrize(
+    "remote,preferences,redirected,colored",
+    [
+        pytest.param(False, {}, False, True, id="local-checkout"),
+        pytest.param(True, {}, False, True, id="remote-pull"),
+        pytest.param(True, {"WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE": "1"}, False, True, id="fifo-relay"),
+        pytest.param(True, {"NO_COLOR": "1"}, False, False, id="no-color"),
+        pytest.param(False, {"ANSIBLE_NOCOLOR": "true"}, False, False, id="ansible-no-color"),
+        pytest.param(True, {"TERM": "dumb"}, False, False, id="dumb-terminal"),
+        pytest.param(True, {}, True, False, id="redirected-output"),
+        pytest.param(True, {"ANSIBLE_FORCE_COLOR": "true"}, True, True, id="forced-color"),
+    ],
+)
+def test_task_colors_respect_terminal_output_and_preferences(tmp_path, remote, preferences, redirected, colored):
+    """Both launch modes preserve terminal colors and explicit preferences across sudo and capture."""
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    write_local_playbook(repository / "check.yml", [{"ansible.builtin.debug": {"msg": "COLOR_FIXTURE"}}], {})
+    environment = ansible_environment(
+        tmp_path,
+        PATH=f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        USER=pwd.getpwuid(os.getuid()).pw_name,
+        TERM="xterm-256color",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_NOSYSTEM="1",
+        REPOSITORY_URL=repository.as_uri() if remote else str(repository),
+    )
+    environment.update(preferences)
+    initialize_git_repository(repository, environment)
+    if remote:
+        bare = tmp_path / "remote.git"
+        subprocess.run(
+            ["git", "clone", "--bare", str(repository), str(bare)],
+            env=environment,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+        environment["REPOSITORY_URL"] = bare.as_uri()
+    bootstrap = bootstrap_fixture(tmp_path)
+    (tmp_path / "bin/sudo").write_text(sudo_passthrough_script("unset ANSIBLE_FORCE_COLOR ANSIBLE_NOCOLOR NO_COLOR\n"))
+    environment["WORKSTATION_MANAGER_ENTRYPOINT_SOURCE"] = str(tmp_path / "entrypoint.sh")
+    command = "sh -c " + shlex.quote(bootstrap + RETRY_WRAPPER_COMMAND)
+    output_file = tmp_path / "output.log"
+    if redirected:
+        command += " > " + shlex.quote(str(output_file))
+    result = subprocess.run(
+        ["script", "--quiet", "--return", "--command", command, os.devnull],
+        cwd=tmp_path,
+        env=environment,
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    output = output_file.read_text() if redirected else result.stdout
+    assert "COLOR_FIXTURE" in output
+    assert ("\x1b[0;32mok: [localhost]" in output) is colored, output
 
 
 class PinnedCommitBootstrapTests(unittest.TestCase):
