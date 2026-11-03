@@ -51,6 +51,9 @@ exported `BW_SESSION`, or asks for your email and vault password. Password and
 verification-code input are hidden. Rejected credentials prompt again; Ctrl+C
 cancels. Bootstrap authentication can also occur during `--dry-run`.
 
+Task status uses colors in terminals by default. For plain output, set
+`NO_COLOR=1` on the `sh` command, including when launching through `wget | sh`.
+
 ## Application delivery
 
 Use the [supported Ubuntu release](../../ansible/ubuntu-version). Setup installs

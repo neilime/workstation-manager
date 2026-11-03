@@ -363,6 +363,14 @@ run_ansible_pull_with_bitwarden_retry() (
 	dry_run="$2"
 	shift 2
 
+	# Decide before capture replaces stdout with a pipe or a private terminal.
+	# ansible-pull also pipes its playbook output, defeating native TTY detection.
+	# Leave explicit Ansible color preferences in control.
+	if [ -z "${ANSIBLE_FORCE_COLOR+x}${ANSIBLE_NOCOLOR+x}${NO_COLOR+x}" ] &&
+		[ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
+		set -- ANSIBLE_FORCE_COLOR=true "$@"
+	fi
+
 	if ! has_interactive_terminal; then
 		run_ansible_pull "$playbook_path" "$dry_run" "$@"
 		return
@@ -751,7 +759,10 @@ run_with_session_environment() (
 		"DISPLAY=${DISPLAY:-}" \
 		"WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}" \
 		"GPG_TTY=${GPG_TTY:-}" \
-		"SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}"; do
+		"SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}" \
+		"ANSIBLE_FORCE_COLOR=${ANSIBLE_FORCE_COLOR:-}" \
+		"ANSIBLE_NOCOLOR=${ANSIBLE_NOCOLOR:-}" \
+		"NO_COLOR=${NO_COLOR:-}"; do
 		if [ -n "${session_assignment#*=}" ]; then
 			set -- "$session_assignment" "$@"
 		else
