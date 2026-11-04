@@ -5,7 +5,7 @@ recovery services; keep them isolated from the development host.
 
 ## Prerequisites
 
-Install cURL, Python 3, Lima, `qemu-img`, and `qemu-system-x86_64`.
+Install Docker, cURL, Python 3, Lima, `qemu-img`, and `qemu-system-x86_64`.
 The [VM template](../../e2e-tests/lima-ubuntu.yml) selects the Ubuntu release,
 architecture, disk, and memory. Override CPU and memory with positive
 `E2E_VM_CPUS` and `E2E_VM_MEMORY_GIB` values before creating a VM.
@@ -71,12 +71,14 @@ Bootstrap explicitly fetches pinned commits. The CI guest also downloads a
 read-only copy of that public commit for its fixture scripts before receiving
 any credentials. Local VM fixtures use the live read-only workspace mount.
 
-CI uses the shared `hoverkraft-tech/ci-github-iac` VM create and destroy actions,
+CI uses the shared `hoverkraft-tech/ci-github-iac` VM create, test and destroy actions,
 pinned in the [workflow](../../.github/workflows/__shared-ci.yml). The workstation
 repository supplies its desktop template, verified image, and resource settings.
-The guest runs in plain mode without host mounts or forwarded agents. Host-side
-SSH assertions use the returned VM name and isolated `LIMA_HOME`; their reports
-and screenshots remain owned by this repository.
+The guest runs in plain mode without host mounts or forwarded agents. Goss assertions run inside the guest through `vm/test` using the
+[backup, setup and cleanup suites](../../e2e-tests/goss/). The repository owns
+these suites, focused recovery/desktop probes and screenshots; the shared action
+installs the pinned verifier and publishes native JUnit. Python unit and integration
+tests remain in pytest. Ansible collection checks remain separate.
 
 ## Run the flow
 
@@ -89,15 +91,16 @@ make e2e-down
 The suite runs backup, setup, and cleanup in order. Each phase separates
 Arrange, Act, and Assert, with a distinct CI step for each:
 
-| Phase   | Arrange                                                               | Act                                                                            | Assert                                        |
-| ------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
-| Backup  | Create project fixtures and a published Chezmoi source; restore keys. | Run backup with recovery checks, then remove the temporary Chezmoi fixture.    | Verify archive contents and recovery results. |
-| Setup   | Validate the archive and remove the fixture files to restore.         | Run setup, capture browser device identities, and prepare the desktop session. | Verify restored files and installed behavior. |
-| Cleanup | Create browser preservation markers.                                  | Run cleanup.                                                                   | Verify the report and preserved user data.    |
+| Phase   | Arrange                                                               | Act                                                                                    | Assert                                        |
+| ------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Backup  | Create project fixtures and a published Chezmoi source; restore keys. | Run backup with recovery checks, then remove the temporary Chezmoi fixture.            | Verify archive contents and recovery results. |
+| Setup   | Validate the archive and remove the fixture files to restore.         | Run setup, capture browser identities, restart Docker and prepare the desktop session. | Verify restored files and installed behavior. |
+| Cleanup | Create browser preservation markers.                                  | Run cleanup.                                                                           | Verify preserved browser profiles and data.   |
 
 The setup override explicitly defers provider sign-in. Browser ownership
 preparation and capture remain together around the setup action, including when
-it fails. Assertions are unchanged between the full local flow and CI stages.
+it fails. The same Goss suites run in the full local flow and CI stages. Docker restart and
+the manual BleachBit command run during Act, before concurrent state assertions.
 
 The backup fixture requires a fresh VM without Chezmoi or Brave profile state.
 Setup uses configured Bitwarden collections and requires live Brave Sync recovery.
@@ -173,12 +176,33 @@ and `make e2e-reset` before reusing it.
 
 ## Reports and diagnostics
 
-Set `REPORTS_DIR=.reports` for syntax and test reports.
-The setup screenshot defaults to `.reports/screenshots/e2e-setup-desktop.png`;
-`SCREENSHOTS_DIR` changes its directory. CI publishes reports and the screenshot.
+Set `REPORTS_DIR=.reports` for local syntax and test reports. Local Goss runs write
+`tests/e2e-<phase>.junit.xml` beneath that directory, accepting relative or absolute
+paths. The tooling image supplies the checksum-pinned Goss binary for local runs;
+run `make setup` before assertions. The setup screenshot defaults to
+`.reports/screenshots/e2e-setup-desktop.png`; `SCREENSHOTS_DIR` changes its directory.
 
-GitHub Actions reports the duration of each Arrange, Act, and Assert step.
-Assertion output includes the slowest tests.
+Before setup assertions, the guest exports an allowlist of normalized expected
+values: user paths, tool versions, package lists and desktop settings. These
+expectations come from the public defaults and the same fixture override used by
+setup. Vault IDs, credentials, browser profile records and MCP environments are
+excluded. Templates render on the runner using this file; probes read the same
+expectations inside the guest. Backup uses a self-contained recovery probe; cleanup
+reuses the saved guest identity. Do not add secret-bearing fields or print credential
+values from probes.
+
+Both local and CI assertions use fresh SSH logins so group memberships added by
+setup, including Docker access, are available to the managed user.
+
+Each CI assertion phase publishes its native JUnit, a summary, annotations, a stable
+phase-specific PR comment and an artifact. Reporting failures fail the step.
+The shared 35-minute suite deadline bounds the nine stages. Each Goss call receives
+the remaining whole minutes, rounded down; report collection and verified teardown
+have separate bounds. Fixture finishing and browser teardown remain unconditional.
+Keep all infrastructure actions on the same immutable revision in the workflow.
+
+GitHub Actions reports the duration of each step; Goss includes assertion durations
+in its JUnit report. A failed or empty suite cannot pass the phase.
 
 Startup and setup failures produce bounded VM, memory, session, display-manager,
 and OOM diagnostics. They exclude action journals and process environments.
@@ -191,7 +215,6 @@ CI still runs fixture finishing and verified browser teardown.
 
 CI caches public Lima downloads by upstream image checksum and saves its offline
 desktop base before authenticated phases. Running guest disks and authenticated
-state are never cached. Each assertion phase uses its own SSH
-control socket and a read-only Lima configuration. The read-only workspace mount
+state are never cached. Goss uses the selected VM connection. The read-only workspace mount
 used by local VMs uses QEMU 9p without caching. AppArmor remains enabled in both
 local and CI guests.

@@ -1,0 +1,101 @@
+---
+file:
+  /etc/os-release:
+    exists: true
+    contents:
+      - /^VERSION_ID="?{{ .Vars.ubuntu | regexQuoteMeta }}"?$/
+  /snap:
+    exists: false
+  /var/snap:
+    exists: false
+  /var/lib/snapd:
+    exists: false
+  /var/cache/snapd:
+    exists: false
+  "{{ .Vars.user.home }}/snap":
+    exists: false
+  /etc/default/locale:
+    exists: true
+    contents:
+      - /^LANG="?{{ .Vars.system.locale | regexQuoteMeta }}"?$/
+      - /^LC_ALL="?{{ .Vars.system.locale | regexQuoteMeta }}"?$/
+  /etc/timezone:
+    exists: true
+    contents:
+      - /^{{ .Vars.system.timezone | regexQuoteMeta }}$/
+  /etc/workstation-manager-v1/system.json:
+    exists: true
+    contents:
+      - '"managed": true'
+command:
+  isolated-ansible:
+    exec: /opt/workstation-manager/venv/bin/ansible-pull --version
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - core {{ .Vars.ansible }}
+  controller-dependencies:
+    exec: /opt/workstation-manager/venv/bin/python -m pip check
+    exit-status: 0
+    timeout: 30000
+  snap-apt-candidate:
+    exec: apt-cache policy snapd
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "Candidate: (none)"
+  no-squashfs-mounts:
+    exec: test -z "$(findmnt --noheadings --types squashfs)"
+    exit-status: 0
+    timeout: 10000
+  timezone-link:
+    exec: readlink -f /etc/localtime
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^/usr/share/zoneinfo/{{ .Vars.system.timezone | regexQuoteMeta }}$/
+  lima-network-renderer:
+    exec: sudo netplan get network.renderer
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^networkd$/
+  apt-candidates-current:
+    exec: |-
+      /usr/bin/python3 - <<'PYTHON'
+      import apt, apt_pkg, json
+      from pathlib import Path
+      config = json.loads((Path.home() / '.local/state/workstation-manager/e2e/goss-vars.json').read_text())
+      cache = apt.Cache()
+      for spec in config['packages']:
+          name, separator, version = spec.partition('=')
+          package = cache[name] if name in cache else None
+          assert package is not None and package.installed is not None, name + ' is not installed'
+          if separator:
+              assert package.installed.version == version, name + ' version differs'
+          elif package.candidate is not None:
+              assert apt_pkg.version_compare(package.installed.version, package.candidate.version) >= 0, name + ' needs updating'
+      PYTHON
+    exit-status: 0
+    timeout: 60000
+package:
+  snapd:
+    installed: false
+  gnome-software-plugin-snap:
+    installed: false
+service:
+  snapd.socket:
+    running: false
+  systemd-networkd:
+    running: true
+kernel-param:
+  # {{ range $name, $value := .Vars.system.settings.sysctl }}
+  "system-{{ $name }}":
+    name: "{{ $name }}"
+    value: "{{ $value }}"
+  # {{ end }}
+  # {{ range $name, $value := .Vars.development_sysctl }}
+  "development-{{ $name }}":
+    name: "{{ $name }}"
+    value: "{{ $value }}"
+# {{ end }}

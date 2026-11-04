@@ -95,7 +95,7 @@ def test_tooling_image_current_recipe_accounts_for_all_dependencies():
     base, inputs = image.build_inputs()
     assert base == "ubuntu:" + (WORKSPACE / "ansible/ubuntu-version").read_text().strip()
     assert "ansible/requirements.txt" in inputs
-    assert "e2e-tests/requirements.txt" in inputs
+    assert "e2e-tests/goss.json" in inputs
 
 
 @pytest.mark.parametrize("allow_missing", [False, True])

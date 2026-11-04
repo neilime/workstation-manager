@@ -1,0 +1,7 @@
+---
+gossfile:
+  system.yaml: {}
+  user.yaml: {}
+  desktop.yaml: {}
+  development.yaml: {}
+  browser.yaml: {}

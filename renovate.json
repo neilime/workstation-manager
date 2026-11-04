@@ -15,5 +15,18 @@
       "automerge": false,
       "ignoreUnstable": true
     }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the Goss release and Linux x86-64 archive checksum together",
+      "managerFilePatterns": ["/^e2e-tests/goss\\.json$/"],
+      "matchStrings": ["\"version\":\\s*\"(?<version>[^\"]+)\",\\s*\"sha256\":\\s*\"(?<currentDigest>[a-f0-9]{64})\""],
+      "depNameTemplate": "goss-org/goss",
+      "datasourceTemplate": "github-release-attachments",
+      "versioningTemplate": "semver",
+      "currentValueTemplate": "v{{{version}}}",
+      "autoReplaceStringTemplate": "\"version\": \"{{{replace '^v' '' newValue}}}\",\n\t\"sha256\": \"{{{newDigest}}}\""
+    }
   ]
 }

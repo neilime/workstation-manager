@@ -1,0 +1,292 @@
+---
+command:
+  git-auto-gc:
+    exec: test "$(git config --global --int --get gc.auto)" -gt 0
+    exit-status: 0
+    timeout: 10000
+  project-skill:
+    exec: |-
+      test "$(readlink -f "{{ .Vars.user.projects_directory }}/client-restore/.agents/skills/e2e-project-skill")" = "{{ .Vars.user.projects_directory }}/client-restore/.skillshare/skills/e2e-project-skill" &&
+      cmp "{{ .Vars.user.projects_directory }}/client-restore/.agents/skills/e2e-project-skill/SKILL.md" "{{ .Vars.user.projects_directory }}/client-restore/.skillshare/skills/e2e-project-skill/SKILL.md"
+    exit-status: 0
+    timeout: 10000
+  mise-configured-tools:
+    exec: |-
+      python3 - <<'PYTHON'
+      import json, tomllib, subprocess
+      from pathlib import Path
+      home = Path.home()
+      expected = json.loads((home / '.local/state/workstation-manager/e2e/goss-vars.json').read_text())['tools']
+      actual = tomllib.loads((home / '.config/mise/config.toml').read_text())['tools']
+      assert {tool: entry['version'] if isinstance(entry, dict) else entry for tool, entry in actual.items()} == expected
+      for tool in expected:
+          subprocess.run(['bash', '-lc', '"$HOME/.local/bin/mise" where "$1"', 'fixture', tool], check=True, capture_output=True)
+      PYTHON
+    exit-status: 0
+    timeout: 30000
+  managed-php-version:
+    exec: zsh -ic "php -r 'echo PHP_VERSION;'"
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^{{ index .Vars.tools "vfox:jdx/vfox-php" | regexQuoteMeta }}$/
+  managed-composer-version:
+    exec: zsh -ic 'composer --version --no-ansi'
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^Composer version {{ index .Vars.tools "github:composer/composer" | regexQuoteMeta }} /
+  managed-php-runtime:
+    exec: case "$(zsh -ic 'command -v php')" in "$HOME/.local/share/mise/"*) exit 0;; *) exit 1;; esac
+    exit-status: 0
+    timeout: 10000
+  managed-composer-runtime:
+    exec:
+      root=$("$HOME/.local/bin/mise" where github:composer/composer) && case "$(zsh -ic 'command -v composer')"
+      in "$root/"*) exit 0;; *) exit 1;; esac
+    exit-status: 0
+    timeout: 10000
+  php-extensions:
+    exec: zsh -ic 'php -m'
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^curl$/
+      - /^dom$/
+      - /^intl$/
+      - /^mbstring$/
+      - /^openssl$/
+      - /^pdo_sqlite$/
+      - /^xml$/
+      - /^zip$/
+  docker-daemon:
+    exec: docker --host unix:///var/run/docker.sock info
+    exit-status: 0
+    timeout: 30000
+  docker-buildx:
+    exec: docker buildx version
+    exit-status: 0
+    timeout: 10000
+  compose-alias:
+    exec:
+      test "$(env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin docker-compose version)" = "$(docker compose
+      version)"
+    exit-status: 0
+    timeout: 10000
+  docker-vendor-service:
+    exec: systemctl show docker.service --property=ExecStart --value
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /usr/bin/dockerd
+      - "!/.local/share/mise/"
+  native-github-command:
+    exec: env -i PATH=/usr/local/bin:/usr/bin:/bin sh -c 'command -v gh'
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^/usr/bin/gh$/
+  native-node:
+    exec: env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin node --version
+    exit-status: 0
+    timeout: 10000
+  native-npm:
+    exec: env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin npm --version
+    exit-status: 0
+    timeout: 10000
+  native-npx:
+    exec: env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin npx --version
+    exit-status: 0
+    timeout: 10000
+  node-configured-version:
+    exec: node --version
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^v{{ .Vars.node | regexQuoteMeta }}$/
+  npm-offline-execution:
+    exec: env -i HOME="$HOME" PATH=/usr/local/bin:/usr/bin:/bin npm exec --offline -- node --version
+    exit-status: 0
+    timeout: 30000
+  github-extension-pins:
+    exec: |-
+      set -eu
+      config="$HOME/.local/state/workstation-manager/e2e/goss-vars.json"
+      gh extension list > /dev/null
+      python3 - <<'PYTHON'
+      import json, subprocess
+      from pathlib import Path
+      home = Path.home()
+      config = json.loads((home / '.local/state/workstation-manager/e2e/goss-vars.json').read_text())
+      lines = subprocess.check_output(['gh', 'extension', 'list'], text=True).splitlines()
+      installed = {fields[2]: fields[3] for line in lines if len(fields := line.split()) >= 4 and fields[0] == 'gh'}
+      for repository, revision in config['github']['extensions'].items():
+          assert repository in installed
+          if len(revision) == 40:
+              actual = subprocess.check_output(['git', '-C', str(home / '.local/share/gh/extensions' / repository.split('/')[1]), 'rev-parse', 'HEAD'], text=True).strip()
+              assert actual == revision
+          else:
+              assert installed[repository] == revision
+      PYTHON
+    exit-status: 0
+    timeout: 30000
+  persistent-github-keyring-login:
+    exec: |-
+      set -eu
+      config="$HOME/.local/state/workstation-manager/e2e/goss-vars.json"
+      host=$(jq -r .github.host "$config")
+      account=$(jq -r .github.account "$config")
+      env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN  HOME="$HOME" XDG_CONFIG_HOME="$HOME/.config" GH_CONFIG_DIR="$HOME/.config/gh"  gh auth status --active --hostname "$host" --json hosts |  jq -e --arg host "$host" --arg account "$account" '.hosts[$host][0] | .state == "success" and .tokenSource == "keyring" and .login == $account' >/dev/null
+    exit-status: 0
+    timeout: 30000
+  ghcr-keyring-credentials:
+    exec: |-
+      python3 - <<'PYTHON'
+      import json, os, stat, subprocess
+      from pathlib import Path
+      from urllib.parse import urlsplit
+      home = Path.home()
+      expected = json.loads((home / '.local/state/workstation-manager/e2e/goss-vars.json').read_text())['github']
+      if expected['host'] == 'github.com':
+          path = home / '.docker/config.json'
+          config = json.loads(path.read_text())
+          assert config['credHelpers']['ghcr.io'] == 'secretservice'
+          assert stat.S_IMODE(path.stat().st_mode) == 0o600
+          assert stat.S_IMODE(Path('/usr/local/bin/docker-credential-secretservice').stat().st_mode) == 0o755
+          assert not any(urlsplit(key if '://' in key else '//' + key).hostname == 'ghcr.io' for key in config.get('auths', {}))
+          result = subprocess.run(['/usr/local/bin/docker-credential-secretservice', 'get'], input='ghcr.io\n', text=True,
+                                  capture_output=True, env={**os.environ, 'DBUS_SESSION_BUS_ADDRESS': f'unix:path=/run/user/{os.getuid()}/bus'}, check=False)
+          assert result.returncode == 0, 'GHCR credential could not be read'
+          credential = json.loads(result.stdout)
+          assert credential.get('Username') == expected['account'] and credential.get('Secret'), 'GHCR account differs'
+      PYTHON
+    exit-status: 0
+    timeout: 10000
+  ai-tools-user-updates:
+    exec: |-
+      python3 - <<'PYTHON'
+      import json, os, subprocess
+      from pathlib import Path
+      home = Path.home()
+      config = json.loads((home / '.local/state/workstation-manager/e2e/goss-vars.json').read_text())
+      prefix = home / '.local/share/workstation-manager/ai-tools/cli'
+      for provider in config['providers']:
+          executable = Path('/usr/local/bin') / provider['command']
+          result = subprocess.run(['env', '-i', f'HOME={home}', 'PATH=/usr/local/bin:/usr/bin:/bin', str(executable), '--version'], capture_output=True, check=False)
+          assert result.returncode == 0, 'Provider command failed'
+          binary = executable.resolve(strict=True)
+          assert binary.is_relative_to(prefix)
+          assert binary.stat().st_uid == os.getuid()
+          package = prefix / 'lib/node_modules' / provider['npm']
+          assert package.is_dir()
+          assert all(os.access(path, os.W_OK) for path in [package, *package.rglob('*')])
+      PYTHON
+    exit-status: 0
+    timeout: 60000
+  persisted-kernel-settings:
+    exec: |-
+      python3 - <<'PYTHON'
+      import json
+      from pathlib import Path
+      config = json.loads((Path.home() / '.local/state/workstation-manager/e2e/goss-vars.json').read_text())
+      for path, expected in [('/etc/sysctl.d/99-workstation-manager-system.conf', config['system']['settings']['sysctl']),
+                             ('/etc/sysctl.d/99-workstation-manager.conf', config['development_sysctl'])]:
+          actual = dict(line.split('=', 1) for line in Path(path).read_text().splitlines() if '=' in line and not line.startswith('#'))
+          actual = {key.strip(): value.strip() for key, value in actual.items()}
+          assert all(actual[key] == str(value) for key, value in expected.items())
+      PYTHON
+    exit-status: 0
+    timeout: 10000
+  # {{ if index .Vars.tools "aqua:starship/starship" }}
+  starship-release:
+    exec: 'test -L "$HOME/.local/bin/starship" && "$HOME/.local/bin/starship" --version'
+    exit-status: 0
+    stdout:
+      - '/^starship {{ index .Vars.tools "aqua:starship/starship" | regexQuoteMeta }}$/'
+  # {{ end }}
+  # {{ if has "code" .Vars.editor_packages }}
+  native-editor:
+    exec: |
+      set -eu
+      test "$(command -v code)" = /usr/bin/code
+      code --version
+      /usr/bin/zsh -lc 'node --version && npm --version && gh --version'
+      PYTHONPATH=/workspace/ansible/collections python3 - <<'PYTHON'
+      from pathlib import Path
+      from ansible_collections.neilime.workstation_setup.plugins.module_utils.jsonc_document import JsoncDocument
+      root = Path.home() / '.config/Code/User'
+      settings = (root / 'settings.json').read_text()
+      assert '"terminal.integrated.defaultProfile.linux": "zsh"' in settings
+      assert '"path": "/usr/bin/zsh"' in settings
+      bindings = JsoncDocument().loads('{"bindings":' + (root / 'keybindings.json').read_text().lstrip('\ufeff') + '\n}')['bindings']
+      for key in ('ctrl+v', 'shift+insert'):
+          binding = next(binding for binding in reversed(bindings) if binding.get('key') == key)
+          assert binding['command'] == 'workbench.action.terminal.paste'
+          assert binding['when'] == 'terminalFocus'
+      PYTHON
+    exit-status: 0
+    timeout: 30000
+# {{ end }}
+
+file:
+  "{{ .Vars.user.projects_directory }}/client-restore/.skillshare/skills/e2e-project-skill/SKILL.md":
+    exists: true
+    filetype: file
+    owner: "{{ .Vars.user.name }}"
+  "{{ .Vars.user.projects_directory }}/client-restore/.agents/skills/e2e-project-skill":
+    exists: true
+    filetype: symlink
+  "{{ .Vars.user.home }}/.config/workstation-manager/mise.sh":
+    exists: true
+  /var/run/docker.sock:
+    exists: true
+    filetype: socket
+    group: docker
+  /usr/local/bin/docker-compose:
+    exists: true
+    mode: "0755"
+    owner: root
+    group: root
+  /etc/apt/keyrings/docker.asc:
+    exists: true
+    owner: root
+  /etc/apt/sources.list.d/docker.sources:
+    exists: true
+    contents:
+      - "Signed-By: /etc/apt/keyrings/docker.asc"
+  /etc/apt/keyrings/githubcli-archive-keyring.gpg:
+    exists: true
+    owner: root
+  /etc/apt/sources.list.d/github-cli.sources:
+    exists: true
+    contents:
+      - https://cli.github.com/packages
+  /opt/nodejs/current:
+    exists: true
+    owner: root
+  /usr/local/bin/node:
+    exists: true
+    filetype: symlink
+  /usr/local/bin/npm:
+    exists: true
+    filetype: symlink
+  /usr/local/bin/npx:
+    exists: true
+    filetype: symlink
+service:
+  docker:
+    running: true
+    enabled: true
+package:
+  docker-ce:
+    installed: true
+  docker-ce-cli:
+    installed: true
+  containerd.io:
+    installed: true
+  docker-buildx-plugin:
+    installed: true
+  docker-compose-plugin:
+    installed: true
+  gh:
+    installed: true

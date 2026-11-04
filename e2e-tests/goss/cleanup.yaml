@@ -1,0 +1,31 @@
+---
+file:
+  "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/managed-e2e-stale/Preferences":
+    exists: true
+  "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/managed-e2e-stale/e2e-preserve-marker":
+    exists: true
+  "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/Profile 9999/Preferences":
+    exists: true
+  "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/Profile 9999/e2e-preserve-marker":
+    exists: true
+  "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/e2e-component-cache/e2e-preserve-marker":
+    exists: true
+command:
+  managed-e2e-stale-preservation:
+    exec: cat "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/managed-e2e-stale/e2e-preserve-marker"
+    exit-status: 0
+    stdout: "preserve
+
+      "
+  Profile 9999-preservation:
+    exec: cat "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/Profile 9999/e2e-preserve-marker"
+    exit-status: 0
+    stdout: "preserve
+
+      "
+  e2e-component-cache-preservation:
+    exec: cat "{{ .Vars.user.home }}/.config/BraveSoftware/Brave-Browser/e2e-component-cache/e2e-preserve-marker"
+    exit-status: 0
+    stdout: "preserve
+
+      "

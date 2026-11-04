@@ -1,0 +1,184 @@
+---
+package:
+  ptyxis:
+    installed: true
+  gnome-shell-ubuntu-extensions:
+    installed: true
+  gnome-keyring:
+    installed: true
+  libpam-gnome-keyring:
+    installed: true
+  simple-scan:
+    installed: true
+  sane-utils:
+    installed: true
+  gnome-software:
+    installed: true
+  gnome-software-plugin-flatpak:
+    installed: true
+file:
+  /usr/share/applications/org.gnome.Ptyxis.desktop:
+    exists: true
+  "{{ .Vars.user.home }}/Documents/dev-projects":
+    exists: true
+    filetype: directory
+  "{{ .Vars.user.home }}/.config/gtk-3.0/bookmarks":
+    exists: true
+    filetype: file
+    owner: "{{ .Vars.user.name }}"
+  "{{ .Vars.user.home }}/.local/share/backgrounds/wallpaper.jpg":
+    exists: true
+    filetype: file
+    owner: "{{ .Vars.user.name }}"
+    mode: "0644"
+  "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com/schemas/gschemas.compiled":
+    exists: true
+    filetype: file
+  "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com/extension.zip":
+    exists: true
+    sha256: "{{ .Vars.desktop.clipboard_indicator.sha256 }}"
+  "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/Vitals@CoreCoding.com/schemas/gschemas.compiled":
+    exists: true
+    filetype: file
+  "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/Vitals@CoreCoding.com/extension.zip":
+    exists: true
+    sha256: "{{ .Vars.desktop.system_monitor.sha256 }}"
+command:
+  wallpaper-source:
+    exec: cmp "$HOME/.local/share/backgrounds/wallpaper.jpg" "$HOME/.local/share/chezmoi/home/dot_local/share/backgrounds/wallpaper.jpg"
+    exit-status: 0
+    timeout: 10000
+  color-scheme:
+    exec: dbus-run-session -- gsettings get org.gnome.desktop.interface color-scheme
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "'prefer-dark'"
+  picture-options:
+    exec: dbus-run-session -- gsettings get org.gnome.desktop.background picture-options
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "'zoom'"
+  picture-uri:
+    exec: dbus-run-session -- gsettings get org.gnome.desktop.background picture-uri
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "'file://{{ .Vars.user.home }}/.local/share/backgrounds/wallpaper.jpg'"
+  picture-uri-dark:
+    exec: dbus-run-session -- gsettings get org.gnome.desktop.background picture-uri-dark
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "'file://{{ .Vars.user.home }}/.local/share/backgrounds/wallpaper.jpg'"
+  show-trash:
+    exec: dbus-run-session -- gsettings get org.gnome.shell.extensions.dash-to-dock show-trash
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "true"
+  download-updates:
+    exec: dbus-run-session -- gsettings get org.gnome.software download-updates
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "true"
+  gnome-portals:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - org.freedesktop.portal.FileChooser
+      - org.freedesktop.portal.ScreenCast
+  secret-service-session:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus gdbus call --session --dest org.freedesktop.secrets --object-path /org/freedesktop/secrets --method
+      org.freedesktop.Secret.Service.OpenSession plain "<''>"
+    exit-status: 0
+    timeout: 10000
+  no-flatpak-scanner-system:
+    exec: flatpak list --system --app --columns=application
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "!/org.gnome.SimpleScan/"
+  no-flatpak-scanner-user:
+    exec: flatpak list --user --app --columns=application
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "!/org.gnome.SimpleScan/"
+  simple-scan:
+    exec: simple-scan --version
+    exit-status: 0
+    timeout: 10000
+  scanimage:
+    exec: scanimage --version
+    exit-status: 0
+    timeout: 10000
+  flatpak-applications:
+    exec: |-
+      python3 - <<'PYTHON'
+      import json, subprocess
+      from pathlib import Path
+      config = json.loads((Path.home() / '.local/state/workstation-manager/e2e/goss-vars.json').read_text())['desktop']['flatpak']
+      assert config['remote'] in subprocess.check_output(['flatpak', 'remotes', '--system', '--columns=name'], text=True).splitlines()
+      installed = subprocess.check_output(['flatpak', 'list', '--system', '--app', '--columns=application'], text=True).splitlines()
+      assert set(config['packages']).issubset(installed)
+      PYTHON
+    exit-status: 0
+    timeout: 30000
+  desktop-session-and-launchers:
+    exec: python3 /workspace/e2e-tests/probes/desktop.py
+    exit-status: 0
+    timeout: 30000
+  clipboard_indicator-version:
+    exec: jq -r .version "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com/metadata.json"
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^{{ .Vars.desktop.clipboard_indicator.version }}$/
+  clipboard_indicator-active:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus LC_ALL=C gnome-extensions info clipboard-indicator@tudmotu.com
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "State: ACTIVE"
+  system_monitor-version:
+    exec: jq -r .version "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/Vitals@CoreCoding.com/metadata.json"
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^{{ .Vars.desktop.system_monitor.version }}$/
+  system_monitor-active:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus LC_ALL=C gnome-extensions info Vitals@CoreCoding.com
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "State: ACTIVE"
+  paste-on-select:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus gsettings --schemadir "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com/schemas"
+      get org.gnome.shell.extensions.clipboard-indicator paste-on-select
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^false$/
+  paste-button:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus gsettings --schemadir "{{ .Vars.user.home }}/.local/share/gnome-shell/extensions/clipboard-indicator@tudmotu.com/schemas"
+      get org.gnome.shell.extensions.clipboard-indicator paste-button
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^false$/

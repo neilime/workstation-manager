@@ -139,12 +139,18 @@ print_e2e_vm_diagnostics() {
 }
 
 print_e2e_desktop_diagnostics() {
+	printf '\nRunner filesystem capacity:\n'
+	df -h "$(resolve_e2e_instance_dir)"
+	df -i "$(resolve_e2e_instance_dir)"
 	# Keep this bounded and restricted to desktop lifecycle/resource messages.
 	# The action journal and process environments can contain vault credentials.
 	run_e2e_lima_control_command 30 sudo -n bash -s <<'EOF'
 printf '\nGuest memory and swap:\n'
 free -m
 swapon --show=NAME,TYPE,SIZE,USED,PRIO
+printf '\nGuest filesystem capacity and root mount:\n'
+df -h / /home
+findmnt --target / --output SOURCE,FSTYPE,OPTIONS
 printf '\nLogin sessions:\n'
 loginctl list-sessions --no-legend
 printf '\nDisplay manager state:\n'
@@ -157,9 +163,9 @@ journalctl --boot --no-pager --lines=100 \
 printf '\nGNOME compositor service lifecycle:\n'
 journalctl --boot --no-pager --lines=80 _COMM=systemd \
   USER_UNIT=org.gnome.Shell@wayland.service
-printf '\nKernel memory and compositor faults:\n'
+printf '\nKernel memory, storage and compositor faults:\n'
 journalctl --boot --dmesg --no-pager --lines=80 \
-  --grep='Out of memory|oom-kill|Killed process|segfault|virtio_gpu'
+  --grep='Out of memory|oom-kill|Killed process|segfault|virtio_gpu|EXT4-fs.*(error|warning|remount)|I/O error|Buffer I/O|blk_update_request'
 EOF
 }
 

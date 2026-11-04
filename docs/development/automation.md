@@ -95,6 +95,10 @@ Run the entrypoint coverage in `tests/unit/` and `tests/integration/` through th
 
 ## Bitwarden integration
 
+When the Bitwarden CLI is missing, installation downloads its archive with a
+60-second socket timeout and up to two retries. Exhausted download attempts fail
+the action before authentication.
+
 Collection enumeration and key-backup reads use the setup collection's
 [Bitwarden lookup adapter](../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/lookup/bitwarden.py),
 which delegates to `community.general.bitwarden`. Use `query(...) | first` for

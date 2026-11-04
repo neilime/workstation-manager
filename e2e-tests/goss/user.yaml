@@ -1,0 +1,241 @@
+---
+user:
+  "{{ .Vars.user.name }}":
+    exists: true
+    shell: /usr/bin/zsh
+    groups:
+      - docker
+file:
+  /usr/bin/zsh:
+    exists: true
+    filetype: file
+  "{{ .Vars.user.home }}/.zshrc":
+    exists: true
+    filetype: file
+    owner: "{{ .Vars.user.name }}"
+  "{{ .Vars.user.home }}/.local/state/workstation-manager-v1/state.json":
+    exists: true
+    contents:
+      - '"managed": true'
+      - '"user": "{{ .Vars.user.name }}"'
+  "{{ .Vars.user.home }}/.config/chezmoi/chezmoi.yaml":
+    exists: true
+    contents:
+      - "workstation_manager:"
+      - "name: {{ .Vars.user.name }}"
+      - "projects_directory: {{ .Vars.user.home }}/Documents/dev-projects"
+  "{{ .Vars.user.home }}/.local/share/chezmoi":
+    exists: true
+    filetype: directory
+  "{{ .Vars.user.home }}/.local/share/chezmoi/.git":
+    exists: true
+    filetype: directory
+  "{{ .Vars.user.home }}/.local/share/chezmoi/.git/config":
+    exists: true
+    contents:
+      - '[remote "origin"]'
+      - workstation-config
+  "{{ .Vars.user.home }}/.oh-my-zsh/oh-my-zsh.sh":
+    exists: true
+    filetype: file
+    owner: "{{ .Vars.user.name }}"
+  "{{ .Vars.user.home }}/Documents/dev-projects/client-restore/project.txt":
+    exists: true
+    filetype: file
+    contents:
+      - restored-project
+  "{{ .Vars.user.home }}/Documents/dev-projects/client-restore/local-note.txt":
+    exists: true
+    filetype: file
+    contents:
+      - local-untracked
+  "{{ .Vars.user.home }}/Documents/dev-projects/client-restore/tracked.txt":
+    exists: true
+    filetype: file
+    contents:
+      - remote-base
+      - local-change
+  "{{ .Vars.user.home }}/Documents/dev-projects/client-restore/.git":
+    exists: true
+    filetype: directory
+  "{{ .Vars.user.home }}/dev-projects/client-restore":
+    exists: false
+  "{{ .Vars.user.home }}/.config/workstation-manager/restore-fixture.txt":
+    exists: true
+    filetype: file
+    contents:
+      - managed-config-fixture
+  "{{ .Vars.user.home }}/.gnupg":
+    exists: true
+    filetype: directory
+    mode: "0700"
+  "{{ .Vars.user.home }}/.local/share/workstation-manager/bleachbit-clean.py":
+    exists: true
+    mode: "0644"
+  "{{ .Vars.user.home }}/.local/bin/workstation-manager-bleachbit-clean-activate-timer":
+    exists: true
+    filetype: file
+    mode: "0755"
+  "{{ .Vars.user.home }}/.config/systemd/user/workstation-manager-bleachbit-clean.service":
+    exists: true
+    contents:
+      - ExecStart=%h/.local/bin/workstation-manager-bleachbit-clean
+  "{{ .Vars.user.home }}/.config/systemd/user/workstation-manager-bleachbit-clean.timer":
+    exists: true
+    contents:
+      - OnCalendar=weekly
+      - Persistent=true
+  "{{ .Vars.user.home }}/.config/systemd/user/timers.target.wants/workstation-manager-bleachbit-clean.timer":
+    exists: true
+    filetype: symlink
+  "{{ .Vars.user.home }}/.config/autostart/workstation-manager-bleachbit-clean.desktop":
+    exists: true
+    contents:
+      - X-GNOME-Autostart-enabled=true
+  "{{ .Vars.user.home }}/.local/share/workstation-manager/git-project-report.py":
+    exists: true
+    mode: "0644"
+  "{{ .Vars.user.home }}/.local/bin/workstation-manager-git-project-report-activate-timer":
+    exists: true
+    filetype: file
+    mode: "0755"
+  "{{ .Vars.user.home }}/.config/systemd/user/workstation-manager-git-project-report.service":
+    exists: true
+    contents:
+      - ExecStart=%h/.local/bin/workstation-manager-git-project-report
+  "{{ .Vars.user.home }}/.config/systemd/user/workstation-manager-git-project-report.timer":
+    exists: true
+    contents:
+      - OnCalendar=daily
+      - Persistent=true
+  "{{ .Vars.user.home }}/.config/systemd/user/timers.target.wants/workstation-manager-git-project-report.timer":
+    exists: true
+    filetype: symlink
+  "{{ .Vars.user.home }}/.config/autostart/workstation-manager-git-project-report.desktop":
+    exists: true
+  "{{ .Vars.user.home }}/.local/share/workstation-manager/git_project_notification.py":
+    exists: true
+    mode: "0644"
+  "{{ .Vars.user.home }}/.local/share/applications/io.github.neilime.WorkstationGitReport.desktop":
+    exists: true
+    contents:
+      - DBusActivatable=true
+      - X-GNOME-UsesNotifications=true
+  "{{ .Vars.user.home }}/.local/share/dbus-1/services/io.github.neilime.WorkstationGitReport.service":
+    exists: true
+    contents:
+      - Name=io.github.neilime.WorkstationGitReport
+command:
+  chezmoi-tracked-revision:
+    exec:
+      test "$(git -C "$HOME/.local/share/chezmoi" rev-parse HEAD)" = "$(git -C "$HOME/.local/share/chezmoi"
+      rev-parse "@{upstream}")" && test -z "$(git -C "$HOME/.local/share/chezmoi" status --porcelain --untracked-files=all)"
+    exit-status: 0
+    timeout: 10000
+  chezmoi-rendered-shell:
+    exec:
+      chezmoi --config "$HOME/.config/chezmoi/chezmoi.yaml" --source "$HOME/.local/share/chezmoi" --destination
+      "$HOME" verify "$HOME/.zshrc"
+    exit-status: 0
+    timeout: 30000
+  oh-my-zsh-clean:
+    exec: git -C "$HOME/.oh-my-zsh" diff --exit-code
+    exit-status: 0
+    timeout: 10000
+  oh-my-zsh-signoff-aliases:
+    exec:
+      'zsh -dfc ''export ZSH="$HOME/.oh-my-zsh"; ZSH_THEME=""; plugins=(git); zstyle ":omz:update" mode disabled;
+      . "$ZSH/oh-my-zsh.sh"; alias gcasm; alias "gcans!"'' '
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - git commit --all --signoff --message
+      - --signoff --no-edit --amend
+  restored-git-origin:
+    exec: git -C "$HOME/Documents/dev-projects/client-restore" remote get-url origin
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^file:///tmp/workstation-manager-e2e-origin-client-restore.git$/
+  restored-git-branch:
+    exec: git -C "$HOME/Documents/dev-projects/client-restore" branch --show-current
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^main$/
+  ssh-restored-key-permissions:
+    exec: |-
+      set -eu
+      found=0
+      for public in "$HOME"/.ssh/*.pub; do
+        test -f "$public" || continue
+        found=1
+        test -f "${public%.pub}"
+        test "$(stat -c %a "${public%.pub}")" = 600
+        test "$(stat -c %a "$public")" = 644
+      done
+      test "$found" = 1
+    exit-status: 0
+    timeout: 10000
+  gpg-restored-secret-keys:
+    exec: gpg --batch --with-colons --list-secret-keys
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^sec:/
+  gpg-restored-keys:
+    exec: gpg --batch --with-colons --list-keys
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^pub:/
+  git-signing-key:
+    exec:
+      test -n "$(git config --get user.signingkey)" && gpg --batch --with-colons --list-secret-keys "$(git config
+      --get user.signingkey)"
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^sec:/
+  commit.gpgsign:
+    exec: git config --get commit.gpgsign
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^true$/
+  tag.gpgsign:
+    exec: git config --get tag.gpgsign
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^true$/
+  gpg.format:
+    exec: git config --get gpg.format
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^openpgp$/
+  bleachbit-timer-enabled:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus systemctl --user is-enabled workstation-manager-bleachbit-clean.timer
+    exit-status: 0
+    timeout: 10000
+  bleachbit-timer-active:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus systemctl --user is-active workstation-manager-bleachbit-clean.timer
+    exit-status: 0
+    timeout: 10000
+  gio-runtime:
+    exec: /usr/bin/python3 -c 'from gi.repository import Gio'
+    exit-status: 0
+    timeout: 10000
+  git-project-change-summary:
+    exec:
+      "set -eu\ncount=$(git -C \"$HOME/Documents/dev-projects/client-restore\" status --porcelain --untracked-files=all\
+      \ | wc -l)\ntest \"$count\" -ge 2\nreport=$(\"$HOME/.local/bin/workstation-manager-git-project-report\")\n\
+      printf '%s\\n' \"$report\" | grep -F -- \"- client-restore [main]: $count changed files\"\n! printf '%s\\\
+      n' \"$report\" | grep -E 'local-note.txt|tracked.txt' "
+    exit-status: 0
+    timeout: 10000

@@ -74,6 +74,11 @@
     url: https://bitwarden.com/download/?app=cli&platform=linux
     dest: /tmp/bitwarden-cli-linux.zip
     mode: "0644"
+    timeout: 60
+  register: bitwarden_collection_download
+  until: bitwarden_collection_download is succeeded
+  retries: 2
+  delay: 5
   when:
     - bitwarden_collection_cli.rc != 0
     - not (ansible_check_mode or (workstation_backup_dry_run | default(false)))

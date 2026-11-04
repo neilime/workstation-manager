@@ -95,7 +95,7 @@ more specific `AGENTS.md` files when working in their directories.
   pins that need editing on each upgrade. Document update ownership in the
   [dependency update guide](docs/development/dependencies.md).
 - Coordinate runtime upgrades across `docker/tooling/Dockerfile`,
-  `docker/tooling/requirements.txt`, `e2e-tests/requirements.txt`, collection
+  `docker/tooling/requirements.txt`, `e2e-tests/goss.json`, collection
   metadata, `Makefile`, and CI wherever affected. The test Python version must
   agree with the tooling image.
 - Maintain the existing Renovate and Dependabot coverage when adding or moving
