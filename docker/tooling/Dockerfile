@@ -21,6 +21,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     bash \
     dbus-daemon \
+    curl \
     git \
     libglib2.0-bin \
     locales \
@@ -45,12 +46,20 @@ ENV PATH="/opt/tooling/venv/bin:${PATH}"
 COPY ansible/requirements.txt /opt/ansible/requirements.txt
 COPY ansible/ubuntu-version /opt/ansible/ubuntu-version
 COPY docker/tooling/requirements.txt /opt/docker/tooling/requirements.txt
-COPY e2e-tests/requirements.txt /opt/e2e-tests/requirements.txt
 RUN . /etc/os-release && test "$VERSION_ID" = "$(cat /opt/ansible/ubuntu-version)" && \
     python3 -m venv /opt/tooling/venv && \
     pip install --no-cache-dir \
-    -r /opt/docker/tooling/requirements.txt \
-    -r /opt/e2e-tests/requirements.txt
+    -r /opt/docker/tooling/requirements.txt
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY e2e-tests/goss.json /opt/goss.json
+RUN version="$(python3 -c 'import json; print(json.load(open("/opt/goss.json"))["version"])')" && \
+    digest="$(python3 -c 'import json; print(json.load(open("/opt/goss.json"))["sha256"])')" && \
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+    "https://github.com/goss-org/goss/releases/download/v${version}/goss_${version}_linux_x86_64.tar.gz" -o /tmp/goss.tar.gz && \
+    printf '%s  /tmp/goss.tar.gz\n' "$digest" | sha256sum --check --status && \
+    tar -xzf /tmp/goss.tar.gz -C /usr/local/bin goss && \
+    chmod 0755 /usr/local/bin/goss && rm /tmp/goss.tar.gz
 
 COPY ansible/collections/requirements.yml /opt/ansible/requirements.yml
 RUN ansible-galaxy collection install -r /opt/ansible/requirements.yml -p /opt/ansible/collections
@@ -58,5 +67,5 @@ RUN ansible-galaxy collection install -r /opt/ansible/requirements.yml -p /opt/a
 HEALTHCHECK --interval=5m --timeout=10s --start-period=30s --retries=3 CMD ["python", "--version"]
 
 WORKDIR /workspace
-USER tooling
+USER ${TOOLING_UID}:${TOOLING_GID}
 CMD ["bash"]

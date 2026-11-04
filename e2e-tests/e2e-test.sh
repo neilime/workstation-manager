@@ -32,28 +32,12 @@ if [[ "$stage" != all && "$stage" != finish && -n "${E2E_SUITE_DEADLINE:-}" ]]; 
 		env -u E2E_SUITE_DEADLINE bash "$0" "$vm_name" "$stage"
 fi
 
-ssh_host="lima-${vm_name}"
-tooling_image="${TOOLING_IMAGE:-workstation-manager-tooling:local}"
-host_home="${HOME}"
-lima_home="${LIMA_HOME:-$host_home/.lima}"
-workspace_dir="$(cd -- "$script_dir/.." && pwd)"
-ssh_config_path="${lima_home}/${vm_name}/ssh.config"
 report_dir="${REPORTS_DIR:-}"
 screenshot_dir="${SCREENSHOTS_DIR:-${report_dir:-.reports}/screenshots}"
 screenshot_status_path="$screenshot_dir/e2e-setup-desktop.status"
 cleanup_phase_timeout_seconds="${E2E_CLEANUP_PHASE_TIMEOUT_SECONDS:-720}"
-setup_test_paths=()
 
 E2E_VM_NAME="$vm_name"
-
-for test_path in e2e-tests/test_*.py; do
-	case "$(basename "$test_path")" in
-	test_backup.py | test_cleanup.py) ;;
-	*)
-		setup_test_paths+=("$test_path")
-		;;
-	esac
-done
 
 capture_phase_screenshot() {
 	local phase_name="$1"
@@ -76,35 +60,7 @@ capture_phase_screenshot() {
 }
 
 run_phase_tests() {
-	local phase_name="$1"
-	local phase_report_option=()
-	local phase_report_file=""
-	shift
-
-	if [[ -n "$report_dir" ]]; then
-		phase_report_file="$report_dir/tests/e2e-${phase_name}.junit.xml"
-		mkdir -p "$(dirname "$phase_report_file")"
-		phase_report_option=("--junitxml=/workspace/$phase_report_file")
-	fi
-
-	docker run --rm \
-		--network host \
-		--user "$(id -u):$(id -g)" \
-		--env HOME=/tmp \
-		--env XDG_CACHE_HOME=/tmp/.cache \
-		--volume /etc/passwd:/etc/passwd:ro \
-		--volume /etc/group:/etc/group:ro \
-		--volume "$workspace_dir:/workspace" \
-		--volume "$lima_home:$lima_home:ro" \
-		--workdir /workspace \
-		"$tooling_image" \
-		bash /workspace/e2e-tests/run-assertions.sh "$ssh_config_path" \
-		-q \
-		--durations=10 \
-		-o cache_dir=/tmp/pytest-cache \
-		--hosts="ssh://$ssh_host" \
-		"${phase_report_option[@]}" \
-		"$@"
+	bash "$script_dir/run-assertions.sh" "$vm_name" "$1"
 }
 
 run_setup_action() {
@@ -112,6 +68,15 @@ run_setup_action() {
 	local capture_status=0
 
 	bash "$script_dir/e2e-setup.sh" "$vm_name" act || setup_status=$?
+	if [[ $setup_status -eq 0 ]]; then
+		# Restart in Act so concurrent Goss checks observe a stable native daemon.
+		run_e2e_lima_shell sudo -n systemctl restart docker.service || setup_status=$?
+	fi
+	if [[ $setup_status -eq 0 ]]; then
+		# Expand HOME inside the guest, not on the controller.
+		# shellcheck disable=SC2016
+		run_e2e_lima_shell sh -c '"$HOME/.local/bin/workstation-manager-bleachbit-clean"' || setup_status=$?
+	fi
 	if [[ $setup_status -eq 0 ]]; then
 		restart_e2e_desktop_session || setup_status=$?
 	fi
@@ -192,7 +157,7 @@ backup-arrange | backup-act | setup-arrange | cleanup-arrange)
 	;;
 setup-act) run_setup_action ;;
 cleanup-act) run_cleanup_action ;;
-backup-assert) run_phase_tests backup e2e-tests/test_backup.py ;;
-setup-assert) run_phase_tests setup "${setup_test_paths[@]}" ;;
-cleanup-assert) run_phase_tests cleanup e2e-tests/test_cleanup.py ;;
+backup-assert) run_phase_tests backup ;;
+setup-assert) run_phase_tests setup ;;
+cleanup-assert) run_phase_tests cleanup ;;
 esac

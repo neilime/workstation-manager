@@ -1,2 +1,0 @@
-pytest>=9.1.1,<10
-pytest-testinfra>=10.2.2,<11

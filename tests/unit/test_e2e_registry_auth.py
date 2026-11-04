@@ -46,7 +46,10 @@ def test_ci_stages_limit_credentials_to_actions_that_need_external_authenticatio
         assert credentials == expected, stage
         observed.add(stage)
     assert authenticated.issubset(observed)
-    assert {"backup-assert", "setup-assert", "cleanup-assert", "finish"}.issubset(observed)
+    assert "finish" in observed
+    for step in job["steps"]:
+        if "/actions/vm/test@" in step.get("uses", ""):
+            assert not step.get("env", {})
 
 
 def test_ci_finishes_fixtures_and_requires_verified_browser_removal_before_vm_deletion():
@@ -56,9 +59,14 @@ def test_ci_finishes_fixtures_and_requires_verified_browser_removal_before_vm_de
     finish = next(step for step in steps if shlex.split(step.get("run", "")) == ["make", "e2e-stage", "STAGE=finish"])
     teardown = next(step for step in steps if shlex.split(step.get("run", "")) == ["make", "e2e-leave"])
     destroy = next(step for step in steps if "/actions/vm/destroy@" in step.get("uses", ""))
-    reports = next(step for step in steps if "e2e-*.junit.xml" in step.get("with", {}).get("report-paths", ""))
-    assert steps.index(finish) < steps.index(reports) < steps.index(teardown) < steps.index(destroy)
-    assert reports["if"] == "${{ always() }}"
+    assertions = [step for step in steps if "/actions/vm/test@" in step.get("uses", "")]
+    assert len(assertions) == 3
+    assert steps.index(assertions[-1]) < steps.index(finish) < steps.index(teardown) < steps.index(destroy)
+    for step in assertions:
+        assert step["with"]["vm"] == "${{ steps.vm.outputs.vm }}"
+        assert (ROOT / step["with"]["goss-file"]).is_file()
+        if not step["with"]["goss-file"].endswith("backup.yaml"):
+            assert step["with"]["goss-vars"] == ".reports/goss/vars.json"
     for step in (finish, teardown):
         assert step["if"] == "${{ always() && steps.vm.outcome == 'success' }}"
         assert step["env"]["LIMA_HOME"] == "${{ steps.vm.outputs.vm }}"
@@ -68,7 +76,7 @@ def test_ci_finishes_fixtures_and_requires_verified_browser_removal_before_vm_de
         "(steps.vm.outcome != 'success' || steps.browser-teardown.outcome == 'success') }}"
     )
     assert destroy["with"]["vm"] == "${{ steps.vm.outputs.vm }}"
-    for step in (finish, reports, teardown, destroy):
+    for step in (*assertions, finish, teardown, destroy):
         assert not step.get("continue-on-error", False)
 
 

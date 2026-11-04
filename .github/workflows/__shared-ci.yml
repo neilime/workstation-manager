@@ -124,7 +124,7 @@ jobs:
           persist-credentials: false
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # 0.2.0
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
         with:
           ansible-requirements: ansible/requirements.txt
           collection: ${{ matrix.collection }}
@@ -268,11 +268,12 @@ jobs:
             --repository "$GITHUB_REPOSITORY" --revision "$(git rev-parse HEAD)" \
             --image "$E2E_BASE_IMAGE" --cpus "$E2E_VM_CPUS" \
             --memory-gib "$E2E_VM_MEMORY_GIB" --output .cache/e2e-vm.json
+          df -h "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
 
       - name: Create e2e VM
         id: vm
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # 0.2.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
         # yamllint enable rule:line-length
         with:
           vm-config: .cache/e2e-vm.json
@@ -319,8 +320,16 @@ jobs:
           BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
         run: make e2e-stage STAGE=backup-act
 
+      - name: Backup - Prepare assertion expectations
+        id: backup-expectations
+        run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" backup
       - name: Backup - Assert
-        run: make e2e-stage STAGE=backup-assert
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        with:
+          vm: ${{ steps.vm.outputs.vm }}
+          goss-file: e2e-tests/goss/backup.yaml
+          test-timeout-minutes: ${{ steps.backup-expectations.outputs.timeout-minutes }}
+          report-name: workstation-manager - Backup assertions
 
       - name: Setup - Arrange archive restoration
         run: make e2e-stage STAGE=setup-arrange
@@ -334,8 +343,17 @@ jobs:
           BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
         run: make e2e-stage STAGE=setup-act
 
+      - name: Setup - Prepare assertion expectations
+        id: setup-expectations
+        run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" setup
       - name: Setup - Assert
-        run: make e2e-stage STAGE=setup-assert
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        with:
+          vm: ${{ steps.vm.outputs.vm }}
+          goss-file: e2e-tests/goss/setup.yaml
+          goss-vars: .reports/goss/vars.json
+          test-timeout-minutes: ${{ steps.setup-expectations.outputs.timeout-minutes }}
+          report-name: workstation-manager - Setup assertions
 
       - name: Cleanup - Arrange preservation fixtures
         run: make e2e-stage STAGE=cleanup-arrange
@@ -348,8 +366,17 @@ jobs:
           BITWARDEN_PASSWORD: ${{ secrets.BITWARDEN_PASSWORD }}
         run: make e2e-stage STAGE=cleanup-act
 
+      - name: Cleanup - Prepare assertion expectations
+        id: cleanup-expectations
+        run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" cleanup
       - name: Cleanup - Assert
-        run: make e2e-stage STAGE=cleanup-assert
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        with:
+          vm: ${{ steps.vm.outputs.vm }}
+          goss-file: e2e-tests/goss/cleanup.yaml
+          goss-vars: .reports/goss/vars.json
+          test-timeout-minutes: ${{ steps.cleanup-expectations.outputs.timeout-minutes }}
+          report-name: workstation-manager - Cleanup assertions
 
       - name: Finish e2e fixtures
         if: ${{ always() && steps.vm.outcome == 'success' }}
@@ -357,13 +384,6 @@ jobs:
           LIMA_HOME: ${{ steps.vm.outputs.vm }}
           VM_NAME: ${{ steps.vm.outputs.name }}
         run: make e2e-stage STAGE=finish
-
-      - name: Parse e2e reports
-        if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@44f6108cef0e9884ea7735f3d62932c2310745d4 # 0.39.1
-        with:
-          report-paths: .reports/tests/e2e-*.junit.xml
-          report-name: End-to-End Validation
 
       - name: Upload e2e desktop screenshot
         id: upload-e2e-desktop-screenshot
@@ -407,7 +427,7 @@ jobs:
           ${{ always() && steps.vm.outputs.vm != '' &&
             (steps.vm.outcome != 'success' || steps.browser-teardown.outcome == 'success') }}
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@5c4b7307d7a2c58a01a3b62607cebde65f96b0a2 # 0.2.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
         # yamllint enable rule:line-length
         with:
           vm: ${{ steps.vm.outputs.vm }}

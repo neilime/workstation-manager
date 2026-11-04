@@ -1,0 +1,79 @@
+---
+command:
+  browser-sync-automation:
+    exec: python3 /workspace/e2e-tests/browser_sync_smoke.py
+    exit-status: 0
+    timeout: 180000
+  browser-command:
+    exec: command -v brave-browser
+    exit-status: 0
+    timeout: 10000
+  default-x-scheme-handler/http:
+    exec: env XDG_CURRENT_DESKTOP=ubuntu:GNOME xdg-mime query default x-scheme-handler/http
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^brave-browser.desktop$/
+  default-x-scheme-handler/https:
+    exec: env XDG_CURRENT_DESKTOP=ubuntu:GNOME xdg-mime query default x-scheme-handler/https
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^brave-browser.desktop$/
+  default-text/html:
+    exec: env XDG_CURRENT_DESKTOP=ubuntu:GNOME xdg-mime query default text/html
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^brave-browser.desktop$/
+  browser-sync-only-policy:
+    exec: "jq -e '. == {SyncDisabled: false}' /etc/brave/policies/managed/workstation-manager.json >/dev/null"
+    exit-status: 0
+    timeout: 10000
+  browser-native-profile-registry:
+    exec: |-
+      python3 - <<'PYTHON'
+      import json, os
+      from pathlib import Path
+      root = Path.home() / '.config/BraveSoftware/Brave-Browser'
+      profiles = json.loads((root / 'Local State').read_text())['profile']['info_cache']
+      assert profiles
+      for directory, metadata in profiles.items():
+          profile = root / directory
+          assert profile.is_dir() and profile.stat().st_uid == os.getuid()
+          preferences = json.loads((profile / 'Preferences').read_text())
+          assert metadata['name'] and preferences['profile']['name'] == metadata['name']
+      PYTHON
+    exit-status: 0
+    timeout: 10000
+file:
+  /etc/apt/sources.list.d/brave-browser-release.sources:
+    exists: true
+    contents:
+      - https://brave-browser-apt-release.s3.brave.com/
+      - "Signed-By: /usr/share/keyrings/brave-browser-archive-keyring.gpg"
+  /usr/share/keyrings/brave-browser-archive-keyring.gpg:
+    exists: true
+  "{{ .Vars.user.home }}/.config/mimeapps.list":
+    exists: true
+    contents:
+      - x-scheme-handler/http=brave-browser.desktop
+      - x-scheme-handler/https=brave-browser.desktop
+      - text/html=brave-browser.desktop
+  "{{ .Vars.user.home }}/.config/ubuntu-mimeapps.list":
+    exists: true
+    contents:
+      - x-scheme-handler/http=brave-browser.desktop
+      - x-scheme-handler/https=brave-browser.desktop
+      - text/html=brave-browser.desktop
+  "{{ .Vars.user.home }}/.config/gnome-mimeapps.list":
+    exists: true
+    contents:
+      - x-scheme-handler/http=brave-browser.desktop
+      - x-scheme-handler/https=brave-browser.desktop
+      - text/html=brave-browser.desktop
+  /etc/brave/policies/managed/workstation-manager.json:
+    exists: true
+    owner: root
+    group: root
+    mode: "0644"

@@ -72,3 +72,12 @@ extraction tests for moved or added handlers. Renovate branch-update errors fail
 the workflow; inspect its logs for the dependency and file. Keep guides focused
 on the supported configuration. Record decisions and dated upgrade evidence in
 [ADRs](adr/README.md).
+
+## VM assertion framework
+
+Goss owns the backup, setup and cleanup VM assertions. The local tooling image
+reads its version and archive SHA-256 from [goss.json](../../e2e-tests/goss.json);
+Renovate updates both together from upstream release attachments. CI uses the
+verifier owned by the pinned shared VM action. Keep those reviewed versions aligned.
+Pytest remains in [tooling requirements](../../docker/tooling/requirements.txt)
+for Python unit and integration tests.

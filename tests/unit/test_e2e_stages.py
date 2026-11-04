@@ -18,15 +18,18 @@ def suite_fixture(tmp_path: pathlib.Path):
     scripts = tmp_path / "e2e-tests"
     scripts.mkdir()
     (scripts / "e2e-test.sh").write_bytes((E2E_PATH / "e2e-test.sh").read_bytes())
-    for name in ("backup", "cleanup", "desktop", "new_feature"):
-        (scripts / f"test_{name}.py").touch()
     (scripts / "e2e-common.sh").write_text(
         (E2E_PATH / "e2e-common.sh").read_text()
         + r"""
 restart_e2e_desktop_session() { :; }
 wait_for_e2e_clipboard_extension() { :; }
 print_e2e_desktop_diagnostics() { printf 'desktop-diagnostics\n' >>"$TEST_TRACE"; return 43; }
-run_e2e_lima_shell() { printf 'browser-diagnostics\n' >>"$TEST_TRACE"; return 44; }
+run_e2e_lima_shell() {
+    case "$*" in
+        *browser_sync_diagnostics.py*) printf 'browser-diagnostics\n' >>"$TEST_TRACE"; return 44;;
+        *) return 0;;
+    esac
+}
 capture_e2e_vm_desktop() {
     printf 'screenshot\n' >>"$TEST_TRACE"
     printf image >"$2/$1.png"
@@ -43,23 +46,15 @@ printf '%s\n' "$phase" >>"$TEST_TRACE"
 if [[ "$phase" == "$TEST_SLOW_STAGE" ]]; then sleep 30; fi
 """
         )
-    docker = tmp_path / "docker"
-    docker.write_text(
+    (scripts / "run-assertions.sh").write_text(
         r"""#!/bin/bash
 set -euo pipefail
-phase=setup-assert
-for argument in "$@"; do
-    case "$argument" in
-        e2e-tests/test_backup.py) phase=backup-assert ;;
-        e2e-tests/test_cleanup.py) phase=cleanup-assert ;;
-    esac
-done
+phase="$2-assert"
 printf '%s\n' "$phase" >>"$TEST_TRACE"
 printf '%s\n' "$@" >"$TEST_ARGUMENTS/$phase"
 [[ "$phase" != "$TEST_FAILURE" ]] || exit 31
 """
     )
-    docker.chmod(0o700)
     arguments = tmp_path / "arguments"
     arguments.mkdir()
     trace = tmp_path / "trace"
@@ -102,26 +97,9 @@ def test_separate_stages_match_full_flow_and_select_all_assertions(suite):
         result = run(stage)
         assert result.returncode == 0, result.stderr
     assert trace.read_text().splitlines() == complete_trace
-    for phase, expected in (
-        ("backup", ["e2e-tests/test_backup.py"]),
-        ("setup", ["e2e-tests/test_desktop.py", "e2e-tests/test_new_feature.py"]),
-        ("cleanup", ["e2e-tests/test_cleanup.py"]),
-    ):
+    for phase in ("backup", "setup", "cleanup"):
         arguments = (fixture / "arguments" / f"{phase}-assert").read_text().splitlines()
-        assert [argument for argument in arguments if argument.startswith("e2e-tests/test_")] == expected
-        assert f"--junitxml=/workspace/reports/tests/e2e-{phase}.junit.xml" in arguments
-
-
-def test_assertions_use_the_selected_vm_runtime_for_ssh(suite):
-    """Host assertions can reach a VM created outside the default Lima home."""
-    run, fixture, _ = suite
-    runtime = str(fixture / "isolated runtime")
-    result = run("backup-assert", LIMA_HOME=runtime)
-    assert result.returncode == 0, result.stderr
-    arguments = (fixture / "arguments/backup-assert").read_text().splitlines()
-    assert f"{runtime}:{runtime}:ro" in arguments
-    assert f"{runtime}/fixture/ssh.config" in arguments
-    assert "--hosts=ssh://lima-fixture" in arguments
+        assert arguments == ["fixture", phase]
 
 
 @pytest.mark.parametrize("failed_stage", ["backup-arrange", "setup-act", "setup-assert", "cleanup-act"])

@@ -1,11 +1,10 @@
-"""Shared plugin discovery and configuration fixtures for local and VM tests."""
+"""Shared plugin discovery and configuration fixtures for Python tests."""
 
 from pathlib import Path
 
 import pytest
 from ansible.parsing.dataloader import DataLoader
 from ansible.plugins.loader import init_plugin_loader
-from ansible.utils.vars import merge_hash
 
 
 def pytest_configure() -> None:
@@ -31,23 +30,3 @@ def private_overrides():
             }
         },
     }
-
-
-@pytest.fixture(scope="module")
-def workstation_config(host, public_defaults):
-    """Compare VM state with public defaults and the private override used by the fixture."""
-    # Collection imports must follow pytest_configure's Ansible namespace registration.
-    # pylint: disable=import-outside-toplevel
-    from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state import (
-        DesiredStateConfigNormalizer,
-    )
-
-    user = host.user()
-    path = f"{user.home}/.local/state/workstation-manager/e2e/private.override.yml"
-    override_file = host.file(path)
-    overrides = (DataLoader().load(override_file.content_string) or {}) if override_file.exists else {}
-    normalizer = DesiredStateConfigNormalizer()
-    merged = merge_hash(public_defaults, overrides, list_merge="replace")
-    return normalizer.normalize(
-        merged, {"WORKSTATION_MANAGER_USER": user.name, "WORKSTATION_MANAGER_USER_HOME": user.home}
-    )
