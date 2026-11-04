@@ -3,6 +3,18 @@
 These instructions apply to the entire `workstation-manager` repository. Follow
 more specific `AGENTS.md` files when working in their directories.
 
+## Writing style and punctuation
+
+- In all content you write, use standard punctuation: straight apostrophes
+  (`'`), straight quotation marks (`"`), short dashes (`-`), regular spaces, and
+  three dots (`...`) for ellipses. Avoid long dashes, curved quotation marks,
+  non-breaking spaces, and unnecessary invisible characters. For parenthetical
+  remarks, use commas, parentheses, or a new sentence.
+- Retain accents, characters necessary for the language, useful symbols, and the
+  requested formatting. Preserve code, commands, links, formulas, and
+  quotations, which must remain accurate. Apply these rules directly as you
+  write, without altering the meaning or intentionally adding errors.
+
 ## Understand the existing codebase
 
 - Read `README.md`, the relevant collection readme, and nearby implementation and
