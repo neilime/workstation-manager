@@ -18,7 +18,7 @@ permissions: {}
 jobs:
   linter:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@44f6108cef0e9884ea7735f3d62932c2310745d4 # 0.39.1
+    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@4a6ed33ba735d57ebbcd89fe8ed35134de599a67 # 0.39.2
     # yamllint enable rule:line-length
     with:
       linter-env: |
@@ -167,7 +167,7 @@ jobs:
 
       - name: Parse host reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@44f6108cef0e9884ea7735f3d62932c2310745d4 # 0.39.1
+        uses: hoverkraft-tech/ci-github-common/actions/parse-ci-reports@4a6ed33ba735d57ebbcd89fe8ed35134de599a67 # 0.39.2
         with:
           report-paths: .reports/tests/unit.junit.xml,.reports/tests/integration.junit.xml
           report-name: Unit and Integration Validation
@@ -405,7 +405,7 @@ jobs:
             && steps.upload-e2e-desktop-screenshot.outputs.artifact-url != ''
           }}
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-common/actions/create-or-update-comment@44f6108cef0e9884ea7735f3d62932c2310745d4 # 0.39.1
+        uses: hoverkraft-tech/ci-github-common/actions/create-or-update-comment@4a6ed33ba735d57ebbcd89fe8ed35134de599a67 # 0.39.2
         # yamllint enable rule:line-length
         with:
           title: "## E2E desktop screenshot"
