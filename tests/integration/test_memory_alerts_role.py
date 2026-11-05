@@ -1,5 +1,7 @@
 """Exercise alert installation with isolated files and a simulated user session."""
 
+# pylint: disable=duplicate-code
+
 from __future__ import annotations
 
 import json

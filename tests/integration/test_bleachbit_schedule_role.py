@@ -1,5 +1,7 @@
 """Verify mandatory weekly BleachBit scheduling with preserved personal presets."""
 
+# pylint: disable=duplicate-code
+
 from __future__ import annotations
 
 import configparser
