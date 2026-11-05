@@ -107,6 +107,12 @@ the Python major/minor read from the resolved tooling image, matching the suppor
 Ubuntu environment and local checks without duplicating a runtime pin. Local
 `make check-ansible` and `make check-collections` remain available.
 
+The memory-alert helper also runs as an installed standalone CLI and shares its
+threshold validation with setup. Its process, output, and exit calls have
+line-scoped `ansible-bad-function` exceptions. Each exception has its own
+`unknown-option-value` guard because Super-Linter's pylint does not load Ansible's
+checker. Validate changes to this helper with both lint and collection sanity.
+
 Unit/integration and VM jobs resolve and reuse the consumer tooling image. Images
 are reused by a fingerprint of the Dockerfile, its copied inputs, ignore files,
 Ubuntu base digest, architecture, and UTC calendar week. A miss builds the image;

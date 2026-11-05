@@ -16,7 +16,23 @@ package:
     installed: true
   gnome-software-plugin-flatpak:
     installed: true
+  libnotify-bin:
+    installed: true
 file:
+  "{{ .Vars.user.home }}/.local/bin/workstation-manager-memory-alerts":
+    exists: true
+    filetype: file
+    owner: "{{ .Vars.user.name }}"
+    mode: "0755"
+  "{{ .Vars.user.home }}/.config/workstation-manager/memory-alerts.json":
+    exists: true
+    filetype: file
+    owner: "{{ .Vars.user.name }}"
+    mode: "0644"
+  "{{ .Vars.user.home }}/.config/systemd/user/graphical-session.target.wants/workstation-manager-memory-alerts.service":
+    exists: true
+    filetype: symlink
+    linked-to: ../workstation-manager-memory-alerts.service
   /usr/share/applications/org.gnome.Ptyxis.desktop:
     exists: true
   "{{ .Vars.user.home }}/Documents/dev-projects":
@@ -44,6 +60,29 @@ file:
     exists: true
     sha256: "{{ .Vars.desktop.system_monitor.sha256 }}"
 command:
+  memory-alerts-status:
+    exec: '"$HOME/.local/bin/workstation-manager-memory-alerts" --status'
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "RAM available:"
+      - "Memory stalls (last 10 seconds):"
+  memory-alerts-active:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus systemctl --user is-active workstation-manager-memory-alerts.service
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - /^active$/
+  memory-alerts-notification:
+    exec:
+      env XDG_RUNTIME_DIR=/run/user/{{ .Vars.uid }} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{ .Vars.uid
+      }}/bus "$HOME/.local/bin/workstation-manager-memory-alerts" --test-notification
+    exit-status: 0
+    timeout: 10000
+    stdout:
+      - "Memory alerts test:"
   wallpaper-source:
     exec: cmp "$HOME/.local/share/backgrounds/wallpaper.jpg" "$HOME/.local/share/chezmoi/home/dot_local/share/backgrounds/wallpaper.jpg"
     exit-status: 0

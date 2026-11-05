@@ -321,6 +321,10 @@ Setup enables Vitals in the GNOME top bar. Manage its preferences through
 Vitals uses its defaults. Log out and back in after installing or updating GNOME
 extensions; setup preserves unrelated extensions.
 
+Setup also enables [memory alerts](memory-alerts.md) for low available RAM and
+sustained memory stalls. Adjust thresholds with `desktop.memory_alerts`; the
+monitor only sends notifications and leaves running work untouched.
+
 Use Simple Scan for scanning. Verify actual device access with `scanimage -L` and
 a scan; package installation cannot establish hardware compatibility.
 

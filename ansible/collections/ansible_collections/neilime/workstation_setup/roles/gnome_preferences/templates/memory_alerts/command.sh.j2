@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+exec /usr/bin/python3 "$HOME/.local/share/workstation-manager/memory-alerts.py" \
+	--config "$HOME/.config/workstation-manager/memory-alerts.json" \
+	"$@"
