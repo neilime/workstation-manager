@@ -27,7 +27,9 @@ def test_normalize_returns_default_flatpak_desktop_configuration(with_tool_versi
     assert normalized["desktop"]["browser"] == "brave"
 
 
-def test_normalize_preserves_declared_flatpak_apps_separately_from_browser(with_tool_versions) -> None:
+def test_normalize_preserves_declared_flatpak_apps_separately_from_browser(
+    with_tool_versions,
+) -> None:
     """Flatpak application data should stay separate from browser profile data."""
 
     # Arrange
@@ -104,7 +106,7 @@ def test_managed_gnome_extension_requires_pins(with_tool_versions, extension, fi
 
 @pytest.mark.parametrize("extension", ["clipboard_indicator", "system_monitor"])
 def test_managed_gnome_extension_rejects_placeholder_digest(with_tool_versions, extension):
-    """An all-zero digest must fail during configuration validation before any workstation changes."""
+    """An all-zero digest must fail during configuration validation before any changes."""
     config = with_tool_versions({"desktop": {extension: {"sha256": "0" * 64}}})
     with pytest.raises(ValueError, match=rf"desktop\.{extension}\.sha256.*all-zero placeholder"):
         DesiredStateConfigNormalizer().normalize(config)
@@ -120,3 +122,38 @@ def test_duplicate_flatpak_scanner_is_rejected(with_tool_versions):
                 }
             )
         )
+
+
+def test_memory_alert_defaults_match_public_configuration(with_tool_versions, public_defaults):
+    """Fallback normalization and setup must agree on the alert thresholds."""
+    resolved = DesiredStateConfigNormalizer().normalize(with_tool_versions({}))
+    assert resolved["desktop"]["memory_alerts"] == public_defaults["desktop"]["memory_alerts"]
+
+
+def test_memory_alert_override_preserves_other_defaults(with_tool_versions, public_defaults):
+    """A partial personal override must retain the other validated thresholds."""
+    override = {"available_warning_percent": 35}
+    resolved = DesiredStateConfigNormalizer().normalize(with_tool_versions({"desktop": {"memory_alerts": override}}))
+    assert resolved["desktop"]["memory_alerts"] == {
+        **public_defaults["desktop"]["memory_alerts"],
+        **override,
+    }
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"available_warning_percent": True},
+        {"available_critical_percent": "10"},
+        {"available_critical_percent": 0},
+        {"pressure_warning_percent": float("nan")},
+        {"pressure_critical_percent": 101},
+        {"available_critical_percent": 50},
+        {"pressure_warning_percent": 50},
+        {"kill_processes": True},
+    ],
+)
+def test_memory_alert_invalid_thresholds_fail_before_setup(with_tool_versions, override):
+    """Reject malformed values, crossed thresholds, and unsupported behavior."""
+    with pytest.raises(ValueError, match="memory_alerts"):
+        DesiredStateConfigNormalizer().normalize(with_tool_versions({"desktop": {"memory_alerts": override}}))

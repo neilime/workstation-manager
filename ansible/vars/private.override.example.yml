@@ -14,6 +14,12 @@
 # Browser Sync cleanup preserves differently named devices by default.
 # Optional desktop.browser_sync_disposable_device_names lists exact extra names to remove.
 # Per-profile bookmark_bar and confirm_close_tabs choices belong in the Bitwarden profile notes.
+# Desktop memory alerts inherit RAM-available and memory-pressure thresholds.
+# Optional desktop.memory_alerts overrides use percentages, for example:
+# desktop:
+#   memory_alerts:
+#     available_warning_percent: 25
+#     available_critical_percent: 12
 development:
   # Docker's credential-helper pin inherits public defaults. GHCR reuses this
   # github.com account with write:packages access; do not put tokens in this file.
