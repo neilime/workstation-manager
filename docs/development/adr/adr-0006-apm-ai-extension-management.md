@@ -113,6 +113,17 @@ adapters for skills. It is low-value today — the workstation targets Copilot a
 Codex — and does not extend to MCP native rendering, which stays coupled to the
 Bitwarden-aware adapters APM cannot own.
 
+For the skills layer specifically, APM already installs deterministically and
+unattended: a dependency pins to an immutable tag or commit SHA, the committed
+`apm.lock.yaml` records the resolved commit and per-file SHA-256 digests, and
+`apm install --frozen` replays those pins without rewriting the lockfile or
+prompting — a documented CI recipe. Interactive prompts are confined to
+`apm update` confirmations and to self-defined MCP servers that need environment
+variables, neither of which touches a skills-only (`--only apm`) install.
+Pinnable, checksum-verified, unattended skill installation is therefore not a
+barrier; the remaining blockers are APM's pre-1.0 stability and the MCP/secret
+split below.
+
 ### Re-evaluation gates
 
 Adopt APM for the skills layer when all of the following hold, and record the
@@ -121,15 +132,12 @@ adoption in a superseding ADR:
 1. APM reaches a stable manifest contract (1.0 or a frozen `apm.yml` and
    `apm.lock.yaml` schema) so breaking changes no longer land on the bootstrap
    path.
-2. A pinnable, checksum-verified, non-interactive install fits the repository's pin
-   ownership, and `apm install` runs fully unattended for the selected skill
-   sources without interactive prompts.
-3. Either a documented path keeps MCP and Bitwarden secrets out of `apm.yml` and
+2. Either a documented path keeps MCP and Bitwarden secrets out of `apm.yml` and
    compatible with resolved-user Bitwarden resolution, or the skills layer is
    adopted without routing MCP through APM.
-4. The workstation targets more assistants than the adapters cover cheaply, so
+3. The workstation targets more assistants than the adapters cover cheaply, so
    multi-target compilation reduces net adapter maintenance.
-5. The change deletes more than it adds: Skillshare and the skill-link rendering
+4. The change deletes more than it adds: Skillshare and the skill-link rendering
    are retired while the MCP, secrets, browser, and orchestration contracts stay
    unchanged.
 
