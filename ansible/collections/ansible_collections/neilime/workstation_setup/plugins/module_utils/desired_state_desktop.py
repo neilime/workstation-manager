@@ -10,6 +10,9 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
     disposable_device_names,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.memory_alerts import (
+    MemoryAlertSettings,
+)
 
 
 # pylint: disable=too-few-public-methods
@@ -20,6 +23,16 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
         """Return the normalized desktop section."""
 
         desktop = self._resolver.mapping(config.get("desktop"), "workstation_manager.desktop")
+        memory_defaults = defaults["memory_alerts"]
+        memory_alerts = {
+            **memory_defaults,
+            **self._resolver.mapping(
+                desktop.get("memory_alerts"),
+                "desktop.memory_alerts",
+                allowed_keys=set(memory_defaults),
+            ),
+        }
+        MemoryAlertSettings(**memory_alerts)
         clipboard = self._pinned_extension(desktop, "clipboard_indicator")
         system_monitor = self._pinned_extension(desktop, "system_monitor")
         flatpak = self._resolver.mapping(desktop.get("flatpak"), "workstation_manager.desktop.flatpak")
@@ -47,6 +60,7 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             )
 
         return {
+            "memory_alerts": memory_alerts,
             "clipboard_indicator": clipboard,
             "system_monitor": system_monitor,
             "flatpak": {

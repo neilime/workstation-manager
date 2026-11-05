@@ -120,3 +120,35 @@ def test_duplicate_flatpak_scanner_is_rejected(with_tool_versions):
                 }
             )
         )
+
+
+def test_memory_alert_defaults_match_public_configuration(with_tool_versions, public_defaults):
+    """Fallback normalization and setup must agree on the alert thresholds."""
+    resolved = DesiredStateConfigNormalizer().normalize(with_tool_versions({}))
+    assert resolved["desktop"]["memory_alerts"] == public_defaults["desktop"]["memory_alerts"]
+
+
+def test_memory_alert_override_preserves_other_defaults(with_tool_versions, public_defaults):
+    """A partial personal override must retain the other validated thresholds."""
+    override = {"available_warning_percent": 35}
+    resolved = DesiredStateConfigNormalizer().normalize(with_tool_versions({"desktop": {"memory_alerts": override}}))
+    assert resolved["desktop"]["memory_alerts"] == {**public_defaults["desktop"]["memory_alerts"], **override}
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"available_warning_percent": True},
+        {"available_critical_percent": "10"},
+        {"available_critical_percent": 0},
+        {"pressure_warning_percent": float("nan")},
+        {"pressure_critical_percent": 101},
+        {"available_critical_percent": 50},
+        {"pressure_warning_percent": 50},
+        {"kill_processes": True},
+    ],
+)
+def test_memory_alert_invalid_thresholds_fail_before_setup(with_tool_versions, override):
+    """Reject malformed values, crossed thresholds, and unsupported behavior."""
+    with pytest.raises(ValueError, match="memory_alerts"):
+        DesiredStateConfigNormalizer().normalize(with_tool_versions({"desktop": {"memory_alerts": override}}))

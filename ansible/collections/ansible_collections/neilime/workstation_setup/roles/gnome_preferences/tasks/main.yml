@@ -16,6 +16,8 @@
       - ptyxis
       - python3-psutil
       - python3-gi
+      - libnotify-bin
+      - procps
     state: latest
     force_apt_get: true
     fail_on_autoremove: true
@@ -53,6 +55,9 @@
 
 - name: Bookmark the projects directory in Files
   ansible.builtin.import_tasks: file_bookmarks.yml
+
+- name: Configure desktop memory alerts
+  ansible.builtin.import_tasks: memory_alerts.yml
 
 - name: Enable GNOME dark mode
   become: "{{ workstation_manager_gnome_use_become_user }}"

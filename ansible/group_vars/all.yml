@@ -36,6 +36,12 @@ workstation_manager:
         net.ipv6.conf.all.disable_ipv6: "1"
         net.ipv6.conf.default.disable_ipv6: "1"
   desktop:
+    memory_alerts:
+      # Notify only: no process termination, throttling, or OOM policy changes.
+      available_warning_percent: 20
+      available_critical_percent: 10
+      pressure_warning_percent: 5
+      pressure_critical_percent: 15
     clipboard_indicator:
       # The managed GNOME clipboard extension; inherit these pins in private overrides.
       version: "71"

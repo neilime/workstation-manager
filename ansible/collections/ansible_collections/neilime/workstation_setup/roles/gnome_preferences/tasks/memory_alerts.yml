@@ -1,0 +1,126 @@
+---
+- name: Ensure memory alert user directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  loop:
+    - .local/bin
+    - .local/share/workstation-manager
+    - .config/workstation-manager
+    - .config/systemd/user
+    - .config/systemd/user/graphical-session.target.wants
+
+- name: Install the memory alert monitor
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../plugins/module_utils/memory_alerts.py"
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/memory-alerts.py"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+  register: workstation_manager_memory_alerts_monitor
+
+- name: Install memory alert thresholds
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    content: "{{ workstation_manager_resolved.desktop.memory_alerts | to_nice_json }}\n"
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/workstation-manager/memory-alerts.json"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+  register: workstation_manager_memory_alerts_config
+
+- name: Install the memory alert command
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: memory_alerts/command.sh.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/workstation-manager-memory-alerts"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  register: workstation_manager_memory_alerts_command
+
+- name: Install the memory alert user service
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: memory_alerts/service.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/workstation-manager-memory-alerts.service"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+  register: workstation_manager_memory_alerts_unit
+
+- name: Enable memory alerts for graphical sessions
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    src: ../workstation-manager-memory-alerts.service
+    dest: >-
+      {{ workstation_manager_resolved.user.home
+      }}/.config/systemd/user/graphical-session.target.wants/workstation-manager-memory-alerts.service
+    state: link
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    force: true
+
+- name: Resolve the memory alert target user id
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv: [id, -u, "{{ workstation_manager_resolved.user.name }}"]
+  register: workstation_manager_memory_alerts_uid
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Inspect the target user session bus
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "/run/user/{{ workstation_manager_memory_alerts_uid.stdout }}/bus"
+  register: workstation_manager_memory_alerts_bus
+  when: not ansible_check_mode
+
+- name: Activate memory alerts in the current graphical session
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ workstation_manager_memory_alerts_uid.stdout }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ workstation_manager_memory_alerts_uid.stdout }}/bus"
+  when:
+    - not ansible_check_mode
+    - workstation_manager_memory_alerts_bus.stat.exists
+  block:
+    - name: Reload the target user manager after installing memory alerts
+      ansible.builtin.systemd_service:
+        scope: user
+        daemon_reload: true
+
+    - name: Check whether the graphical session is active
+      ansible.builtin.command:
+        argv: [systemctl, --user, is-active, --quiet, graphical-session.target]
+      register: workstation_manager_memory_alerts_session
+      changed_when: false
+      failed_when: workstation_manager_memory_alerts_session.rc not in [0, 3, 4]
+
+    - name: Start or update the memory alert service
+      ansible.builtin.systemd_service:
+        name: workstation-manager-memory-alerts.service
+        scope: user
+        state: >-
+          {{ 'restarted' if
+          workstation_manager_memory_alerts_monitor is changed or
+          workstation_manager_memory_alerts_config is changed or
+          workstation_manager_memory_alerts_command is changed or
+          workstation_manager_memory_alerts_unit is changed
+          else 'started' }}
+      when: workstation_manager_memory_alerts_session.rc == 0
+
+- name: Report deferred memory alert activation
+  ansible.builtin.debug:
+    msg: Memory alerts are enabled and will start on the next graphical login.
+  when:
+    - not ansible_check_mode
+    - >-
+      not workstation_manager_memory_alerts_bus.stat.exists or
+      workstation_manager_memory_alerts_session.rc | default(3) != 0
