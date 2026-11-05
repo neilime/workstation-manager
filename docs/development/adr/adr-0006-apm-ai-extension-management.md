@@ -52,7 +52,7 @@ primitives, including MCP servers. `apm install` and `apm compile` render them i
 `apm-policy.yml` governance engine, a hidden-Unicode content scan, SBOM export, a
 headless `apm install --frozen` mode, and a `microsoft/apm-action`. It installs
 non-interactively with a pinned, checksum-verified standalone binary
-(`VERSION=v0.35.0 curl -sSL https://aka.ms/apm-unix | sh`) or `pip install apm-cli`.
+(`curl -sSL https://aka.ms/apm-unix | VERSION=v0.35.0 sh`) or `pip install apm-cli`.
 
 Three properties are decisive for this project:
 
@@ -61,10 +61,12 @@ Three properties are decisive for this project:
   not install the server package, its Node.js or Python runtime, system packages,
   or Playwright browsers, and does not verify that the launcher is present. That
   provisioning is explicitly left to other tooling.
-- **No external secret-manager integration.** Secrets flow as runtime environment
-  references; APM hard-fails if a `token:` key appears in the manifest and prompts
-  interactively for required MCP environment variables that have no default —
-  friction in unattended runs. There is no Bitwarden or Vault integration.
+- **No external secret-manager integration.** Secrets flow as host-environment
+  references in each target's native syntax — resolved by the harness at runtime,
+  or from the environment at install time for harnesses without native
+  interpolation. APM auto-generates interactive prompts for required MCP registry
+  variables (optional ones never prompt), adding friction to unattended runs.
+  There is no Bitwarden, Vault, or credential-helper integration.
 - **Pre-1.0 with frequent breaking changes.** Minor releases ship roughly weekly
   and document `BREAKING` changes; there is no package signing (hash integrity
   only), and the project is Microsoft-hosted open source, not a product with a
@@ -171,6 +173,6 @@ adoption in a superseding ADR:
   secrets, browser, and orchestration contracts in place.
 
 Sources inspected 2026-11-05: APM documentation at <https://microsoft.github.io/apm/>
-and the [`microsoft/apm`](https://github.com/microsoft/apm) repository (v0.35.0) —
-installation, MCP installation, and security guides; Skillshare at
-<https://github.com/runkids/skillshare>.
+and the [`microsoft/apm`](https://github.com/microsoft/apm) repository (v0.35.0) — the
+installation, MCP installation, manifest schema, lockfile, and security guides, plus
+the README and changelog; Skillshare at <https://github.com/runkids/skillshare>.
