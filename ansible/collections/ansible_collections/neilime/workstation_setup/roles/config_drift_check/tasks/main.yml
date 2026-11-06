@@ -1,0 +1,56 @@
+---
+- name: Ensure configuration drift check user directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  loop:
+    - "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager"
+    - "{{ workstation_manager_resolved.user.home }}/.config/autostart"
+    - "{{ workstation_manager_resolved.user.home }}/.config/systemd"
+    - "{{ workstation_manager_resolved.user.home }}/.config/systemd/user"
+    - "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/timers.target.wants"
+
+- name: Install configuration drift check helper
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: config_drift_check/config_drift_check.py
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/config_drift_check.py"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install configuration drift check command wrapper
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: config_drift_check/config-drift-check-wrapper.sh.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/workstation-manager-config-drift-check"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+- name: Resolve target user id for configuration drift timer startup
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - id
+      - -u
+      - "{{ workstation_manager_resolved.user.name }}"
+  register: workstation_manager_config_drift_user_id
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Check whether the target user session bus is available
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: >-
+      /run/user/{{ workstation_manager_config_drift_user_id.stdout }}/bus
+  register: workstation_manager_config_drift_session_bus
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Configure the workstation configuration drift notifications
+  ansible.builtin.import_tasks: notifications.yml

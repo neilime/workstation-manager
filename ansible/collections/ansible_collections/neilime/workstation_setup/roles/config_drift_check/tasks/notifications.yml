@@ -1,0 +1,168 @@
+---
+# Setup updates managed APT packages to their repository candidates.
+- name: Install or update the native GNOME notification dependencies # noqa: package-latest
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.apt:
+    name:
+      - python3-gi
+      - gir1.2-glib-2.0
+    state: latest
+    force_apt_get: true
+    fail_on_autoremove: true
+
+- name: Ensure configuration drift desktop activation directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.local/share/{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  loop:
+    - applications
+    - dbus-1/services
+
+- name: Install the persistent configuration drift notification handler
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: config_drift_check/config_drift_notification.py
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/config_drift_notification.py"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install the configuration drift desktop application
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: config_drift_check/config-drift-notification.desktop.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/applications/io.github.neilime.WorkstationConfigDrift.desktop"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install configuration drift D-Bus activation
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: config_drift_check/config-drift-notification-dbus.service.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/dbus-1/services/io.github.neilime.WorkstationConfigDrift.service"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install configuration drift timer activator
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: config_drift_check/config-drift-check-activate-timer.sh.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/workstation-manager-config-drift-check-activate-timer"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+- name: Install configuration drift user service unit
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: config_drift_check/config-drift-check.service.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/workstation-manager-config-drift-check.service"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install configuration drift user timer unit
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: config_drift_check/config-drift-check.timer.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/workstation-manager-config-drift-check.timer"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Enable configuration drift timer for future sessions
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.file:
+    src: ../workstation-manager-config-drift-check.timer
+    dest: >-
+      {{ workstation_manager_resolved.user.home }}/.config/systemd/user/timers.target.wants/workstation-manager-config-drift-check.timer
+    state: link
+    force: true
+
+- name: Install configuration drift desktop autostart entry
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: config_drift_check/config-drift-check-autostart.desktop.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/autostart/workstation-manager-config-drift-check.desktop"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Reload the target user systemd manager for the configuration drift timer
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - daemon-reload
+  environment:
+    XDG_RUNTIME_DIR: >-
+      /run/user/{{ workstation_manager_config_drift_user_id.stdout }}
+    DBUS_SESSION_BUS_ADDRESS: >-
+      unix:path=/run/user/{{ workstation_manager_config_drift_user_id.stdout }}/bus
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - workstation_manager_config_drift_session_bus is defined
+    - workstation_manager_config_drift_session_bus.stat.exists
+
+- name: Check whether the configuration drift timer is already active
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - is-active
+      - workstation-manager-config-drift-check.timer
+  environment:
+    XDG_RUNTIME_DIR: >-
+      /run/user/{{ workstation_manager_config_drift_user_id.stdout }}
+    DBUS_SESSION_BUS_ADDRESS: >-
+      unix:path=/run/user/{{ workstation_manager_config_drift_user_id.stdout }}/bus
+  register: workstation_manager_config_drift_timer_status
+  changed_when: false
+  failed_when: false
+  when:
+    - not ansible_check_mode
+    - workstation_manager_config_drift_session_bus is defined
+    - workstation_manager_config_drift_session_bus.stat.exists
+
+- name: Start the configuration drift timer in the active desktop session
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - --user
+      - start
+      - workstation-manager-config-drift-check.timer
+  environment:
+    XDG_RUNTIME_DIR: >-
+      /run/user/{{ workstation_manager_config_drift_user_id.stdout }}
+    DBUS_SESSION_BUS_ADDRESS: >-
+      unix:path=/run/user/{{ workstation_manager_config_drift_user_id.stdout }}/bus
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - workstation_manager_config_drift_session_bus is defined
+    - workstation_manager_config_drift_session_bus.stat.exists
+    - workstation_manager_config_drift_timer_status.rc != 0
+
+- name: Report deferred activation for the configuration drift timer
+  ansible.builtin.debug:
+    msg:
+      - Workstation configuration drift timer was installed for the managed user.
+      - The desktop autostart entry will activate it on the next graphical login.
+  when:
+    - not ansible_check_mode
+    - workstation_manager_config_drift_session_bus is defined
+    - not workstation_manager_config_drift_session_bus.stat.exists
