@@ -1,5 +1,9 @@
 """Unit tests for the managed workstation configuration drift helper script."""
 
+# Drift-check tests reuse the git_project_report fixture structure on purpose,
+# so cross-file similarity is expected for this standalone helper.
+# pylint: disable=duplicate-code
+
 from __future__ import annotations
 
 import importlib.util
@@ -19,6 +23,16 @@ SCRIPT_PATH = (
     / "config_drift_check"
     / "config_drift_check.py"
 )
+
+FAKE_CHEZMOI_TEMPLATE = """#!/bin/sh
+for argument in "$@"; do
+  case "$argument" in
+    status) printf '%s' '{status_output}'; exit 0 ;;
+    source-path) printf '%s\\n' "$FAKE_SOURCE"; exit 0 ;;
+  esac
+done
+exit 0
+"""
 
 
 def load_script_module(path=SCRIPT_PATH) -> ModuleType:
@@ -57,17 +71,7 @@ def write_fake_chezmoi(path: pathlib.Path, status_lines: int) -> pathlib.Path:
 
     status_output = "".join(f" M dot_file_{index}\n" for index in range(status_lines))
     script = path / "chezmoi"
-    script.write_text(
-        "#!/bin/sh\n"
-        "for argument in \"$@\"; do\n"
-        "  case \"$argument\" in\n"
-        f"    status) printf '%s' '{status_output}'; exit 0 ;;\n"
-        "    source-path) printf '%s\\n' \"$FAKE_SOURCE\"; exit 0 ;;\n"
-        "  esac\n"
-        "done\n"
-        "exit 0\n",
-        encoding="utf-8",
-    )
+    script.write_text(FAKE_CHEZMOI_TEMPLATE.format(status_output=status_output), encoding="utf-8")
     script.chmod(0o755)
     return script
 
@@ -211,14 +215,10 @@ def test_build_notification_mentions_local_and_published_changes() -> None:
     assert "Run setup" in body
 
 
-def test_notification_failures_are_reported_to_the_caller(tmp_path, monkeypatch, capsys) -> None:
+def test_notification_failures_are_reported_to_the_caller(monkeypatch, capsys) -> None:
     """A notification failure must fail the scheduled command and explain the error."""
 
     module = load_script_module()
-    chezmoi = write_fake_chezmoi(tmp_path, status_lines=1)
-    source = tmp_path / "source"
-    source.mkdir()
-    run_git(source, "init", "--initial-branch=main")
     monkeypatch.setattr(
         subprocess,
         "run",
