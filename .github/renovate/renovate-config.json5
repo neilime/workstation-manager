@@ -16,10 +16,10 @@
   customManagers: [
     {
       customType: "regex",
-      description: "Propose reviewed Clipboard Indicator releases; refresh the archive digest during review",
+      description: "Update the Clipboard Indicator release and archive checksum together",
       managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: [
-        'clipboard_indicator:\\n(?:[^\\n]*\\n){0,4}?\\s+version: "(?<currentValue>[0-9]+)"',
+        'clipboard_indicator:\\n(?:[^\\n]*\\n){0,4}?\\s+version: "(?<currentValue>[0-9]+)"\\n\\s+sha256: "(?<currentDigest>[a-f0-9]{64})"',
       ],
       depNameTemplate: "clipboard-indicator",
       datasourceTemplate: "custom.gnome-clipboard",
@@ -27,10 +27,10 @@
     },
     {
       customType: "regex",
-      description: "Propose reviewed Vitals system monitor releases; refresh the archive digest during review",
+      description: "Update the Vitals system monitor release and archive checksum together",
       managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: [
-        'system_monitor:\\n(?:[^\\n]*\\n){0,4}?\\s+version: "(?<currentValue>[0-9]+)"',
+        'system_monitor:\\n(?:[^\\n]*\\n){0,4}?\\s+version: "(?<currentValue>[0-9]+)"\\n\\s+sha256: "(?<currentDigest>[a-f0-9]{64})"',
       ],
       depNameTemplate: "vitals",
       datasourceTemplate: "custom.gnome-vitals",
@@ -126,20 +126,8 @@
     },
   ],
   customDatasources: {
-    "gnome-clipboard": {
-      defaultRegistryUrlTemplate: "https://extensions.gnome.org/extension-info/?uuid=clipboard-indicator%40tudmotu.com",
-      format: "json",
-      transformTemplates: [
-        '{"releases": $distinct($each(shell_version_map, function($value) { {"version": $string($value.version)} }))}',
-      ],
-    },
-    "gnome-vitals": {
-      defaultRegistryUrlTemplate: "https://extensions.gnome.org/extension-info/?uuid=Vitals%40CoreCoding.com",
-      format: "json",
-      transformTemplates: [
-        '{"releases": $distinct($each(shell_version_map, function($value) { {"version": $string($value.version)} }))}',
-      ],
-    },
+    // GNOME version/digest snapshots are supplied by ci/renovate_gnome.py via
+    // RENOVATE_CUSTOM_DATASOURCES; no version-only fallback is permitted.
     "node-lts": {
       defaultRegistryUrlTemplate: "https://nodejs.org/dist/index.json",
       format: "json",

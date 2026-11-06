@@ -35,3 +35,4 @@ collection's code and guides instead.
 | [0003](adr-0003-desktop-system-monitor.md)        | Accepted             | Managed GNOME top-bar system monitor indicator (Vitals).                  |
 | [0004](adr-0004-documentation-boundaries.md)      | Accepted             | End user readmes, current guides, and preserved ADR history.              |
 | [0005](adr-0005-browser-sync-teardown.md)         | Accepted             | Verify captured Sync device removal through isolated, resumable teardown. |
+| [0006](adr-0006-gnome-extension-updates.md)       | Accepted             | Update GNOME extension versions and archive checksums together.           |

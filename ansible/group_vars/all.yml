@@ -1,6 +1,6 @@
 ---
 # Setup-owned framework pin; Renovate follows the upstream master branch.
-workstation_manager_oh_my_zsh_revision: "17a2b4c3a5855524ad4772a17ada0dc474e2fdf3"
+workstation_manager_oh_my_zsh_revision: "b509b1c6ed0c1ba37de12cbd37f30b2b2f61193a"
 
 workstation_manager:
   user:
@@ -38,8 +38,8 @@ workstation_manager:
   desktop:
     clipboard_indicator:
       # The managed GNOME clipboard extension; inherit these pins in private overrides.
-      version: "71"
-      sha256: "687cb404f9540958ddb0c1de638970572cef73f22f016e5d6c6d6f5d4cd55f97"
+      version: "72"
+      sha256: "6dfc41cf3a42b8a7613c7758895dc6812f96610b3b03a1a7a79ab324d9feef58"
     system_monitor:
       # The managed GNOME top-bar system monitor (Vitals); inherit these pins in private overrides.
       version: "86"
@@ -86,7 +86,7 @@ workstation_manager:
       account: ""
       extensions:
         # renovate: datasource=github-releases depName=nektos/gh-act
-        nektos/gh-act: "0.2.92"
+        nektos/gh-act: "0.2.97"
         # renovate: datasource=github-releases depName=github/gh-stack
         github/gh-stack: "0.3.0"
     packages:
@@ -117,7 +117,7 @@ workstation_manager:
     editor_packages:
       - code
     mise:
-      version: "2026.10.23"
+      version: "2026.11.2"
       # Project mise.toml files may select their own tools and versions.
       tools:
         # renovate: datasource=github-releases depName=starship/starship
@@ -129,16 +129,16 @@ workstation_manager:
         # Renovate follows stable php-* tags; use the maintained backend explicitly.
         "vfox:jdx/vfox-php": "8.5.12"
         # renovate: datasource=github-releases depName=composer/composer
-        "github:composer/composer": "2.11.0"
+        "github:composer/composer": "2.11.1"
         # renovate: datasource=github-releases depName=runkids/skillshare
-        "github:runkids/skillshare": "0.28.0"
+        "github:runkids/skillshare": "0.28.4"
     # Define AI applications and extensions here.
     ai_tools:
       # Set false only when provider sign-in will be completed separately.
       authenticate: true
       orca:
         # renovate: datasource=github-releases depName=stablyai/orca
-        version: "1.4.244"
+        version: "1.4.250"
         # Seed only missing settings; preserve existing workspaces and preferences.
         settings:
           theme: system
@@ -148,12 +148,12 @@ workstation_manager:
         codex:
           npm: "@openai/codex"
           # renovate: datasource=npm depName=@openai/codex
-          version: "0.166.0"
+          version: "0.167.0"
           command: codex
         copilot:
           npm: "@github/copilot"
           # renovate: datasource=npm depName=@github/copilot
-          version: "1.0.105"
+          version: "1.0.106"
           command: copilot
       # Agent Skills (SKILL.md) shared by providers; custom skills come from workstation-config.
       skills:
@@ -166,7 +166,7 @@ workstation_manager:
         - name: context7
           npm: "@upstash/context7-mcp"
           # renovate: datasource=npm depName=@upstash/context7-mcp
-          version: "4.4.4"
+          version: "4.5.0"
           binary: context7-mcp
           args: ["--transport", "stdio"]
           env:
@@ -182,7 +182,7 @@ workstation_manager:
         - name: playwright
           npm: "@playwright/mcp"
           # renovate: datasource=npm depName=@playwright/mcp
-          version: "0.0.83"
+          version: "0.0.84"
           binary: playwright-mcp
           args: ["--headless", "--isolated"]
           playwright:
@@ -195,7 +195,7 @@ workstation_manager:
     # Manage user-home dotfiles through the built-in Chezmoi integration.
     chezmoi:
       # Pin a stable Chezmoi release for reproducible workstation bootstrap.
-      version: "2.73.3"
+      version: "2.74.0"
       # Git repository used to initialize the managed dotfiles checkout.
       source: "https://github.com/neilime/workstation-config.git"
       # Install the Chezmoi binary to this global path.
