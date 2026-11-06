@@ -27,6 +27,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Resolve GNOME extension versions and archive checksums
+        run: python3 ci/renovate_gnome.py --github-env "$GITHUB_ENV"
+
       - uses: renovatebot/github-action@2804199d260ad00c1fae0e9e842888369391c776 # v46.3.10
         with:
           configurationFile: .github/renovate/renovate-config.json5

@@ -1,6 +1,7 @@
 # ADR 0001 Workstation software and setup toolchain
 
 - Status: Implemented baseline; interactive desktop qualification, performance measurements, and personal backup verification remain manual requirements.
+- GNOME extension update process: Superseded by [ADR 0006](adr-0006-gnome-extension-updates.md).
 - Decision drivers: performance, low friction, and current supported software.
 
 Retain Ubuntu with GNOME, Ansible, Chezmoi, Bitwarden, Brave, and mise. Simplify

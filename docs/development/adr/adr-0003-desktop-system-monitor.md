@@ -1,6 +1,7 @@
 # ADR 0003 Desktop system monitor indicator
 
 - Status: Accepted
+- Update process (decision 4): Superseded by [ADR 0006](adr-0006-gnome-extension-updates.md)
 - Date: 2026-10-19
 - Deciders: workstation-manager maintainers
 

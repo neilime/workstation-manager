@@ -57,10 +57,15 @@ same. Their content fingerprints invalidate caches when recipes or upstream
 images change; test VM state is never reused.
 
 Clipboard Indicator and Vitals use custom GNOME Extensions datasources.
-Reviewers must download the proposed archive, refresh its SHA-256, verify GNOME
-compatibility, and requalify clipboard behavior or panel sensors on Wayland.
-An unchanged digest blocks installation of a different archive; zero placeholders
-are rejected. These updates require review.
+Before Renovate starts, the workflow [resolves each latest release](../../ci/renovate_gnome.py),
+downloads its official archive, checks its identity and version, and computes its
+SHA-256. It supplies a fixed version/digest snapshot through
+`RENOVATE_CUSTOM_DATASOURCES`, merged with the other configured datasources.
+Renovate captures and updates both pins together. A failed download or invalid
+response stops the workflow before Renovate runs; there is no version-only feed.
+Reviewers still verify GNOME compatibility and requalify clipboard behavior or
+panel sensors on Wayland. Automerge is disabled for both extensions; checksums
+verify archive bytes, not runtime behavior. See [ADR 0006](adr/adr-0006-gnome-extension-updates.md).
 
 PHP follows stable upstream tags through its maintained mise backend. Ubuntu owns
 build prerequisites. The Docker Secret Service helper and Chezmoi use verified
