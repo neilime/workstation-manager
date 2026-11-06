@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the managed workstation configuration for drift every week
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+Unit=workstation-manager-config-drift-check.service
+
+[Install]
+WantedBy=timers.target
