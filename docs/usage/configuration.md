@@ -199,6 +199,29 @@ preferences; keep `zstyle ':omz:update' mode disabled` in `.zshrc` so setup owns
 framework updates. Tracked framework edits stop updates; keep personal plugins
 and themes in `custom/` or Chezmoi. Existing shell history is preserved.
 
+### Scheduled configuration drift check
+
+Setup schedules a weekly, read-only check that compares the workstation with its
+managed configuration source. It reports managed dotfiles that differ locally and,
+when the source has an upstream, how many published updates it is behind. The check
+runs without elevated privileges and never prints file contents, so managed secrets
+stay private; a best-effort fetch means a private source without stored credentials
+is reported as unknown rather than in sync.
+
+When drift is found, a desktop notification proposes actions, similar to the Ubuntu
+software-update prompt:
+
+- **Update now** opens a terminal and runs `setup` to apply the managed configuration.
+- **Preview changes** opens a terminal and runs `setup --dry-run` first.
+- **Open report** shows the saved summary at
+  `~/.local/state/workstation-manager/config-drift/latest.txt`, or under
+  `$XDG_STATE_HOME` when set.
+
+Run `workstation-manager-config-drift-check` at any time for the same summary; add
+`--notify` to refresh the notification when drift exists. The notification and its
+buttons require a GNOME session bus; the timer starts in the active session or at
+the next graphical login.
+
 ## Developer tools and project files
 
 [Public configuration](../../ansible/group_vars/all.yml) selects software and
