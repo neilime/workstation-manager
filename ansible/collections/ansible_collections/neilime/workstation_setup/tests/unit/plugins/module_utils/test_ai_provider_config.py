@@ -102,6 +102,26 @@ def test_private_config_refuses_symlinks_and_invalid_json_without_overwrite(tmp_
     assert "synthetic-secret" not in str(error.value)
 
 
+def test_codex_mcp_updates_preserve_permission_defaults_and_profiles(tmp_path, servers):
+    """Setup must not erase the command permissions supplied by personal dotfiles."""
+    path, state = tmp_path / "config.toml", tmp_path / "state.json"
+    personal = (
+        'approval_policy = "on-request"\ndefault_permissions = "development"\n'
+        '[permissions.development]\nextends = ":workspace"\n'
+        "[permissions.development.network]\nenabled = true\n"
+    )
+    path.write_text(personal)
+    manager = AiProviderConfiguration()
+    manager.reconcile(path, state, "toml", "mcp_servers", servers)
+    servers["example"]["command"] = "/updated/server"
+    manager.reconcile(path, state, "toml", "mcp_servers", servers)
+    result = tomllib.loads(path.read_text())
+    assert {key: result[key] for key in tomllib.loads(personal)} == tomllib.loads(personal)
+    assert path.read_text().startswith(personal)
+    manager.reconcile(path, state, "toml", "mcp_servers", {})
+    assert path.read_text() == personal
+
+
 def test_identical_personal_entry_is_not_silently_adopted(tmp_path, servers):
     """Matching content does not grant setup ownership of a personal entry."""
     path, state = tmp_path / "config", tmp_path / "state"

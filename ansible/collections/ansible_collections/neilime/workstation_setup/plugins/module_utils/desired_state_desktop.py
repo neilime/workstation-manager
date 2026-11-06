@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
     desired_state_support,
@@ -10,16 +11,32 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
     disposable_device_names,
 )
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.memory_alerts import (
+    MemoryAlertSettings,
+)
 
 
 # pylint: disable=too-few-public-methods
 class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSectionNormalizer):
     """Normalize the desktop section of the desired-state schema."""
 
+    # pylint: disable=too-many-locals
     def normalize(self, config: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
         """Return the normalized desktop section."""
 
         desktop = self._resolver.mapping(config.get("desktop"), "workstation_manager.desktop")
+        memory_defaults = cast(dict[str, object], defaults["memory_alerts"])
+        allowed_memory_keys = set(memory_defaults)
+        memory_alerts_raw = {
+            **self._resolver.mapping(memory_defaults, "desktop.memory_alerts.defaults"),
+            **self._resolver.mapping(
+                desktop.get("memory_alerts"),
+                "desktop.memory_alerts",
+                allowed_keys=allowed_memory_keys,
+            ),
+        }
+        memory_alerts = cast(dict[str, float], memory_alerts_raw)
+        MemoryAlertSettings(**memory_alerts)
         clipboard = self._pinned_extension(desktop, "clipboard_indicator")
         system_monitor = self._pinned_extension(desktop, "system_monitor")
         flatpak = self._resolver.mapping(desktop.get("flatpak"), "workstation_manager.desktop.flatpak")
@@ -47,6 +64,7 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             )
 
         return {
+            "memory_alerts": memory_alerts,
             "clipboard_indicator": clipboard,
             "system_monitor": system_monitor,
             "flatpak": {

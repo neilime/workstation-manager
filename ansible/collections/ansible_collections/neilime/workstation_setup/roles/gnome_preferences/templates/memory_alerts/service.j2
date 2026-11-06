@@ -1,0 +1,15 @@
+[Unit]
+Description=Desktop warnings for low available RAM and memory pressure
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+
+[Service]
+Type=simple
+ExecStart="%h/.local/bin/workstation-manager-memory-alerts"
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target

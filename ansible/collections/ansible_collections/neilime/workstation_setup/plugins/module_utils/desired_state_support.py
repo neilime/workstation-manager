@@ -140,6 +140,12 @@ class DesiredStateDefaultsFactory:
                 },
             },
             "desktop": {
+                "memory_alerts": {
+                    "available_warning_percent": 20,
+                    "available_critical_percent": 10,
+                    "pressure_warning_percent": 5,
+                    "pressure_critical_percent": 15,
+                },
                 "flatpak": {
                     "remote": "flathub",
                     "packages": [],

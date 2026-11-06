@@ -134,6 +134,20 @@ tables outside the managed block, including any project tables Codex inserted
 before its closing marker. Setup refuses symlinked configuration paths to keep
 credentials out of dotfile sources.
 
+Codex command permissions belong to these personal settings too. Setup applies
+the companion Codex modify template through Chezmoi before reconciling MCP
+servers; the MCP merge preserves permission profiles and approval policy. Keep
+the policy in that source so future setup runs reproduce it. Project trust alone
+does not enable command networking or permit approval requests.
+
+Start a new Codex session after applying permission changes. CLI flags, project
+configuration, selected session permissions, and administrator requirements can
+override file defaults. If `gh`, Git signing, or Docker works in your terminal but
+fails in Codex, inspect `/permissions` and `/status` before changing credentials.
+Restricted networking plus rejected escalation can make a valid login appear
+unavailable. See [Codex permissions](https://learn.chatgpt.com/docs/permissions)
+and [configuration precedence](https://learn.chatgpt.com/docs/config-file/config-basic).
+
 Reruns update or remove only unchanged, setup-owned entries and links. Personal
 files, custom skill directories, and edits to managed entries are preserved;
 conflicting names stop setup. Move or rename conflicting entries before managing
