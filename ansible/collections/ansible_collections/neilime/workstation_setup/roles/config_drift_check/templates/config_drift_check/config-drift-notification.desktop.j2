@@ -1,0 +1,11 @@
+{{ ansible_managed | comment }}
+[Desktop Entry]
+Name=Workstation configuration drift
+Comment=Open the latest workstation configuration drift report
+Type=Application
+Exec=/usr/bin/python3 {{ (workstation_manager_resolved.user.home ~ '/.local/share/workstation-manager/config_drift_notification.py') | to_json(ensure_ascii=false) }}
+Icon=preferences-system
+Terminal=false
+NoDisplay=true
+DBusActivatable=true
+X-GNOME-UsesNotifications=true

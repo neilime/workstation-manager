@@ -1,0 +1,6 @@
+[Unit]
+Description=Check whether the workstation has drifted from its managed configuration
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/workstation-manager-config-drift-check --notify

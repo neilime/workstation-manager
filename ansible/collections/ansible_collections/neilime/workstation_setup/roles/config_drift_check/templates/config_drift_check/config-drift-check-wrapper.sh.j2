@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+bootstrap_url="https://raw.githubusercontent.com/neilime/workstation-manager/main/workstation.sh"
+update_command="sh -lc 'wget -qO- $bootstrap_url | sh -s -- setup; printf \"\\nPress Enter to close this window...\"; read -r _'"
+preview_command="sh -lc 'wget -qO- $bootstrap_url | sh -s -- setup --dry-run; printf \"\\nPress Enter to close this window...\"; read -r _'"
+
+# shellcheck disable=SC1083
+exec python3 "$HOME/.local/share/workstation-manager/config_drift_check.py" \
+	--chezmoi-bin {{ workstation_manager_resolved.home_environment.chezmoi.bin_path | quote }} \
+	--source-dir {{ (workstation_manager_resolved.user.home ~ '/.local/share/chezmoi') | quote }} \
+	--action 'Update now' "$update_command" \
+	--action 'Preview changes' "$preview_command" \
+	"$@"
