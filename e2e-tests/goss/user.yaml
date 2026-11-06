@@ -125,6 +125,46 @@ file:
     exists: true
     contents:
       - Name=io.github.neilime.WorkstationGitReport
+  "{{ .Vars.user.home }}/.local/share/workstation-manager/config_drift_check.py":
+    exists: true
+    mode: "0644"
+  "{{ .Vars.user.home }}/.local/bin/workstation-manager-config-drift-check":
+    exists: true
+    filetype: file
+    mode: "0755"
+    contents:
+      - --action 'Update now'
+      - --action 'Preview changes'
+  "{{ .Vars.user.home }}/.local/bin/workstation-manager-config-drift-check-activate-timer":
+    exists: true
+    filetype: file
+    mode: "0755"
+  "{{ .Vars.user.home }}/.config/systemd/user/workstation-manager-config-drift-check.service":
+    exists: true
+    contents:
+      - ExecStart=%h/.local/bin/workstation-manager-config-drift-check --notify
+  "{{ .Vars.user.home }}/.config/systemd/user/workstation-manager-config-drift-check.timer":
+    exists: true
+    contents:
+      - OnCalendar=weekly
+      - Persistent=true
+  "{{ .Vars.user.home }}/.config/systemd/user/timers.target.wants/workstation-manager-config-drift-check.timer":
+    exists: true
+    filetype: symlink
+  "{{ .Vars.user.home }}/.config/autostart/workstation-manager-config-drift-check.desktop":
+    exists: true
+  "{{ .Vars.user.home }}/.local/share/workstation-manager/config_drift_notification.py":
+    exists: true
+    mode: "0644"
+  "{{ .Vars.user.home }}/.local/share/applications/io.github.neilime.WorkstationConfigDrift.desktop":
+    exists: true
+    contents:
+      - DBusActivatable=true
+      - X-GNOME-UsesNotifications=true
+  "{{ .Vars.user.home }}/.local/share/dbus-1/services/io.github.neilime.WorkstationConfigDrift.service":
+    exists: true
+    contents:
+      - Name=io.github.neilime.WorkstationConfigDrift
 command:
   chezmoi-tracked-revision:
     exec:
