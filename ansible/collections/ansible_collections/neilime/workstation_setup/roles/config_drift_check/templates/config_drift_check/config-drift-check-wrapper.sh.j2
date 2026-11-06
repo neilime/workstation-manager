@@ -8,7 +8,7 @@ preview_command="sh -lc 'wget -qO- $bootstrap_url | sh -s -- setup --dry-run; pr
 # shellcheck disable=SC1083
 exec python3 "$HOME/.local/share/workstation-manager/config_drift_check.py" \
 	--chezmoi-bin {{ workstation_manager_resolved.home_environment.chezmoi.bin_path | quote }} \
-	--source-dir {{ (workstation_manager_resolved.user.home ~ '/.local/share/chezmoi') | quote }} \
+	--source-dir "$HOME/.local/share/chezmoi" \
 	--action 'Update now' "$update_command" \
 	--action 'Preview changes' "$preview_command" \
 	"$@"

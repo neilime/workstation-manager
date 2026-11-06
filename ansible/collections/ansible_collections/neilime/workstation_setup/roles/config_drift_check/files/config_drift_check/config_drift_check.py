@@ -7,6 +7,10 @@ No file contents are emitted because managed templates can hold sensitive data;
 only counts and branch state are reported.
 """
 
+# This helper is installed standalone per role and deliberately mirrors the
+# git_project_report scanner structure, so cross-file similarity is expected.
+# pylint: disable=duplicate-code
+
 from __future__ import annotations
 
 import argparse
@@ -24,6 +28,9 @@ GIT_TIMEOUT_SECONDS = 60
 class ConfigDriftReport:
     """The aggregated drift result for the managed workstation configuration."""
 
+    # A drift report aggregates several independent signals (local changes and the
+    # separate upstream comparison); grouping them would obscure the flat result.
+    # pylint: disable=too-many-instance-attributes
     chezmoi_available: bool
     source_directory: str | None = None
     local_change_count: int = 0
