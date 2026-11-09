@@ -124,7 +124,7 @@ jobs:
           persist-credentials: false
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@2c1945afe85bb687c15da83e332b4c52aabae290 # 1.1.0
         with:
           ansible-requirements: ansible/requirements.txt
           collection: ${{ matrix.collection }}
@@ -273,7 +273,7 @@ jobs:
       - name: Create e2e VM
         id: vm
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@2c1945afe85bb687c15da83e332b4c52aabae290 # 1.1.0
         # yamllint enable rule:line-length
         with:
           vm-config: .cache/e2e-vm.json
@@ -324,7 +324,7 @@ jobs:
         id: backup-expectations
         run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" backup
       - name: Backup - Assert
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@2c1945afe85bb687c15da83e332b4c52aabae290 # 1.1.0
         with:
           vm: ${{ steps.vm.outputs.vm }}
           goss-file: e2e-tests/goss/backup.yaml
@@ -347,7 +347,7 @@ jobs:
         id: setup-expectations
         run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" setup
       - name: Setup - Assert
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@2c1945afe85bb687c15da83e332b4c52aabae290 # 1.1.0
         with:
           vm: ${{ steps.vm.outputs.vm }}
           goss-file: e2e-tests/goss/setup.yaml
@@ -370,7 +370,7 @@ jobs:
         id: cleanup-expectations
         run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" cleanup
       - name: Cleanup - Assert
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@2c1945afe85bb687c15da83e332b4c52aabae290 # 1.1.0
         with:
           vm: ${{ steps.vm.outputs.vm }}
           goss-file: e2e-tests/goss/cleanup.yaml
@@ -427,7 +427,7 @@ jobs:
           ${{ always() && steps.vm.outputs.vm != '' &&
             (steps.vm.outcome != 'success' || steps.browser-teardown.outcome == 'success') }}
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@89e3bf93adc94b592188e714f61d4abc391aab46 # 1.0.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@2c1945afe85bb687c15da83e332b4c52aabae290 # 1.1.0
         # yamllint enable rule:line-length
         with:
           vm: ${{ steps.vm.outputs.vm }}
