@@ -195,13 +195,21 @@ more specific `AGENTS.md` files when working in their directories.
 - `make test` runs fast unit tests and isolated integration tests;
   `make check-collections` owns collection sanity checks. Start with
   `make test-unit` or `make test-integration` and a focused `TEST_ARGS="-k ..."`
-  selection during development. CI runs each layer once.
-- Add regression coverage at the cheapest layer that can detect the failure.
+  selection during development. CI runs each layer once. Reuse passing results
+  for unchanged relevant code and inputs; repeat broader checks only when a
+  change, failure, or unresolved concern justifies it. Preserve required checks.
+- Before adding or expanding tests, inspect existing coverage and identify the
+  supported contract, plausible failure, and missing coverage. If an existing
+  test already detects the failure, reuse it. Prefer extending a relevant case
+  over adding another fixture or scenario; test count is not a quality target.
+- Add missing regression coverage at the cheapest layer that can detect the failure.
   Keep parsing and normalization cases in collection unit tests. Put tests that
   run real Ansible, terminals, or subprocess protocols in `tests/integration/`;
   reuse the isolated playbook and environment helpers in
   `tests/support/ansible_test_helpers.py`. Reserve VM assertions for
-  installed behavior and external integration.
+  installed behavior and external integration. Each integration or VM scenario
+  must justify the boundary a cheaper test cannot verify; do not duplicate input
+  matrices across layers.
 - Every test must protect a currently supported contract. Describe that contract
   in its name and docstring; do not encode removed implementations, one-time
   transitions, or historical package/file layouts. Remove obsolete scenarios and
@@ -211,11 +219,18 @@ more specific `AGENTS.md` files when working in their directories.
   fixtures for current safety contracts. Preserve those checks with synthetic
   inputs; do not confuse data preservation with support for project history.
 - Do not snapshot current versions, package lists, task names, or source layout
-  when the contract can be checked through behavior. Use synthetic unit inputs
-  and maintained configuration for integration expectations. Consolidate repeated
-  setup and overlapping assertions; avoid Cartesian products of independent
-  scenarios. Preserve distinct archive-safety, recovery, permissions, check-mode,
-  credential-redaction, and user-data preservation checks.
+  when the contract can be checked through behavior. Do not test private structure,
+  mock wiring, trivial delegation, or framework behavior. Use small synthetic
+  inputs and representative boundaries; generate combinations only when their
+  interaction is itself a supported contract. Consolidate repeated setup and
+  overlapping cases in the affected area. Preserve distinct archive-safety,
+  recovery, permissions, check-mode, credential-redaction, and user-data checks.
+- Keep unit tests free of real services and application or VM startup. Reuse
+  helpers and immutable setup without sharing mutable state. Avoid fixed sleeps;
+  process protocols need bounded waits and teardown. For added or expanded
+  integration, VM, or expensive fixture work, measure the affected tests using
+  the existing duration output and justify the cost in the PR. Simplify excess
+  setup or cases before adding workers, retries, or timeouts.
 - For changes to installation, backup, restoration, or cleanup behavior, run the
   relevant VM assertions in `e2e-tests/`. The complete flow is `make e2e-up`,
   `make e2e-test`, then `make e2e-down`; it tests backup, setup, and cleanup in
@@ -225,5 +240,7 @@ more specific `AGENTS.md` files when working in their directories.
   and preserve unrelated work. Documentation-only edits need applicable lint and
   link checks, not workstation execution or new behavior tests.
 - Update user-facing and collection documentation when behavior or configuration
-  changes. Report what changed, which checks actually ran, and any remaining
-  limitations or blockers. Never claim an unrun check passed.
+  changes. Review the test diff for unnecessary cases and duplication before
+  completion. Report distinct new failure coverage or why existing coverage
+  suffices, relevant timings, checks actually run, and remaining limitations.
+  Never claim an unrun check passed.
