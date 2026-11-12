@@ -41,10 +41,21 @@ def clean(root, environment):
     return subprocess.run(
         ["systemd-tmpfiles", "--user", "--clean", str(rule)],
         env=environment,
-        capture_output=True,
-        text=True,
         check=True,
         timeout=10,
+    )
+
+
+def run_scratch(command, environment, cwd=None):
+    """Capture a bounded scratch command for exit-status and diagnostic assertions."""
+    return subprocess.run(
+        [sys.executable, str(COMMAND), *command],
+        env=environment,
+        cwd=cwd,
+        timeout=10,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -72,15 +83,7 @@ def test_command_preserves_context_and_cleans_its_disposable_files(scratch, stat
         "print(p);print('diagnostic',file=sys.stderr);"
         f"sys.exit({status})"
     )
-    result = subprocess.run(
-        [sys.executable, str(COMMAND), "--", sys.executable, "-c", script],
-        cwd=home,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
+    result = run_scratch(["--", sys.executable, "-c", script], environment, cwd=home)
     assert result.returncode == status, result.stderr
     assert Path(result.stdout.strip()).parent == root
     assert result.stderr == "diagnostic\n"
@@ -102,32 +105,32 @@ scratch = pathlib.Path(os.environ["TMPDIR"])
 while not (home / "release").exists():
     time.sleep(0.05)
 """
-    worker = subprocess.Popen([sys.executable, str(COMMAND), sys.executable, "-c", script], env=environment)
-    try:
-        wait_for(ready)
-        active = Path(ready.read_text())
-        abandoned = root / "task-abandoned"
-        abandoned.mkdir()
-        (abandoned / "discard").write_text("discard")
-        checkout = home / "project"
-        checkout.mkdir()
-        (checkout / ".git").mkdir()
-        (checkout / "unpublished").write_text("keep")
-        (abandoned / "checkout-link").symlink_to(checkout, target_is_directory=True)
+    with subprocess.Popen([sys.executable, str(COMMAND), sys.executable, "-c", script], env=environment) as worker:
+        try:
+            wait_for(ready)
+            active = Path(ready.read_text())
+            abandoned = root / "task-abandoned"
+            abandoned.mkdir()
+            (abandoned / "discard").write_text("discard")
+            checkout = home / "project"
+            checkout.mkdir()
+            (checkout / ".git").mkdir()
+            (checkout / "unpublished").write_text("keep")
+            (abandoned / "checkout-link").symlink_to(checkout, target_is_directory=True)
 
-        clean(root, environment)
+            clean(root, environment)
 
-        assert (active / "active").read_text() == "keep while active"
-        assert not abandoned.exists()
-        assert (checkout / "unpublished").read_text() == "keep"
-        release.touch()
-        assert worker.wait(timeout=10) == 0
-        assert not active.exists()
-    finally:
-        release.touch()
-        if worker.poll() is None:
-            worker.terminate()
-        worker.wait(timeout=10)
+            assert (active / "active").read_text() == "keep while active"
+            assert not abandoned.exists()
+            assert (checkout / "unpublished").read_text() == "keep"
+            release.touch()
+            assert worker.wait(timeout=10) == 0
+            assert not active.exists()
+        finally:
+            release.touch()
+            if worker.poll() is None:
+                worker.terminate()
+            worker.wait(timeout=10)
 
 
 def test_surviving_child_keeps_its_inherited_cleanup_lease(scratch):
@@ -171,13 +174,9 @@ while not (home / "release").exists():
 def test_scratch_rejects_ram_backed_storage():
     """A HOME on tmpfs cannot silently turn disposable writes back into RAM use."""
     with tempfile.TemporaryDirectory(dir="/dev/shm") as home:
-        result = subprocess.run(
-            [sys.executable, str(COMMAND), sys.executable, "-c", "raise AssertionError('must not run')"],
-            env={**os.environ, "HOME": home},
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
+        result = run_scratch(
+            [sys.executable, "-c", "raise AssertionError('must not run')"],
+            {**os.environ, "HOME": home},
         )
         assert result.returncode != 0
         assert "must be on disk" in result.stderr
@@ -188,14 +187,7 @@ def test_scratch_rejects_redirected_storage(scratch):
     home, root, environment = scratch
     root.parent.mkdir(parents=True)
     root.symlink_to(home, target_is_directory=True)
-    result = subprocess.run(
-        [sys.executable, str(COMMAND), "true"],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
+    result = run_scratch(["true"], environment)
     assert result.returncode != 0
     assert "private directory" in result.stderr
     assert home.exists()
@@ -211,8 +203,8 @@ def test_role_installs_previews_and_converges_without_a_user_bus(tmp_path):
     )
     command = ["ansible-playbook", "-i", "localhost,", str(playbook)]
     environment = ansible_environment(tmp_path)
-    preview = run_playbook([*command, "--check"], environment)
-    assert preview.returncode == 0, preview.stdout + preview.stderr
+    result = run_playbook([*command, "--check"], environment)
+    assert result.returncode == 0, result.stdout + result.stderr
     assert not home.exists()
 
     result = run_playbook(command, environment)
