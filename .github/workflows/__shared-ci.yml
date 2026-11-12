@@ -125,7 +125,7 @@ jobs:
 
       - name: Test Ansible
         # Includes the sanity-image input; use the next release containing this fix.
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@b5da821dac2950df70b90157f168279c3bfef29e # main
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@b5da821dac2950df70b90157f168279c3bfef29e
         with:
           ansible-requirements: ansible/requirements.txt
           collection: ${{ matrix.collection }}
