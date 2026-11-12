@@ -72,11 +72,18 @@ integration test out of `make test-unit`. Plain `pytest` collects both local
 layers and collection units, excluding VM assertions. The Make targets collect
 only their selected directories and report the slowest tests.
 
-Cover exhaustive input combinations in unit tests. Integration tests should
-prove representative wiring, reruns, previews, and failure propagation without
-repeating the same input matrix. Preserve distinct archive-safety, recovery,
-permissions, credential-redaction, and user-data checks. VM assertions verify
-the resulting installation rather than repeating normalization checks.
+Before adding cases, apply the [test selection rules](../../AGENTS.md#validation-and-completion):
+identify a supported failure that existing coverage misses and use the cheapest
+reliable layer. Unit tests cover representative inputs and meaningful boundaries;
+combinations need a specific interaction contract. Integration tests verify
+wiring, reruns, previews, and failure propagation without repeating the unit
+matrix. Preserve distinct archive-safety, recovery, permissions,
+credential-redaction, and user-data checks. VM assertions verify installed behavior.
+
+Measure added or expanded integration tests and expensive fixtures with the
+existing duration output. Explain their unique coverage and runtime cost in the
+PR, consolidate overlapping cases, and reuse passing results until relevant code
+or inputs change. Documentation-only edits need lint and link checks.
 
 Reuse `tests/support/ansible_test_helpers.py` for bounded playbook runs and isolated
 controller state, and the adjacent entrypoint helpers for terminal fixtures.
