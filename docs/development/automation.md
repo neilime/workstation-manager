@@ -78,6 +78,13 @@ failure still waits for the pending transaction before returning failure. APT
 operations stay serial; direct Flatpak role calls and previews stay synchronous.
 Native scanner cleanup runs after application installation completes.
 
+Application transactions use `flatpak install --app --or-update` with explicit
+package IDs and the configured system remote. Flatpak resolves missing apps and
+updates together, so a runtime left by a failed download cannot be mistaken for
+its application. Noninteractive transaction output uses the C locale; install,
+update, and uninstall operation lines determine Ansible's change result. Previews
+report potential changes without starting a transaction.
+
 Preserve these entrypoint contracts:
 
 - Local and remote execution share `run_action`; remote playbooks target only

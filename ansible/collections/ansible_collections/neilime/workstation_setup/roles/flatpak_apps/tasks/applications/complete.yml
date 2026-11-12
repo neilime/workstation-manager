@@ -7,6 +7,9 @@
       ansible.builtin.async_status:
         jid: "{{ flatpak_apps_pending_install.ansible_job_id }}"
       register: flatpak_apps_completion
+      changed_when: >-
+        flatpak_apps_completion.stdout_lines | default([])
+        | select('match', '^(Installing|Updating|Uninstalling) (app|runtime)/') | list | length > 0
       until: flatpak_apps_completion.finished | default(false)
       # Outlast the worker's one-hour deadline so a timed-out worker is reaped.
       retries: 730

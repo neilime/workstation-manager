@@ -60,7 +60,8 @@ Use the [supported Ubuntu release](../../ansible/ubuntu-version). Setup installs
 native APT applications and Flatpaks from the configured remote and updates them
 on subsequent runs. GNOME Software also manages application updates between
 setup runs, with automatic downloads enabled. Failed Flatpak operations are
-retried; persistent errors stop setup. Rerun setup after resolving them to finish
+retried, including partially installed applications; persistent errors stop setup.
+Rerun setup after resolving them to finish
 installing or updating applications.
 
 Setup removes Snap applications, snapd, and residual Snap directories. Close Snap

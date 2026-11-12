@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -23,37 +24,14 @@ if operation == "flatpak" and args["state"] == "absent":
     with path.with_suffix(".removals").open("a") as removals:
         removals.write(args["name"] + "\n")
     state["applications"].pop(args["name"], None)
-elif operation in ("flatpak_remote", "flatpak"):
+elif operation == "flatpak_remote":
     if args["method"] != "system":
         module.fail_json(msg="Expected system-wide installation")
-    if operation == "flatpak" and args["remote"] not in state["remotes"]:
-        module.fail_json(msg="Remote must exist before installing applications")
-    if operation == "flatpak" and not module.check_mode:
-        with path.with_suffix(".attempts").open("a") as attempts:
-            attempts.write("install\n")
-        path.with_suffix(".started").touch()
-        if state.get("await_release"):
-            deadline = time.monotonic() + 5
-            while not path.with_suffix(".release").exists():
-                if time.monotonic() > deadline:
-                    module.fail_json(msg="Development did not run while Flatpak was pending")
-                time.sleep(0.05)
-            time.sleep(0.3)
     if not module.check_mode and state["failures"][operation] > 0:
         state["failures"][operation] -= 1
-        if operation == "flatpak":
-            # A failed transaction can leave some applications installed.
-            state["applications"].setdefault(args["name"][0], "current")
         path.write_text(json.dumps(state))
         module.fail_json(msg="Synthetic download failure: SSL connect error")
-    if operation == "flatpak_remote":
-        state["remotes"] = sorted(set(state["remotes"]) | {args["name"]})
-    else:
-        for name in args["name"]:
-            if name not in state["applications"] or args["state"] == "latest":
-                state["applications"][name] = "current"
-        if not module.check_mode:
-            path.with_suffix(".finished").touch()
+    state["remotes"] = sorted(set(state["remotes"]) | {args["name"]})
 elif operation == "development":
     if not module.check_mode and state.get("await_release"):
         deadline = time.monotonic() + 5
@@ -73,6 +51,61 @@ elif operation == "consumer":
     if not module.check_mode:
         path.with_suffix(".consumed").touch()
     module.exit_json(changed=False)
+"""
+
+FLATPAK_EXECUTABLE = r"""
+import json
+import os
+from pathlib import Path
+import sys
+import time
+
+path = Path(os.environ["FLATPAK_FIXTURE_STATE"])
+state = json.loads(path.read_text())
+args = sys.argv[1:]
+if args == ["--version"]:
+    print("Flatpak 1.99.0")
+elif args[0] == "list":
+    print("\n".join([*state["applications"], *state["runtimes"]]))
+elif args[0] in ("install", "update"):
+    assert "--system" in args and "--noninteractive" in args, args
+    assert os.environ["LC_ALL"] == "C", "Transaction output must be locale-independent"
+    positional = [arg for arg in args[1:] if not arg.startswith("--")]
+    if args[0] == "install":
+        assert "--app" in args, "Only applications should be selected explicitly"
+        remote, *names = positional
+        assert remote in state["remotes"], "Remote must exist before installing applications"
+    else:
+        names = positional
+    with path.with_suffix(".attempts").open("a") as attempts:
+        attempts.write("install\n")
+    path.with_suffix(".started").touch()
+    if state.get("await_release"):
+        deadline = time.monotonic() + 5
+        while not path.with_suffix(".release").exists():
+            if time.monotonic() > deadline:
+                sys.exit("Development did not run while Flatpak was pending")
+            time.sleep(0.05)
+        time.sleep(0.3)
+    if state["failures"]["flatpak"] > 0:
+        state["failures"]["flatpak"] -= 1
+        # Dependencies can be installed before an application's download fails.
+        state["applications"].setdefault(names[0], "current")
+        path.write_text(json.dumps(state))
+        sys.exit("Synthetic download failure: SSL connect error")
+    for name in names:
+        installed = name in state["applications"]
+        if installed and args[0] == "install" and "--or-update" not in args:
+            continue
+        if state["applications"].get(name) != "current":
+            print(f"{'Updating' if installed else 'Installing'} app/{name}/x86_64/stable")
+            state["applications"][name] = "current"
+    # Informational output alone must not count as a change.
+    print("Info: Checking related runtimes")
+    path.write_text(json.dumps(state))
+    path.with_suffix(".finished").touch()
+else:
+    sys.exit(f"Unexpected Flatpak command: {args}")
 """
 
 
@@ -101,6 +134,8 @@ def isolated_role_tasks(directory: Path, state_file: Path) -> None:
             for operation in ("flatpak_remote", "flatpak"):
                 module = "community.general." + operation
                 if module in task:
+                    if operation == "flatpak" and task[module]["state"] != "absent":
+                        continue
                     arguments = task.pop(module)
                     task["ansible.legacy.fixture_flatpak"] = {
                         "operation": operation,
@@ -124,6 +159,7 @@ def flatpak_playbook_fixture(tmp_path):
                 "failures": {"flatpak_remote": 0, "flatpak": 0},
                 "remotes": [],
                 "applications": {"org.example.Personal": "older", "org.example.First": "older"},
+                "runtimes": ["org.example.Second.Locale"],
             }
         )
     )
@@ -147,6 +183,12 @@ def flatpak_playbook_fixture(tmp_path):
     playbook.write_text(json.dumps(data))
     environment = ansible_environment(tmp_path, ANSIBLE_LIBRARY=str(library))
     environment["ANSIBLE_COLLECTIONS_PATH"] = f"{collections}:{environment['ANSIBLE_COLLECTIONS_PATH']}"
+    executable = tmp_path / "bin/flatpak"
+    executable.parent.mkdir()
+    executable.write_text(f"#!{sys.executable}\n" + FLATPAK_EXECUTABLE)
+    executable.chmod(0o755)
+    environment["PATH"] = f"{executable.parent}:{environment['PATH']}"
+    environment["FLATPAK_FIXTURE_STATE"] = str(state_file)
     return (
         ["ansible-playbook", "-i", "localhost,", str(playbook)],
         environment,
@@ -199,11 +241,31 @@ def test_flatpak_downloads_recover_and_converge(flatpak_playbook) -> None:
             "org.example.Personal": "older",
             "org.example.Second": "current",
         },
+        "runtimes": ["org.example.Second.Locale"],
     }
     repeated = run_playbook(command, environment)
     assert repeated.returncode == 0, repeated.stdout + repeated.stderr
     assert "changed=0" in repeated.stdout
     assert json.loads(state_file.read_text()) == state
+
+
+@pytest.mark.parametrize("fixture_name", ["flatpak_playbook", "setup_playbook"])
+def test_flatpak_installs_app_when_only_its_locale_runtime_exists(request, fixture_name) -> None:
+    """A related runtime never substitutes for its missing app after an interrupted download."""
+    command, environment, state_file = request.getfixturevalue(fixture_name)
+    state = json.loads(state_file.read_text())
+    state["remotes"] = ["fixture"]
+    state_file.write_text(json.dumps(state))
+
+    result = run_playbook(command, environment)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "changed=1" in result.stdout
+    state = json.loads(state_file.read_text())
+    assert state["applications"]["org.example.Second"] == "current"
+    assert state["applications"]["org.example.First"] == "current"
+    assert state["applications"]["org.example.Personal"] == "older"
+    assert state["runtimes"] == ["org.example.Second.Locale"]
 
 
 @pytest.mark.parametrize("operation", ["flatpak_remote", "flatpak"])
@@ -233,6 +295,7 @@ def test_flatpak_preview_preserves_installed_state(flatpak_playbook) -> None:
     result = run_playbook([*command, "--check"], environment)
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(state_file.read_text()) == state
+    assert not state_file.with_suffix(".attempts").exists()
 
 
 @pytest.mark.parametrize("failures", [0, 2, 100])
