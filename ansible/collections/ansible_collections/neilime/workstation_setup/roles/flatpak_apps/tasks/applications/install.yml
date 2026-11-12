@@ -1,13 +1,31 @@
 ---
+- name: Preview declared Flatpak application updates
+  ansible.builtin.debug:
+    msg: "Would install or update Flatpak applications: {{ workstation_manager_resolved.desktop.flatpak.packages | join(', ') }}"
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - workstation_manager_resolved.desktop.flatpak.packages | length > 0
+
+# community.general.flatpak mistakes a related runtime for its missing app.
+# Let Flatpak resolve the install/update transaction, including partial installs.
 - name: Install or update declared Flatpak applications
   become: "{{ workstation_manager_use_become }}"
-  community.general.flatpak:
-    name: "{{ workstation_manager_resolved.desktop.flatpak.packages }}"
-    state: latest
-    method: system
-    remote: "{{ workstation_manager_resolved.desktop.flatpak.remote }}"
+  ansible.builtin.command:
+    argv: >-
+      {{ ['flatpak', 'install', '--system', '--noninteractive', '--app', '--or-update',
+          '--', workstation_manager_resolved.desktop.flatpak.remote]
+         + workstation_manager_resolved.desktop.flatpak.packages }}
+  environment:
+    LC_ALL: C
+    LANGUAGE: C
   register: flatpak_apps_install
+  changed_when: >-
+    flatpak_apps_install.stdout_lines | default([])
+    | select('match', '^(Installing|Updating|Uninstalling) (app|runtime)/') | list | length > 0
   until: flatpak_apps_install is succeeded
   retries: "{{ flatpak_apps_install_retries | default(3) }}"
   delay: 10
-  when: workstation_manager_resolved.desktop.flatpak.packages | length > 0
+  when:
+    - not ansible_check_mode
+    - workstation_manager_resolved.desktop.flatpak.packages | length > 0
