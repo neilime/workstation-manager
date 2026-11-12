@@ -1,7 +1,7 @@
 ---
 # The packaged linter's release catalogue predates the tested controller in ansible/requirements.txt.
 supported_ansible_also:
-  - "2.21"
+  - "2.22"
 
 exclude_paths:
   - ansible/vendor-collections/

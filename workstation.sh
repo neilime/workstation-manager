@@ -364,11 +364,13 @@ run_ansible_pull_with_bitwarden_retry() (
 	shift 2
 
 	# Decide before capture replaces stdout with a pipe or a private terminal.
-	# ansible-pull also pipes its playbook output, defeating native TTY detection.
 	# Leave explicit Ansible color preferences in control.
-	if [ -z "${ANSIBLE_FORCE_COLOR+x}${ANSIBLE_NOCOLOR+x}${NO_COLOR+x}" ] &&
-		[ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
-		set -- ANSIBLE_FORCE_COLOR=true "$@"
+	if [ -z "${ANSIBLE_FORCE_COLOR+x}${ANSIBLE_NOCOLOR+x}${NO_COLOR+x}" ]; then
+		if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then
+			set -- ANSIBLE_FORCE_COLOR=true "$@"
+		else
+			set -- ANSIBLE_NOCOLOR=true "$@"
+		fi
 	fi
 
 	if ! has_interactive_terminal; then
@@ -808,7 +810,7 @@ run_ansible_pull() {
 	set -- "WORKSTATION_MANAGER_TTY=$interactive_tty_path" "$@"
 
 	# Pipeline local modules across sudo; keep explicit opt-outs for sudo policies.
-	# ansible-pull relays playbook output; flush prompts before waiting for input.
+	# Flush prompts before waiting for input through the capture relay.
 	set -- env \
 		PYTHONUNBUFFERED=1 \
 		"ANSIBLE_PIPELINING=${ANSIBLE_PIPELINING:-true}" \

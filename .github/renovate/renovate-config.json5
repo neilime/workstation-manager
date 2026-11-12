@@ -16,6 +16,16 @@
   customManagers: [
     {
       customType: "regex",
+      description: "Update the Ansible sanity image within its compatible Core release series",
+      managerFilePatterns: ["/^\\.github\\/workflows\\/__shared-ci\\.yml$/"],
+      matchStrings: [
+        "sanity-image: (?<depName>quay\\.io/ansible/default-test-container):(?<currentValue>v\\d+\\.\\d+-\\d+)@(?<currentDigest>sha256:[a-f0-9]{64})",
+      ],
+      datasourceTemplate: "docker",
+      versioningTemplate: "regex:^(?<compatibility>v\\d+\\.\\d+)-(?<patch>\\d+)$",
+    },
+    {
+      customType: "regex",
       description: "Update the Clipboard Indicator release and archive checksum together",
       managerFilePatterns: ["/^ansible\\/group_vars\\/all\\.yml$/"],
       matchStrings: [

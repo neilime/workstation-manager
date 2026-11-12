@@ -124,11 +124,16 @@ jobs:
           persist-credentials: false
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@2c1945afe85bb687c15da83e332b4c52aabae290 # 1.1.0
+        # Includes the sanity-image input; use the next release containing this fix.
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@b5da821dac2950df70b90157f168279c3bfef29e # main
         with:
           ansible-requirements: ansible/requirements.txt
           collection: ${{ matrix.collection }}
           target-python-version: ${{ needs.build-tooling-image.outputs.python-version }}
+          # Rebuilt upstream image: https://github.com/ansible/ansible/pull/87886
+          # yamllint disable rule:line-length
+          sanity-image: quay.io/ansible/default-test-container:v2.22-9@sha256:9fabb237384a4faca9dc6bdf3647a224eacf318768986677118a506b4b35f1d6
+          # yamllint enable rule:line-length
           galaxy-requirements: ansible/collections/requirements.yml
           report-name: Ansible - ${{ matrix.name }}
 

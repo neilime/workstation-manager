@@ -59,6 +59,12 @@ Provide these credentials through the environment:
 
 See [automation](automation.md#automated-runs) for credential behavior.
 
+CI reads the four named Bitwarden and GitHub credentials from the `ci`
+environment. Dependabot-triggered runs require the same names and test values in
+the repository's Dependabot secrets; GitHub does not expose Actions environment
+secrets to those runs. See [GitHub's Dependabot guidance](https://docs.github.com/en/code-security/reference/supply-chain-security/troubleshoot-dependabot/dependabot-on-actions#accessing-secrets).
+Missing credentials fail the authenticated phases; they do not skip validation.
+
 ## Select the revision
 
 The VM downloads the public entrypoint and exercises remote bootstrap. The default

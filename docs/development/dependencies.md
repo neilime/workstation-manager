@@ -48,7 +48,14 @@ Ubuntu updates coordinate the [baseline guard](../../ansible/ubuntu-version),
 Renovate selects stable releases from Canonical's feed; Dependabot ignores that
 image to avoid competing proposals. Align Python across the tooling image,
 requirements, collection metadata, Make commands and CI. The test interpreter
-must match the tooling image.
+must match the tooling image. Keep collection support ranges and the linter's
+additional supported releases aligned with the controller requirements.
+
+Renovate maintains the Ansible sanity image's tag and digest in the
+[shared CI workflow](../../.github/workflows/__shared-ci.yml), within the selected
+Core release series. Review that series when upgrading `ansible-core`.
+Dependabot maintains the shared action's commit pin; select a release containing
+the `sanity-image` input when one is available.
 
 CI resolves the current Ubuntu container digest for tooling and the cloud-image
 SHA-256 for the desktop fixture on each run. Both dependency images refresh
