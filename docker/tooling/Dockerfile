@@ -31,6 +31,7 @@ RUN apt-get update && \
     python3 \
     python3-gi \
     python3-venv \
+    systemd \
     sudo-rs && \
     sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen && \

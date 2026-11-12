@@ -133,10 +133,10 @@ e2e-leave: ## Verify remote browser-device removal before shared VM destruction
 e2e-reset: e2e-down e2e-up ## Recreate the Lima end-to-end test VM
 
 define run_linter
-	DEFAULT_WORKSPACE="$(CURDIR)"; \
+	DEFAULT_WORKSPACE="/workspace"; \
 	LINTER_IMAGE="linter:latest"; \
-	VOLUME="$$DEFAULT_WORKSPACE:$$DEFAULT_WORKSPACE"; \
-	DEFAULT_BRANCH="$$(git -C "$$DEFAULT_WORKSPACE" rev-parse --abbrev-ref HEAD 2>/dev/null)"; \
+	VOLUME="$(CURDIR):$$DEFAULT_WORKSPACE"; \
+	DEFAULT_BRANCH="$$(git -C "$(CURDIR)" rev-parse --abbrev-ref HEAD 2>/dev/null)"; \
 	docker build --platform=linux/amd64 --build-arg UID=$(shell id -u) --build-arg GID=$(shell id -g) --tag $$LINTER_IMAGE .; \
 	docker run \
 		--platform=linux/amd64 \

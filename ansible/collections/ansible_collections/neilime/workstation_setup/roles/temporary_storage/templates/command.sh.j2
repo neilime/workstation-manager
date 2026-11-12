@@ -1,0 +1,3 @@
+#!/bin/sh
+# {{ ansible_managed }}
+exec /usr/bin/python3 {{ (workstation_manager_resolved.user.home ~ '/.local/share/workstation-manager/scratch.py') | quote }} "$@"

@@ -1,0 +1,124 @@
+---
+- name: Ensure temporary storage integration directories exist
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/{{ item }}"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+  loop:
+    - .local/bin
+    - .local/share/workstation-manager
+    - .config/user-tmpfiles.d
+    - .config/systemd/user/timers.target.wants
+
+- name: Inspect existing disposable storage
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "{{ workstation_manager_resolved.user.home }}/.cache/workstation-manager/scratch"
+    follow: false
+  register: temporary_storage_existing
+
+- name: Require disposable storage to be a real directory
+  ansible.builtin.assert:
+    that:
+      - not temporary_storage_existing.stat.exists or temporary_storage_existing.stat.isdir | default(false)
+      - not temporary_storage_existing.stat.islnk | default(false)
+    fail_msg: The managed scratch path must be a real directory, not a link or another file type.
+
+- name: Create private disposable storage
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    path: "{{ workstation_manager_resolved.user.home }}/.cache/workstation-manager/scratch"
+    state: directory
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0700"
+
+- name: Install the temporary storage helper
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: scratch.py
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/scratch.py"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install the temporary command wrapper
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.template:
+    src: command.sh.j2
+    dest: "{{ workstation_manager_resolved.user.home }}/.local/bin/workstation-manager-scratch"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0755"
+
+- name: Install the disposable storage cleanup rule
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: workstation-manager-scratch.conf
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/user-tmpfiles.d/workstation-manager-scratch.conf"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+
+- name: Install the dedicated disposable storage cleanup units
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.copy:
+    src: "workstation-manager-scratch-clean.{{ item }}"
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/workstation-manager-scratch-clean.{{ item }}"
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    mode: "0644"
+  loop:
+    - service
+    - timer
+
+- name: Enable daily disposable storage cleanup
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.file:
+    src: ../workstation-manager-scratch-clean.timer
+    dest: "{{ workstation_manager_resolved.user.home }}/.config/systemd/user/timers.target.wants/workstation-manager-scratch-clean.timer"
+    state: link
+    follow: false
+    owner: "{{ workstation_manager_resolved.user.name }}"
+    group: "{{ workstation_manager_resolved.user.name }}"
+    force: true
+
+- name: Resolve the temporary storage target user id
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv: [id, -u, "{{ workstation_manager_resolved.user.name }}"]
+  register: temporary_storage_uid
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Inspect the target user session bus
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.stat:
+    path: "/run/user/{{ temporary_storage_uid.stdout }}/bus"
+  register: temporary_storage_bus
+  when: not ansible_check_mode
+
+- name: Activate daily cleanup in the current user session
+  become: "{{ workstation_manager_use_become }}"
+  become_user: "{{ workstation_manager_resolved.user.name }}"
+  ansible.builtin.systemd_service:
+    name: workstation-manager-scratch-clean.timer
+    scope: user
+    daemon_reload: true
+    state: started
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ temporary_storage_uid.stdout }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ temporary_storage_uid.stdout }}/bus"
+  when:
+    - not ansible_check_mode
+    - temporary_storage_bus.stat.exists
+
+- name: Report deferred temporary cleanup activation
+  ansible.builtin.debug:
+    msg: Daily disposable storage cleanup is enabled and will start at the next user login.
+  when:
+    - not ansible_check_mode
+    - not temporary_storage_bus.stat.exists

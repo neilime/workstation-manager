@@ -92,6 +92,11 @@ requirements. Rebuild after changing them. Tests use the image's Python and
 installed dependencies. Tooling containers run with the host UID/GID and a
 temporary container home; `make tool-shell` opens an interactive session.
 
+The tooling image includes `systemd-tmpfiles` so temporary storage tests exercise
+the actual directory-lock and cleanup behavior with isolated homes and rules.
+Lint mounts the checkout at `/workspace`, so cache exclusions cannot match a
+checkout's parent directory.
+
 `make lint-fix` rewrites files. `make ci` runs it before syntax, sanity, and tests;
 review its diff. Documentation-only changes require applicable lint and local
 link checks. Do not edit generated caches, reports, vendored collections, or

@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily cleanup of workstation-manager scratch files
+
+[Timer]
+OnStartupSec=5min
+OnUnitActiveSec=1d
+
+[Install]
+WantedBy=timers.target

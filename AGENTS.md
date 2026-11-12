@@ -9,6 +9,10 @@ more specific `AGENTS.md` files when working in their directories.
   tests before changing behavior. Follow established patterns unless they are
   obsolete, unsafe, or unnecessarily complex.
 - Keep changes focused and preserve existing staged and unstaged user changes.
+- Keep substantial task artifacts and isolated checkouts on disk under an ignored
+  workspace directory. Use the managed scratch wrapper for disposable command
+  files and clean task-owned resources before completion; follow the
+  [temporary storage guide](docs/usage/temporary-storage.md).
 - This project manages Ubuntu workstations through `workstation.sh` and Ansible.
   The public interface is `setup`, `backup`, `cleanup`, and `help`, with
   `--dry-run` for previews. Archive restoration is part of setup.
