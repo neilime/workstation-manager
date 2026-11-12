@@ -1,0 +1,7 @@
+[Unit]
+Description=Clean abandoned workstation-manager scratch files
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-tmpfiles --user --clean "%h/.config/user-tmpfiles.d/workstation-manager-scratch.conf"
+IOSchedulingClass=idle

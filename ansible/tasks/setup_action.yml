@@ -41,6 +41,10 @@
   ansible.builtin.import_role:
     name: neilime.workstation_setup.home_environment
 
+- name: Install protected disk-backed temporary storage
+  ansible.builtin.import_role:
+    name: neilime.workstation_setup.temporary_storage
+
 - name: Restore workstation backup archive
   ansible.builtin.import_role:
     name: neilime.workstation_restore.state

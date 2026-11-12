@@ -8,6 +8,7 @@ Use the [root readme](../README.md) for setup, backup, cleanup, and help.
 | ------------------------------------------------- | ---------------------------------------------------------------------- |
 | [Configuration](usage/configuration.md)           | Private overrides, credentials, dotfiles, desktop settings, and tools. |
 | [Memory alerts](usage/memory-alerts.md)           | Early memory warnings, thresholds, and notification checks.            |
+| [Temporary storage](usage/temporary-storage.md)   | Disk-backed disposable files and protection for active tasks.          |
 | [AI tools](usage/ai-tools.md)                     | Accounts, MCP servers, skills, and configuration ownership.            |
 | [Browser profiles](usage/browser.md)              | Recovery, Sync, colors, logos, and saved preferences.                  |
 | [Backup and restore](usage/backup-and-restore.md) | Recovery checks, archive contents, restoration, and limits.            |

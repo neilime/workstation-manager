@@ -33,6 +33,10 @@ services regardless of the marker. Schedule any required reboot yourself.
 
 ## Weekly BleachBit cleanup
 
+Disposable command files have a separate daily
+[temporary storage cleanup](temporary-storage.md). Its directory locks protect
+active wrapped commands; project checkouts are outside that rule.
+
 Setup enables `workstation-manager-bleachbit-clean.timer` weekly, with up to
 30 minutes of randomized delay and catch-up for missed runs. It starts in the
 active user session or at the next graphical login.

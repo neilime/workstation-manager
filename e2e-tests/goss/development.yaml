@@ -1,5 +1,21 @@
 ---
 command:
+  disposable-temporary-storage:
+    exec: |-
+      python3 - <<'PYTHON'
+      import pathlib, subprocess, sys
+      home = pathlib.Path.home()
+      command = home / '.local/bin/workstation-manager-scratch'
+      result = subprocess.run([str(command), sys.executable, '-c', 'import os; print(os.environ["TMPDIR"])'],
+                              check=True, capture_output=True, text=True)
+      scratch = pathlib.Path(result.stdout.strip())
+      assert scratch.parent == home / '.cache/workstation-manager/scratch'
+      assert not scratch.exists()
+      subprocess.run(['systemctl', '--user', 'is-enabled', 'workstation-manager-scratch-clean.timer'], check=True)
+      subprocess.run(['systemctl', '--user', 'is-active', 'workstation-manager-scratch-clean.timer'], check=True)
+      PYTHON
+    exit-status: 0
+    timeout: 10000
   git-auto-gc:
     exec: test "$(git config --global --int --get gc.auto)" -gt 0
     exit-status: 0
