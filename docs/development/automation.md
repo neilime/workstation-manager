@@ -66,11 +66,10 @@ custom sudo policy requires a terminal for every operation. The explicit overrid
 survives privilege escalation.
 
 The launcher enables Ansible task colors when its original output is a terminal
-and `TERM` is set to a value other than `dumb`. It makes this decision before
-capture because `ansible-pull` pipes its child playbook's output. Explicit
-`ANSIBLE_FORCE_COLOR`, `ANSIBLE_NOCOLOR`, and `NO_COLOR` settings retain control
-and survive sudo and interactive capture. Redirecting output does not automatically
-force colors.
+and `TERM` is set to a value other than `dumb`. It disables colors for redirected
+output and dumb terminals before capture can replace stdout with a private
+terminal. Explicit `ANSIBLE_FORCE_COLOR`, `ANSIBLE_NOCOLOR`, and `NO_COLOR`
+settings retain control and survive sudo and interactive capture.
 
 Setup starts one Flatpak application transaction after configuring its prerequisites
 and overlaps it with development tooling installation. It waits for completion,

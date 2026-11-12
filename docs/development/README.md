@@ -104,7 +104,9 @@ comments and artifacts. Ansible Lint, including syntax checks, stays in the lint
 job. The Ansible Core version comes from `ansible/requirements.txt`; upstream actions own
 Python setup, test containers and their dependency caches. Collection sanity uses
 the Python major/minor read from the resolved tooling image, matching the supported
-Ubuntu environment and local checks without duplicating a runtime pin. Local
+Ubuntu environment and local checks without duplicating a runtime pin. The workflow
+selects an upstream sanity image by tag and digest; keep its Core series aligned
+with the controller requirements. Local
 `make check-ansible` and `make check-collections` remain available.
 
 The memory-alert helper also runs as an installed standalone CLI and shares its

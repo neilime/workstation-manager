@@ -123,7 +123,11 @@ def initialize_git_repository(repository: pathlib.Path, environment: dict[str, s
         pytest.param(True, {"NO_COLOR": "1"}, False, False, id="no-color"),
         pytest.param(False, {"ANSIBLE_NOCOLOR": "true"}, False, False, id="ansible-no-color"),
         pytest.param(True, {"TERM": "dumb"}, False, False, id="dumb-terminal"),
+        pytest.param(False, {}, True, False, id="redirected-local-output"),
         pytest.param(True, {}, True, False, id="redirected-output"),
+        pytest.param(
+            True, {"WORKSTATION_MANAGER_DISABLE_SCRIPT_CAPTURE": "1"}, True, False, id="redirected-fifo-output"
+        ),
         pytest.param(True, {"ANSIBLE_FORCE_COLOR": "true"}, True, True, id="forced-color"),
     ],
 )
