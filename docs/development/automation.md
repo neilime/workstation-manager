@@ -65,6 +65,13 @@ remote bootstrap and interactive capture. Set `ANSIBLE_PIPELINING=false` when a
 custom sudo policy requires a terminal for every operation. The explicit override
 survives privilege escalation.
 
+Collections are installed as the invoking user in the managed user's
+`~/.ansible/collections`. The elevated controller sets
+`PYTHONDONTWRITEBYTECODE=1` after sudo so importing plugins cannot leave
+root-owned `__pycache__` files that block subsequent collection updates. This
+also applies to remote checkout commands and interactive capture. For existing
+permission failures, see [collection installation recovery](../usage/configuration.md#collection-installation-permissions).
+
 The launcher enables Ansible task colors when its original output is a terminal
 and `TERM` is set to a value other than `dumb`. It disables colors for redirected
 output and dumb terminals before capture can replace stdout with a private
