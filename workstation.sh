@@ -811,8 +811,10 @@ run_ansible_pull() {
 
 	# Pipeline local modules across sudo; keep explicit opt-outs for sudo policies.
 	# Flush prompts before waiting for input through the capture relay.
+	# Keep elevated imports from writing root-owned bytecode in user collections.
 	set -- env \
 		PYTHONUNBUFFERED=1 \
+		PYTHONDONTWRITEBYTECODE=1 \
 		"ANSIBLE_PIPELINING=${ANSIBLE_PIPELINING:-true}" \
 		ANSIBLE_COLLECTIONS_PATH="$COLLECTIONS_INSTALL_DIR:/usr/share/ansible/collections" \
 		"WORKSTATION_MANAGER_USER=$TARGET_USER" \

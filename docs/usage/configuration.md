@@ -54,6 +54,23 @@ cancels. Bootstrap authentication can also occur during `--dry-run`.
 Task status uses colors in terminals by default. For plain output, set
 `NO_COLOR=1` on the `sh` command, including when launching through `wget | sh`.
 
+### Collection installation permissions
+
+If "Installing Ansible collection dependencies" fails with `Permission denied`
+inside `~/.ansible/collections`, check the owner of the reported directory with
+`ls -ld`. Files owned by another account can prevent collection updates.
+
+From your normal desktop user session, repair ownership of the installed
+collections, then rerun setup:
+
+```sh
+sudo chown -hR -P -- "$(id -un):$(id -gn)" "$HOME/.ansible/collections"
+```
+
+The command preserves collection contents and does not follow symbolic links.
+The entrypoint prevents elevated Ansible imports from creating new bytecode files
+in this directory; it does not automatically repair existing ownership.
+
 ## Application delivery
 
 Use the [supported Ubuntu release](../../ansible/ubuntu-version). Setup installs
