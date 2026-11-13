@@ -10,6 +10,10 @@ on:
     # Runs "at 04:00, only on Friday" (see https://crontab.guru)
     - cron: "0 4 * * 5"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -30,7 +34,7 @@ jobs:
       - name: Resolve GNOME extension versions and archive checksums
         run: python3 ci/renovate_gnome.py --github-env "$GITHUB_ENV"
 
-      - uses: renovatebot/github-action@1c0cf989c02653fba0efe7ca5772338860ca71dc # v46.3.12
+      - uses: renovatebot/github-action@266fef21329c44765ad42f9dea1f01f5d2d91084 # v46.3.13
         with:
           configurationFile: .github/renovate/renovate-config.json5
           token: ${{ github.token }}
