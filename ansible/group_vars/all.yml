@@ -1,6 +1,6 @@
 ---
 # Setup-owned framework pin; Renovate follows the upstream master branch.
-workstation_manager_oh_my_zsh_revision: "b509b1c6ed0c1ba37de12cbd37f30b2b2f61193a"
+workstation_manager_oh_my_zsh_revision: "6010fb6260f359e71d99ba25f05f9215809b3ed2"
 
 workstation_manager:
   user:
@@ -82,10 +82,10 @@ workstation_manager:
   development:
     docker:
       # renovate: datasource=github-releases depName=docker/docker-credential-helpers
-      credential_helper_version: "0.9.12"
+      credential_helper_version: "0.9.13"
     # Complete system runtime, available without shell or mise activation.
     node:
-      version: "26.13.0"
+      version: "26.13.1"
     github:
       host: github.com
       # Required GitHub username; set it in ansible/private.override.yml.
@@ -123,7 +123,7 @@ workstation_manager:
     editor_packages:
       - code
     mise:
-      version: "2026.11.2"
+      version: "2026.11.7"
       # Project mise.toml files may select their own tools and versions.
       tools:
         # renovate: datasource=github-releases depName=starship/starship
@@ -135,16 +135,16 @@ workstation_manager:
         # Renovate follows stable php-* tags; use the maintained backend explicitly.
         "vfox:jdx/vfox-php": "8.5.12"
         # renovate: datasource=github-releases depName=composer/composer
-        "github:composer/composer": "2.11.1"
+        "github:composer/composer": "2.11.2"
         # renovate: datasource=github-releases depName=runkids/skillshare
-        "github:runkids/skillshare": "0.28.4"
+        "github:runkids/skillshare": "0.30.6"
     # Define AI applications and extensions here.
     ai_tools:
       # Set false only when provider sign-in will be completed separately.
       authenticate: true
       orca:
         # renovate: datasource=github-releases depName=stablyai/orca
-        version: "1.4.250"
+        version: "1.4.258"
         # Seed only missing settings; preserve existing workspaces and preferences.
         settings:
           theme: system
@@ -154,12 +154,12 @@ workstation_manager:
         codex:
           npm: "@openai/codex"
           # renovate: datasource=npm depName=@openai/codex
-          version: "0.167.0"
+          version: "0.168.0"
           command: codex
         copilot:
           npm: "@github/copilot"
           # renovate: datasource=npm depName=@github/copilot
-          version: "1.0.106"
+          version: "1.0.110"
           command: copilot
       # Agent Skills (SKILL.md) shared by providers; custom skills come from workstation-config.
       skills:
@@ -172,7 +172,7 @@ workstation_manager:
         - name: context7
           npm: "@upstash/context7-mcp"
           # renovate: datasource=npm depName=@upstash/context7-mcp
-          version: "4.5.0"
+          version: "4.7.0"
           binary: context7-mcp
           args: ["--transport", "stdio"]
           env:
@@ -188,7 +188,7 @@ workstation_manager:
         - name: playwright
           npm: "@playwright/mcp"
           # renovate: datasource=npm depName=@playwright/mcp
-          version: "0.0.84"
+          version: "0.0.85"
           binary: playwright-mcp
           args: ["--headless", "--isolated"]
           playwright:
@@ -201,7 +201,7 @@ workstation_manager:
     # Manage user-home dotfiles through the built-in Chezmoi integration.
     chezmoi:
       # Pin a stable Chezmoi release for reproducible workstation bootstrap.
-      version: "2.74.0"
+      version: "2.74.1"
       # Git repository used to initialize the managed dotfiles checkout.
       source: "https://github.com/neilime/workstation-config.git"
       # Install the Chezmoi binary to this global path.
