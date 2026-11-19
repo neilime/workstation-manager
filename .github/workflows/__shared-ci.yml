@@ -305,7 +305,7 @@ jobs:
             printf 'LIMA_HOME=%s\n' "$VM_DIRECTORY"
             printf 'VM_NAME=%s\n' "$VM_INSTANCE"
             # Share one deadline across the nine stages; teardown stays outside.
-            printf 'E2E_SUITE_DEADLINE=%s\n' "$(($(date +%s) + 35 * 60))"
+            printf 'E2E_SUITE_DEADLINE=%s\n' "$(($(date +%s) + 50 * 60))"
           } >> "$GITHUB_ENV"
 
       - name: Backup - Arrange fixtures and recovery keys

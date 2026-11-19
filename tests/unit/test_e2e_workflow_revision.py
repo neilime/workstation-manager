@@ -110,8 +110,8 @@ class E2EWorkflowRevisionTests(unittest.TestCase):
         exported = dict(line.split("=", 1) for line in (self.fixture / "github-env").read_text().splitlines())
         self.environment.update(exported)
         deadline = int(exported["E2E_SUITE_DEADLINE"])
-        self.assertGreaterEqual(deadline, started + 35 * 60)
-        self.assertLessEqual(deadline, int(time.time()) + 35 * 60)
+        self.assertGreaterEqual(deadline, started + 50 * 60)
+        self.assertLessEqual(deadline, int(time.time()) + 50 * 60)
         self.environment["TEST_SUITE_DEADLINE"] = str(deadline)
         return exported["E2E_REPOSITORY_REF"]
 
