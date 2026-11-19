@@ -171,7 +171,7 @@ Each device's Sync waits and retries are bounded. Teardown lets these
 finish for every captured profile; its total duration grows with the number of
 devices and retries. The SSH wrapper detects an unresponsive connection, and CI
 allows 60 minutes for the full job, including VM preparation and verified
-teardown. The nine stages share a 35-minute deadline, with bounded signal
+teardown. The nine stages share a 50-minute deadline, with bounded signal
 cleanup afterward; fixture finishing and verified VM teardown run outside that deadline. Connection
 failures and native operation failures retain the VM.
 
@@ -202,7 +202,7 @@ setup, including Docker access, are available to the managed user.
 
 Each CI assertion phase publishes its native JUnit, a summary, annotations, a stable
 phase-specific PR comment and an artifact. Reporting failures fail the step.
-The shared 35-minute suite deadline bounds the nine stages. Each Goss call receives
+The shared 50-minute suite deadline bounds the nine stages. Each Goss call receives
 the remaining whole minutes, rounded down; report collection and verified teardown
 have separate bounds. Fixture finishing and browser teardown remain unconditional.
 Keep all infrastructure actions on the same immutable revision in the workflow.
