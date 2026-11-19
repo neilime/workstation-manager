@@ -144,7 +144,7 @@ workstation_manager:
       authenticate: true
       orca:
         # renovate: datasource=github-releases depName=stablyai/orca
-        version: "1.4.258"
+        version: "1.4.263"
         # Seed only missing settings; preserve existing workspaces and preferences.
         settings:
           theme: system
