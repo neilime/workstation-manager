@@ -1,6 +1,6 @@
 ---
 # Setup-owned framework pin; Renovate follows the upstream master branch.
-workstation_manager_oh_my_zsh_revision: "6010fb6260f359e71d99ba25f05f9215809b3ed2"
+workstation_manager_oh_my_zsh_revision: "c0140703a53eb0d22be44f7bac318d0baacc927c"
 
 workstation_manager:
   user:
@@ -44,8 +44,8 @@ workstation_manager:
       pressure_critical_percent: 15
     clipboard_indicator:
       # The managed GNOME clipboard extension; inherit these pins in private overrides.
-      version: "72"
-      sha256: "6dfc41cf3a42b8a7613c7758895dc6812f96610b3b03a1a7a79ab324d9feef58"
+      version: "74"
+      sha256: "3e5af0e8f2a4c8facdf467bee67434eeb5f71be0f6181fc6b73fd14b95d65523"
     system_monitor:
       # The managed GNOME top-bar system monitor (Vitals); inherit these pins in private overrides.
       version: "86"
@@ -92,7 +92,7 @@ workstation_manager:
       account: ""
       extensions:
         # renovate: datasource=github-releases depName=nektos/gh-act
-        nektos/gh-act: "0.2.97"
+        nektos/gh-act: "0.2.98"
         # renovate: datasource=github-releases depName=github/gh-stack
         github/gh-stack: "0.3.0"
     packages:
@@ -123,28 +123,28 @@ workstation_manager:
     editor_packages:
       - code
     mise:
-      version: "2026.11.7"
+      version: "2026.11.10"
       # Project mise.toml files may select their own tools and versions.
       tools:
         # renovate: datasource=github-releases depName=starship/starship
         "aqua:starship/starship": "1.27.0"
         # renovate: datasource=github-releases depName=helm/helm
-        "aqua:helm/helm": "4.3.1"
+        "aqua:helm/helm": "4.3.2"
         # renovate: datasource=github-releases depName=wagoodman/dive
         "aqua:wagoodman/dive": "0.13.1"
         # Renovate follows stable php-* tags; use the maintained backend explicitly.
-        "vfox:jdx/vfox-php": "8.5.12"
+        "vfox:jdx/vfox-php": "8.6.0"
         # renovate: datasource=github-releases depName=composer/composer
         "github:composer/composer": "2.11.2"
         # renovate: datasource=github-releases depName=runkids/skillshare
-        "github:runkids/skillshare": "0.30.6"
+        "github:runkids/skillshare": "0.30.12"
     # Define AI applications and extensions here.
     ai_tools:
       # Set false only when provider sign-in will be completed separately.
       authenticate: true
       orca:
         # renovate: datasource=github-releases depName=stablyai/orca
-        version: "1.4.263"
+        version: "1.4.265"
         # Seed only missing settings; preserve existing workspaces and preferences.
         settings:
           theme: system
@@ -154,12 +154,12 @@ workstation_manager:
         codex:
           npm: "@openai/codex"
           # renovate: datasource=npm depName=@openai/codex
-          version: "0.168.0"
+          version: "0.171.0"
           command: codex
         copilot:
           npm: "@github/copilot"
           # renovate: datasource=npm depName=@github/copilot
-          version: "1.0.110"
+          version: "1.0.114"
           command: copilot
       # Agent Skills (SKILL.md) shared by providers; custom skills come from workstation-config.
       skills:
@@ -172,7 +172,7 @@ workstation_manager:
         - name: context7
           npm: "@upstash/context7-mcp"
           # renovate: datasource=npm depName=@upstash/context7-mcp
-          version: "4.7.0"
+          version: "4.7.3"
           binary: context7-mcp
           args: ["--transport", "stdio"]
           env:
@@ -188,7 +188,7 @@ workstation_manager:
         - name: playwright
           npm: "@playwright/mcp"
           # renovate: datasource=npm depName=@playwright/mcp
-          version: "0.0.85"
+          version: "0.0.86"
           binary: playwright-mcp
           args: ["--headless", "--isolated"]
           playwright:
