@@ -82,10 +82,57 @@ _SETTINGS_CHECKS = (
     "Callback Bridge",
 )
 
+# WebUI pages can bundle cr.js or reject its standalone module import. Reuse
+# their existing native callbacks and forward traffic owned by the page.
+_SETTINGS_BRIDGE = r"""(() => {
+  if (window.workstationSyncSettings) return true;
+  const callbacks = window.cr;
+  if (typeof callbacks?.webUIResponse !== 'function'
+      || typeof callbacks?.webUIListenerCallback !== 'function'
+      || typeof window.chrome?.send !== 'function') return false;
+  const pending = new Map();
+  const listeners = new Set();
+  let sequence = 0;
+  const respond = callbacks.webUIResponse;
+  const notify = callbacks.webUIListenerCallback;
+  callbacks.webUIResponse = (id, success, value) => {
+    const request = pending.get(id);
+    if (!request) return respond(id, success, value);
+    pending.delete(id);
+    if (success) request.resolve(value);
+    else request.reject(new Error('Native Sync request rejected'));
+  };
+  callbacks.webUIListenerCallback = (event, ...args) => {
+    notify(event, ...args);
+    for (const listener of listeners) {
+      if (listener.event === event) listener.callback(...args);
+    }
+  };
+  window.workstationSyncSettings = {
+    sendWithPromise: (method, ...args) => new Promise((resolve, reject) => {
+      const id = 'workstation-manager-sync-' + ++sequence;
+      pending.set(id, {resolve, reject});
+      try { chrome.send(method, [id, ...args]); }
+      catch {
+        pending.delete(id);
+        reject(new Error('Native Sync request failed'));
+      }
+    }),
+    addWebUiListener: (event, callback) => {
+      const listener = {event, callback};
+      listeners.add(listener);
+      return listener;
+    },
+    removeWebUiListener: listener => listeners.delete(listener)
+  };
+  return true;
+})()"""
+
 # Only booleans and counts leave diagnostics. In particular getAllNodes contains
 # browsing data: reduce it inside the browser, never return it over the pipe.
 _START = r"""(async () => {
-  const {addWebUiListener} = await import('chrome://resources/js/cr.js');
+  if (!CALLBACK_BRIDGE) return false;
+  const {addWebUiListener} = window.workstationSyncSettings;
   const state = window.workstationSync = {
     since: Date.now(), downloaded: false, commitErrors: [], entityCoverage: []
   };
@@ -104,10 +151,10 @@ _START = r"""(async () => {
   chrome.send('requestDataAndRegisterForUpdates');
   chrome.send('triggerRefresh');
   return true;
-})()"""
+})()""".replace("CALLBACK_BRIDGE", _SETTINGS_BRIDGE)
 
 _GET_NODES = r"""(async timeoutMs => {
-  const {sendWithPromise} = await import('chrome://resources/js/cr.js');
+  const {sendWithPromise} = window.workstationSyncSettings;
   let timer;
   try {
     return await Promise.race([
@@ -156,7 +203,7 @@ _SNAPSHOT = (
     r"""(async (timeoutMs) => {
   if (!window.workstationSync) await START_SYNC;
   const deadline = performance.now() + timeoutMs;
-  const {addWebUiListener, removeWebUiListener} = await import('chrome://resources/js/cr.js');
+  const {addWebUiListener, removeWebUiListener} = window.workstationSyncSettings;
   let latest;
   const listener = addWebUiListener('onAboutInfoUpdated', info => { latest = info; });
   try {
@@ -288,52 +335,6 @@ def _entity_coverage_summary(coverage: object) -> str:
         details.append(f"{label}: live={row['live']}, nodes={observed}")
     return "; ".join(details)
 
-
-# Settings bundles cr.js, whose standalone module rejects a second initialization.
-# Use the page's existing native callbacks and forward traffic owned by its UI.
-_SETTINGS_BRIDGE = r"""(() => {
-  if (window.workstationSyncSettings) return true;
-  const callbacks = window.cr;
-  if (typeof callbacks?.webUIResponse !== 'function'
-      || typeof callbacks?.webUIListenerCallback !== 'function'
-      || typeof window.chrome?.send !== 'function') return false;
-  const pending = new Map();
-  const listeners = new Set();
-  let sequence = 0;
-  const respond = callbacks.webUIResponse;
-  const notify = callbacks.webUIListenerCallback;
-  callbacks.webUIResponse = (id, success, value) => {
-    const request = pending.get(id);
-    if (!request) return respond(id, success, value);
-    pending.delete(id);
-    if (success) request.resolve(value);
-    else request.reject(new Error('Native Sync request rejected'));
-  };
-  callbacks.webUIListenerCallback = (event, ...args) => {
-    notify(event, ...args);
-    for (const listener of listeners) {
-      if (listener.event === event) listener.callback(...args);
-    }
-  };
-  window.workstationSyncSettings = {
-    sendWithPromise: (method, ...args) => new Promise((resolve, reject) => {
-      const id = 'workstation-manager-sync-' + ++sequence;
-      pending.set(id, {resolve, reject});
-      try { chrome.send(method, [id, ...args]); }
-      catch {
-        pending.delete(id);
-        reject(new Error('Native Sync request failed'));
-      }
-    }),
-    addWebUiListener: (event, callback) => {
-      const listener = {event, callback};
-      listeners.add(listener);
-      return listener;
-    },
-    removeWebUiListener: listener => listeners.delete(listener)
-  };
-  return true;
-})()"""
 
 _ENABLE_EVERYTHING = r"""(async () => {
   const {addWebUiListener, removeWebUiListener, sendWithPromise} = window.workstationSyncSettings;

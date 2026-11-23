@@ -15,6 +15,8 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_
     closed_browser,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
+    _GET_ABOUT,
+    _SETTINGS_BRIDGE,
     NativeSync,
 )
 
@@ -111,8 +113,10 @@ def main() -> None:
                     network_metrics(pipe)
                 state = pipe.evaluate(
                     page,
-                    "(async () => {const {aboutInfo} = await import('chrome://sync-internals/about.js'); "
-                    "const stats = (aboutInfo.details || []).flatMap(section => section.data); "
+                    "(async () => {"
+                    f"if (!{_SETTINGS_BRIDGE}) return -1; "
+                    f"const response = await {_GET_ABOUT}(1000, window.workstationSyncSettings); "
+                    "const stats = (response?.info.details || []).flatMap(section => section.data); "
                     f"return {json.dumps(_STATES)}.indexOf(stats.find(item => "
                     "item.stat_name === 'Transport State')?.stat_value);})()",
                 )
