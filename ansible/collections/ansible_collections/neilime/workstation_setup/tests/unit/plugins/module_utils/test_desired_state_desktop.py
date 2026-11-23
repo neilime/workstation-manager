@@ -56,6 +56,12 @@ def test_normalize_preserves_declared_flatpak_apps_separately_from_browser(
     assert normalized["desktop"]["browser"] == "brave"
 
 
+def test_public_defaults_include_inkscape_flatpak(public_defaults) -> None:
+    """Inkscape should remain in the managed Flatpak desktop baseline."""
+
+    assert "org.inkscape.Inkscape" in public_defaults["desktop"]["flatpak"]["packages"]
+
+
 @pytest.mark.parametrize(
     "selector",
     [
