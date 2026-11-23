@@ -127,8 +127,9 @@ Preserve these implementation contracts:
   browser sandbox, policy and password backend; open no debugging port. Keep
   recovery words in memory and vault credentials out of browser environments.
 - Await the internal page, its native profile-path response, and an exact profile
-  match before accessing Sync. Use the settings page's existing callbacks and
-  canonical `chrome://` module URLs. Bound readiness checks before dispatch and
+  match before accessing Sync. Use the pages' existing WebUI callbacks for
+  settings and diagnostics; their standalone JavaScript modules can be unavailable.
+  Bound readiness checks before dispatch and
   recover only the automation-owned settings page at its fixed internal URL.
   Initialize callbacks within each settings operation and never replay a native
   mutation after a missing acknowledgement. Readiness failures expose only fixed

@@ -149,7 +149,7 @@ def retry_missing_nodes(pipe: BrowserPipe, page: str) -> None:
         pipe.evaluate(
             page,
             """(async () => {
-          const {webUIResponse} = await import('chrome://resources/js/cr.js');
+          const {webUIResponse} = window.cr;
           webUIResponse(window.fixtureNodeRequest, true, window.fixtureNodes);
           return true;
         })()""",
@@ -162,7 +162,7 @@ def retry_missing_nodes(pipe: BrowserPipe, page: str) -> None:
     pipe.evaluate(
         page,
         """(async () => {
-      const {webUIResponse} = await import('chrome://resources/js/cr.js');
+      const {webUIResponse} = window.cr;
       chrome.send = (method, args) => {
         if (method === 'getAllNodes') webUIResponse(args[0], false, 'synthetic-private-error');
         else window.fixtureNodeSend(method, args);
@@ -279,7 +279,7 @@ def prepare_diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Publish native status replacements before asynchronous per-type entity counts."""
 
     prepare = """(async () => {
-      const {webUIListenerCallback, webUIResponse} = await import('chrome://resources/js/cr.js');
+      const {webUIListenerCallback, webUIResponse} = window.cr;
       const fixture = FIXTURE;
       window.fixtureAbout = fixture.about;
       window.fixtureNodes = fixture.nodes;
@@ -386,22 +386,6 @@ def reject_replaced_diagnostics(pipe: BrowserPipe, page: str) -> None:
 def diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Run production JavaScript against stale, pending, errored, and complete native-shaped responses."""
 
-    # Brave's page base can use its branded scheme while location.href remains
-    # chrome:. Relative imports then fetch a brave: resource and reject with a
-    # TypeError. Native resources must use their canonical chrome: addresses.
-    assert (
-        pipe.evaluate(
-            page,
-            """(() => {
-          const base = document.createElement('base');
-          base.href = 'brave://sync-internals/';
-          document.head.prepend(base);
-          return document.baseURI === 'brave://sync-internals/'
-            && location.href === 'chrome://sync-internals/';
-        })()""",
-        )
-        is True
-    )
     pipe.evaluate(page, _START)
     assert snapshot(pipe, page) == {"healthy": False, "pending": True, "fresh": False}
     prepare_diagnostics(pipe, page)
@@ -409,7 +393,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert stale == {"healthy": True, "pending": False, "fresh": False}, stale
     assert pipe.evaluate(page, "window.workstationSync.checks['Fresh Download']") is False
     event = """(async () => {
-      const {webUIListenerCallback} = await import('chrome://resources/js/cr.js');
+      const {webUIListenerCallback} = window.cr;
       webUIListenerCallback('onProtocolEvent', {time: Date.now() OFFSET,
         type: 'GetUpdates Response', details: 'Received 0 update(s).'});
       return true;
@@ -427,7 +411,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(
         page,
         """(async () => {
-      const {webUIListenerCallback} = await import('chrome://resources/js/cr.js');
+      const {webUIListenerCallback} = window.cr;
       webUIListenerCallback('onProtocolEvent', {time: Date.now(), type: 'Commit Response', proto: {
         commit: {entryresponse: [{response_type: 'TRANSIENT_ERROR', error_message: 'private-data'},
           {response_type: 'private-error'}]}
@@ -447,7 +431,7 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, "window.workstationSync.checks['Data Type Status']") is False
     retry_failed_cycles(pipe, page)
     print(
-        "Native diagnostics: canonical imports, fresh status/counts, stale busy/idle caches, "
+        "Native diagnostics: page callbacks, fresh status/counts, stale busy/idle caches, "
         "pending upload/deletion, partial Sessions export, missing/late/rejected replies, status replacement, "
         "lost page state, redacted commit errors, failure, retry, and success passed.",
         flush=True,
