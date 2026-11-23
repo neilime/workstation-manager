@@ -62,6 +62,7 @@ workstation_manager:
         - org.jdownloader.JDownloader
         - org.gnome.DejaDup
         - org.libreoffice.LibreOffice
+        - org.inkscape.Inkscape
         - com.bitwarden.desktop
     # Select the browser adapter; installation details belong to its role.
     browser: brave
