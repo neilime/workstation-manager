@@ -208,7 +208,7 @@ device protection.
 
 The native shared-window feature exposes placeholder tab URLs that can lag behind
 the live shared tab after navigation. Verify per-window pin identities and order,
-and retain their current addresses only in local storage for restart adoption.
+and retain their current addresses only on the current device for restart adoption.
 When Brave restores the original shared address, briefly activate the tab to
 attach its real contents and restore this computer's saved navigation, then
 restore the previous active tab. Do not publish navigation to other computers.
