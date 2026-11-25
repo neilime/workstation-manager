@@ -191,6 +191,11 @@ every running data type within one deadline. Replaced status or lost page state
 invalidates the observation; late replies cannot complete it. Explicit native
 rejections and broken automation connections fail recovery.
 
+If the diagnostics page loses its context, verification opens a replacement once
+within the original deadline. It discards previous download evidence and requires
+two new clean observations. This retry never repeats enrollment or device removal;
+malformed evidence, queue overflow, and a second context loss still fail recovery.
+
 Reduce diagnostics inside the browser to booleans, numeric metrics and
 allowlisted error categories. Installation verification additionally carries
 validated extension/app identifiers through private IPC to compare native

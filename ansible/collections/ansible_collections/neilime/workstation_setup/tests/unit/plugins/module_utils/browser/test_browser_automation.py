@@ -15,6 +15,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser 
     lifecycle,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
+    BrowserContextLost,
     BrowserPipe,
     BrowserProtocolError,
 )
@@ -402,6 +403,72 @@ def test_native_wait_requires_two_clean_observations(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
     instance = native.NativeSync(pipe, "/fixture/Default")
     assert instance.wait() is True
+
+
+@pytest.mark.parametrize("lost", ["context", "observer"])
+def test_lost_diagnostics_restart_with_fresh_evidence_and_two_clean_observations(
+    lost: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A replacement diagnostics tab cannot reuse the previous tab's successful observation."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY]
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    pipe.reset_mock()
+    packet = {"available": True, "events": [], "generation": "00000000-0000-0000-0000-000000000001"}
+    clean = {"healthy": True, "pending": False, "fresh": True}
+    loss: list[object] = (
+        [packet, True, BrowserContextLost("Inspected target navigated or closed")]
+        if lost == "context"
+        else [{"available": False, "events": [], "generation": None}]
+    )
+    replacement = {**packet, "generation": "00000000-0000-0000-0000-000000000002"}
+    responses = iter([True, packet, True, clean, *loss, True, replacement, True, clean, replacement, True, clean])
+    pipe.evaluate.side_effect = responses
+    monkeypatch.setattr(native.time, "sleep", lambda _seconds: None)
+
+    assert instance.wait() is True
+    assert next(responses, None) is None, "Verification needs two clean observations from the replacement"
+    assert all(call.args == ("brave://sync-internals",) for call in pipe.page.call_args_list)
+    assert not any("SyncSetup" in call.args[1] for call in pipe.evaluate.call_args_list)
+
+
+@pytest.mark.parametrize("deadline_expired", [False, True])
+def test_diagnostic_context_recovery_is_bounded_by_one_retry_and_the_original_deadline(
+    deadline_expired: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repeated navigation cannot loop forever or reset the caller's verification deadline."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY]
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    pipe.reset_mock()
+    lost = BrowserContextLost("Inspected target navigated or closed")
+    responses = iter([True, lost] if deadline_expired else [True, lost, True, lost])
+    pipe.evaluate.side_effect = responses
+    ticks = iter([0, 0, 2] if deadline_expired else [0, 0, 0, 0])
+    monkeypatch.setattr(native.time, "monotonic", lambda: next(ticks))
+
+    with pytest.raises(BrowserContextLost, match="navigated or closed"):
+        instance.wait(timeout=1)
+    assert next(responses, None) is None
+
+
+@pytest.mark.parametrize(
+    "packet",
+    [
+        {"available": False, "events": [], "generation": "00000000-0000-0000-0000-000000000001"},
+        {"available": 0, "events": [], "generation": None},
+    ],
+)
+def test_overflow_and_malformed_evidence_cannot_trigger_context_recovery(packet: dict) -> None:
+    """Lost events and invalid schemas fail instead of being mistaken for a vanished observer."""
+
+    pipe = Mock()
+    pipe.evaluate.side_effect = [True, _CALLBACKS_READY, _ENCRYPTION_READY, True, packet]
+    instance = native.NativeSync(pipe, "/fixture/Default")
+    with pytest.raises(BrowserProtocolError, match="unsupported download evidence"):
+        instance.wait()
 
 
 @pytest.mark.parametrize("unhealthy,has_counts", [(False, True), (True, True), (True, False)])

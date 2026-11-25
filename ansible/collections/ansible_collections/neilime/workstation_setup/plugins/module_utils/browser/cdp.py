@@ -27,7 +27,11 @@ class BrowserProtocolError(ValueError):
     """Expose only a fixed diagnostic, never browser responses or JavaScript values."""
 
 
-def _protocol_rejection(error: object) -> str:
+class BrowserContextLost(BrowserProtocolError):
+    """Identify a lost page context without authorizing replay of its operations."""
+
+
+def _protocol_rejection(error: object) -> BrowserProtocolError:
     """Reduce protocol errors to numeric codes and exact known context-loss reasons."""
 
     code = error.get("code") if isinstance(error, dict) else None
@@ -41,8 +45,8 @@ def _protocol_rejection(error: object) -> str:
         "Inspected target navigated or closed",
         "Promise was collected",
     }:
-        detail += ": " + reason
-    return detail
+        return BrowserContextLost(detail + ": " + reason)
+    return BrowserProtocolError(detail)
 
 
 class BrowserPipe:
@@ -108,7 +112,7 @@ class BrowserPipe:
                     self._record_acknowledgement(message)
                     continue
                 if "error" in message:
-                    raise BrowserProtocolError(_protocol_rejection(message["error"]))
+                    raise _protocol_rejection(message["error"])
                 if not isinstance(message.get("result"), dict):
                     raise BrowserProtocolError("Brave rejected the automation request")
                 return message["result"]
