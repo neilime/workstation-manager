@@ -35,6 +35,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.native import (  # noqa: E402
     _CONFIGURE_SELECTION,
     _SETTINGS_BRIDGE,
+    _SNAPSHOT,
     NativeSync,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop.session import (  # noqa: E402
@@ -576,6 +577,25 @@ def profile_preferences(pipe: BrowserPipe, native: NativeSync) -> None:
     print("Per-profile bookmark-bar and close-tabs settings passed native readback.", flush=True)
 
 
+def reloaded_sync_diagnostics(pipe: BrowserPipe, native: NativeSync) -> None:
+    """A real page reload interrupts observation without certifying an offline chain."""
+
+    original_evaluate = pipe.evaluate
+    interrupted = False
+
+    def evaluate(session: str, expression: str, timeout: float = 30) -> object:
+        nonlocal interrupted
+        if not interrupted and expression.startswith(_SNAPSHOT):
+            interrupted = True
+            expression = "new Promise(() => setTimeout(() => location.reload(), 0))"
+        return original_evaluate(session, expression, timeout)
+
+    with patch.object(pipe, "evaluate", side_effect=evaluate):
+        assert native.wait(timeout=10) is False, "Offline Sync was incorrectly verified after navigation"
+    assert interrupted, "The native diagnostics request was not interrupted"
+    print("Lost native diagnostics recovered without accepting offline Sync.", flush=True)
+
+
 def main() -> None:
     """Run only inside Lima, preserving a synthetic tab across automation restarts."""
 
@@ -618,7 +638,8 @@ def main() -> None:
             native = NativeSync(pipe, directory + "/Default")
             assert native.code() == code, "Native code could not be decrypted after restarting"
             native.profile_preferences({"bookmark_bar": "always", "confirm_close_tabs": False}, restore=False)
-            assert native.wait(timeout=2) is False, "Offline Sync was incorrectly verified"
+            reloaded_sync_diagnostics(pipe, native)
+            assert native.code() == code, "Diagnostic recovery changed the chain identity"
             targets = pipe.call("Target.getTargets")["targetInfos"]
             assert any(target["url"] == "data:text/plain,workstation-session-fixture" for target in targets), (
                 "Previous session tab was not restored"

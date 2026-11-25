@@ -103,14 +103,13 @@ def main() -> None:
                 environment,
             ) as pipe:
                 native = NativeSync(pipe, str(profile))
-                page = pipe.page("brave://sync-internals")
-                pipe.evaluate(page, "chrome.send('requestDataAndRegisterForUpdates'); true")
                 try:
                     verified = native.wait(timeout=120)
                 finally:
                     # Preserve numeric failure evidence even if a diagnostic
                     # page loses its execution context during browser startup.
                     network_metrics(pipe)
+                page = pipe.page("brave://sync-internals")
                 state = pipe.evaluate(
                     page,
                     "(async () => {"

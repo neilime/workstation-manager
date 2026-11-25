@@ -173,6 +173,7 @@ DOWNLOAD_OBSERVER = r"""(() => {
 
 READ_DOWNLOAD_EVENTS = """(() => {
   const state = window.workstationCheckpoint;
-  if (!state || state.overflow) return {available: false, events: [], generation: null};
-  return {available: true, events: state.events.splice(0), generation: state.generation};
+  if (!state) return {available: false, events: [], generation: null};
+  return {available: !state.overflow, events: state.overflow ? [] : state.events.splice(0),
+    generation: state.generation};
 })()"""

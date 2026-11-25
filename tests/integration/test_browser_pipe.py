@@ -7,6 +7,7 @@ import sys
 
 import pytest
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
+    BrowserContextLost,
     BrowserPipe,
     BrowserProtocolError,
 )
@@ -174,7 +175,7 @@ def test_protocol_failures_are_bounded_and_never_echo_browser_payloads(method: s
     assert pipe.process.returncode is not None
 
 
-@pytest.mark.parametrize("reason", ["Promise was collected", "private-browser-secret"])
+@pytest.mark.parametrize("reason", ["Inspected target navigated or closed", "private-browser-secret"])
 def test_protocol_rejections_report_only_codes_and_fixed_context_reasons(reason: str) -> None:
     """Context loss is distinguishable without exposing arbitrary protocol error messages."""
 
@@ -184,5 +185,5 @@ def test_protocol_rejections_report_only_codes_and_fixed_context_reasons(reason:
     ):
         pipe.call("error", {"code": -32000, "message": reason, "data": "private-browser-data"})
     assert "protocol code -32000" in str(error.value)
-    assert ("Promise was collected" in str(error.value)) is (reason == "Promise was collected")
+    assert isinstance(error.value, BrowserContextLost) is (reason == "Inspected target navigated or closed")
     assert "private" not in str(error.value)

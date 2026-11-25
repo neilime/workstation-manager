@@ -7,6 +7,7 @@ import re
 import time
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
+    BrowserContextLost,
     BrowserPipe,
     BrowserProtocolError,
 )
@@ -507,7 +508,7 @@ class NativeSync:
         try:
             return self.pipe.evaluate(session, expression, timeout=timeout)
         except BrowserProtocolError as error:
-            raise BrowserProtocolError(f"Brave Sync failed while {operation}: {error}") from error
+            raise type(error)(f"Brave Sync failed while {operation}: {error}") from error
 
     def _evaluate_settings(self, expression: str, operation: str, timeout: float = 30) -> object:
         """Wait for the owned settings page, then issue one native operation without replay."""
@@ -734,19 +735,40 @@ class NativeSync:
         """Require a fresh successful download and two clean observations without pending changes."""
 
         self.pending_reason = "Sync verification did not complete"
+        deadline = time.monotonic() + timeout
+        try:
+            return self._wait_until(deadline)
+        except BrowserContextLost:
+            if time.monotonic() >= deadline:
+                raise
+            # Restart only observation, once, within the original deadline.
+            # A lost page never authorizes replaying enrollment or device removal.
+            return self._wait_until(deadline)
+
+    def _wait_until(self, deadline: float) -> bool:
+        """Observe one owned diagnostics page without carrying evidence from another context."""
+
         session = self.pipe.page("brave://sync-internals")
         self._diagnostics = session
         if self._evaluate(session, _START, "starting Sync diagnostics") is not True:
             raise BrowserProtocolError("Brave could not request a fresh Sync cycle")
-        deadline = time.monotonic() + timeout
         checkpoint = DownloadCheckpoint(list(_DOWNLOAD_TYPES.values()))
         clean = 0
         while time.monotonic() < deadline:
             packet = self._evaluate(session, READ_DOWNLOAD_EVENTS, "reading download checkpoints")
+            if (
+                isinstance(packet, dict)
+                and packet.get("available") is False
+                and packet == {"available": False, "events": [], "generation": None}
+            ):
+                raise BrowserContextLost("Brave's download observer was lost")
+            generation = checkpoint.generation
             try:
                 checkpoint.consume(packet)
             except ValueError as error:
                 raise BrowserProtocolError("Brave returned unsupported download evidence") from error
+            if checkpoint.generation != generation:
+                clean = 0
             self._evaluate(
                 session,
                 f"window.workstationSync.downloadedTypes = {json.dumps(sorted(checkpoint.completed))}; true",
