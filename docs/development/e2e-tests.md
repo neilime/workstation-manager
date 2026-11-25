@@ -127,6 +127,37 @@ stages to succeed; they are not independent reruns. Always run
 and report screenshot failures, then `make e2e-down`. The full `make e2e-test`
 command handles stage sequencing and fixture finishing automatically.
 
+## Browser checkpoint experiment
+
+The opt-in [checkpoint experiment](../../e2e-tests/browser_sync_checkpoint_experiment.py)
+uses two fresh profiles on an independent live Brave Sync chain. It requires a
+ready Lima desktop, its unlocked fixture keyring, and Brave installed from the
+[official Linux package repository](https://brave.com/linux/). It requires no
+Bitwarden or private configuration credentials and is separate from the full flow.
+
+From a local VM with the live workspace mounted, run:
+
+```sh
+limactl shell "$VM_NAME" -- bash -c '
+  export PYTHONPATH=/workspace/ansible/collections
+  python3 /workspace/e2e-tests/browser_sync_checkpoint_experiment.py run \
+    --directory "$HOME/.local/state/workstation-manager/checkpoint-experiment"
+'
+```
+
+The directory must not exist. The experiment checks synthetic bookmark and
+preference readback, rejects stale recovery while network access is blocked,
+then verifies continuation with the same device identity. It reports duration
+and whether Sync was busy during polling and at the narrow probe's completion.
+It also runs the production verifier before accepting recovery and rejects
+a disconnected receiver. Its concrete fixture inventory covers bookmarks and one
+preference; see [ADR 0007](adr/adr-0007-browser-recovery-checkpoints.md).
+
+The runner always attempts server-verified device removal. Failed teardown
+retains the private directory and requires retaining the VM. Rerun the same
+command with `cleanup` in place of `run` to resume removal before destroying the
+VM. The normal end-to-end fixture cleanup does not own these separate profile roots.
+
 ## Teardown and reuse
 
 Run `make e2e-down` after failures too. It resumes a stopped VM, asks only the

@@ -19,26 +19,29 @@ WORKSPACE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WORKSPACE / "ansible/collections"))
 
 # pylint: disable=wrong-import-position
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
-    browser_profile_preferences,
-)
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (  # noqa: E402
     BrowserPipe,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.lifecycle import (  # noqa: E402
     browser_processes,
     closed_browser,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (  # noqa: E402
-    _ENABLE_EVERYTHING,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (  # noqa: E402
+    preferences as browser_profile_preferences,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.devices import (  # noqa: E402
+    _REMOVAL_BINDING,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.native import (  # noqa: E402
+    _CONFIGURE_SELECTION,
     _SETTINGS_BRIDGE,
     NativeSync,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (  # noqa: E402
-    _REMOVAL_BINDING,
-)
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop.session import (  # noqa: E402
     DesktopSession,
+)
+from browser_installation_smoke import (  # noqa: E402
+    installed_applications,
 )
 from browser_sync_diagnostics_smoke import diagnostic_fixture, diagnostics  # noqa: E402
 from browser_sync_fixture import (  # noqa: E402
@@ -477,21 +480,28 @@ def sync_selection(pipe: BrowserPipe, page: str) -> None:
     pipe.evaluate(
         page,
         """(() => {
-      const {webUIListenerCallback, webUIResponse} = window.cr;
-      window.fixturePrefs = {syncAllDataTypes: false, bookmarksSynced: true, preferencesSynced: false};
-      chrome.send = (method, args) => {
-        if (method === 'SyncPrefsDispatch')
-          webUIListenerCallback('sync-prefs-changed', window.fixturePrefs);
-        if (method === 'SyncSetupSetDatatypes') {
-          window.fixturePrefs = JSON.parse(args[1]);
-          webUIResponse(args[0], true, 'configure');
-        }
+      window.fixturePrefs = {syncAllDataTypes: true, bookmarksSynced: true, preferencesSynced: false,
+        appsSynced: true, extensionsSynced: true, themesSynced: true, typedUrlsSynced: true,
+        passwordsSynced: true, tabsSynced: true, aiChatSynced: true};
+      let listener;
+      window.workstationSyncSettings = {
+        addWebUiListener: (_event, callback) => { listener = callback; return callback; },
+        removeWebUiListener: () => { listener = null; },
+        sendWithPromise: async (_method, prefs) => { window.fixturePrefs = JSON.parse(prefs); }
+      };
+      chrome.send = method => {
+        if (method === 'SyncPrefsDispatch') listener(window.fixturePrefs);
       };
       return true;
     })()""",
     )
-    assert pipe.evaluate(page, _ENABLE_EVERYTHING) is True
-    assert pipe.evaluate(page, "window.fixturePrefs.syncAllDataTypes === true") is True
+    assert pipe.evaluate(page, f"{_CONFIGURE_SELECTION}(true)") is True
+    assert (
+        pipe.evaluate(page, "window.fixturePrefs.syncAllDataTypes === false && !window.fixturePrefs.passwordsSynced")
+        is True
+    )
+    navigate_native_page(pipe, page, "about:blank")
+    navigate_native_page(pipe, page, "chrome://settings/braveSync/setup")
 
 
 def restore_open_profiles(environment: dict[str, str]) -> None:
@@ -572,12 +582,18 @@ def main() -> None:
     if not platform.node().startswith("lima-"):
         raise SystemExit("Run this smoke test inside the Lima VM, never against a workstation browser.")
     with tempfile.TemporaryDirectory(prefix="workstation-browser-smoke-") as directory:
+        extension = Path(directory) / "extension-fixture"
+        extension.mkdir()
+        (extension / "manifest.json").write_text(
+            json.dumps({"manifest_version": 3, "name": "Recovery fixture", "version": "1.0.0"})
+        )
         arguments = [
             "/usr/bin/brave-browser",
             "--remote-debugging-pipe",
             "--no-first-run",
             "--no-default-browser-check",
             f"--user-data-dir={directory}",
+            f"--load-extension={extension}",
             "--profile-directory=Default",
             "--restore-last-session",
             "--sync-url=http://127.0.0.1:1",
@@ -597,6 +613,7 @@ def main() -> None:
             code = pending_chain(pipe, native)
             sync_selection(pipe, native.settings)
             profile_preferences(pipe, native)
+            installed_applications(pipe)
         with BrowserPipe(arguments, environment) as pipe:
             native = NativeSync(pipe, directory + "/Default")
             assert native.code() == code, "Native code could not be decrypted after restarting"

@@ -56,9 +56,11 @@ blocker:
 # Ansible requires runtime imports after the module documentation.
 # pylint: disable=wrong-import-position
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
-    browser_profile_arguments,
-    browser_profile_seed,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (  # noqa: E402
+    arguments as browser_profile_arguments,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (  # noqa: E402
+    seed as browser_profile_seed,
 )
 
 # pylint: enable=wrong-import-position

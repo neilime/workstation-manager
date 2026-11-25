@@ -61,7 +61,7 @@ destination_exists:
 import tarfile  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_restore.plugins.module_utils.restore_planning import (  # noqa: E402
+from ansible_collections.neilime.workstation_restore.plugins.module_utils.archive.planning import (  # noqa: E402
     ArchiveRestorePlanner,
 )
 

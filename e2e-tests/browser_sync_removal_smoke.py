@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
     BrowserPipe,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.devices import (
     _REMOVAL_BINDING,
     _REMOVAL_CHECKS,
     _WATCH_REMOVAL,

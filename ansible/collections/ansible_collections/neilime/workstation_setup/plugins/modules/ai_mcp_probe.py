@@ -70,7 +70,7 @@ deferred:
 # Ansible requires metadata before runtime imports.
 # pylint: disable=wrong-import-position
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.mcp_stdio import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai.mcp_stdio import (  # noqa: E402
     McpStdioSession,
 )
 

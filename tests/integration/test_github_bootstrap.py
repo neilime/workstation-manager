@@ -71,8 +71,8 @@ else:
     isolated = collection_root / "ansible_collections/neilime/workstation_setup"
     for relative in (
         "plugins/modules/github_auth.py",
-        "plugins/module_utils/github_auth.py",
-        "plugins/module_utils/desktop_session.py",
+        "plugins/module_utils/github/auth.py",
+        "plugins/module_utils/desktop/session.py",
     ):
         destination = isolated / relative
         destination.parent.mkdir(parents=True, exist_ok=True)

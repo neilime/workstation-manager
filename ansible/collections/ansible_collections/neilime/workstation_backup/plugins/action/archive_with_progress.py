@@ -9,7 +9,7 @@ from typing import Any
 from ansible.errors import AnsibleActionFail
 from ansible.plugins.action import ActionBase
 from ansible.utils.display import Display
-from ansible_collections.neilime.workstation_backup.plugins.module_utils.archive_progress import (
+from ansible_collections.neilime.workstation_backup.plugins.module_utils.archive.progress import (
     archive_progress,
 )
 

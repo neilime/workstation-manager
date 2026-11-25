@@ -63,7 +63,7 @@ RETURN = r"""{}"""
 from pathlib import Path  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai_provider_config import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai.provider_config import (  # noqa: E402
     AiProviderConfiguration,
 )
 

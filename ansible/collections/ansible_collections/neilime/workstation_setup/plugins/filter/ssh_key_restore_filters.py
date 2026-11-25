@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden_ssh_keys import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden.ssh_keys import (
     BitwardenSshKeyRestorePlanner,
 )
 

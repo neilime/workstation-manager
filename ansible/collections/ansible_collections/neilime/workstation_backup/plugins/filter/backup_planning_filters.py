@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_backup.plugins.module_utils.backup_planning import (
+from ansible_collections.neilime.workstation_backup.plugins.module_utils.archive.planning import (
     BackupManifestContentBuilder,
     BackupPathPlanBuilder,
     BackupRequestedPathsBuilder,

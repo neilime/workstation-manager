@@ -35,7 +35,7 @@ options:
     choices: [sync, save, restore, retry]
   restore_metadata:
     description:
-      - Restore saved profile metadata and enable Sync everything before live recovery.
+      - Restore saved profile metadata and the selected Sync categories before live recovery.
       - Metadata restoration and live recovery share the same closed-browser session.
       - Only valid with C(action=restore); backup keeps metadata reconciliation separate unless explicitly requested.
     type: bool
@@ -91,11 +91,17 @@ actions:
 
 # pylint: disable=wrong-import-position,bad-indentation
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
-    browser_lifecycle,
-    browser_live_sync,
-    browser_profile_arguments,
-    browser_profile_sync,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser import (  # noqa: E402
+    lifecycle as browser_lifecycle,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (  # noqa: E402
+    arguments as browser_profile_arguments,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (  # noqa: E402
+    reconciliation as browser_profile_sync,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync import (  # noqa: E402
+    recovery as browser_live_sync,
 )
 
 # pylint: enable=wrong-import-position

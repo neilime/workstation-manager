@@ -58,7 +58,7 @@ changed:
 from pathlib import Path  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.github_extensions import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.github.extensions import (  # noqa: E402
     GitHubExtensions,
 )
 

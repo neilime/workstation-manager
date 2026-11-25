@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden_browser_profiles import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles.bitwarden import (
     bitwarden_browser_profiles,
 )
 

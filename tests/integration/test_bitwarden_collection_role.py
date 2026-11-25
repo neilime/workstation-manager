@@ -418,8 +418,8 @@ class BitwardenCollectionRoleTests(BitwardenCollectionFixture):
             probe = fixture / "read_browser_record.py"
             probe.write_text(
                 "import os, subprocess, sys\n"
-                "from ansible_collections.neilime.workstation_setup.plugins.module_utils "
-                "import browser_profile_sync\n"
+                "from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles "
+                "import reconciliation as browser_profile_sync\n"
                 "def run_command(argv, **kwargs):\n"
                 "    result = subprocess.run(argv, env=kwargs['environ_update'], "
                 "input=kwargs['data'], capture_output=True, check=False)\n"

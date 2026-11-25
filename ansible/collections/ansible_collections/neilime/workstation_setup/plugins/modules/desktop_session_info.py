@@ -44,7 +44,7 @@ environment:
 
 # pylint: disable=wrong-import-position
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop_session import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop.session import (  # noqa: E402
     DesktopSession,
 )
 

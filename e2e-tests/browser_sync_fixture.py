@@ -9,24 +9,24 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
     BrowserPipe,
     BrowserProtocolError,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.lifecycle import (
     automation_arguments,
     browser_processes,
     closed_browser,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
-    _GET_ABOUT,
-    _SETTINGS_BRIDGE,
-    NativeSync,
-)
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_sync_devices import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.devices import (
     _REMOVAL_BINDING,
     _REMOVAL_CHECKS,
     _WATCH_REMOVAL,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.native import (
+    _GET_ABOUT,
+    _SETTINGS_BRIDGE,
+    NativeSync,
 )
 from browser_sync_network_gate import SyncNetworkGate
 from browser_sync_teardown_state import teardown_profile, write_private_json

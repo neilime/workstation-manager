@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
-    editor_settings_sync,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.editor import (
+    settings_sync as editor_settings_sync,
 )
 
 _planner = editor_settings_sync.VscodeSettingsSyncPlanner()

@@ -54,6 +54,22 @@ Use `workstation_manager_resolved.user` and `workstation_manager_use_become` for
 the managed account. Namespace adapter variables, keep reusable Python in
 `plugins/module_utils/`, and expose thin modules or filters.
 
+## Python package
+
+The setup collection groups browser implementation in
+[`plugins/module_utils/browser/`](../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/browser/).
+
+| Package or module | Responsibility                                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `profiles/`       | Profile paths, preferences, avatars, vault records, inspection, and metadata reconciliation.                               |
+| `sync/`           | Native enrollment, managed data selection, recovery orchestration, checkpoints, installation readback, and device removal. |
+| `cdp.py`          | Private DevTools pipe transport.                                                                                           |
+| `lifecycle.py`    | Safe browser close/reopen and automation launch arguments.                                                                 |
+
+Follow the shared [Python package conventions](README.md#python-packages).
+Browser export stays in the backup collection's `archive/browser.py`, which
+imports the shared profile path planner from this package.
+
 ## Profile input
 
 Use `neilime.workstation_setup.browser_profile_collection` to populate
@@ -101,7 +117,7 @@ The [Brave role][brave-role] manages
 Sync; enrollment requires native browser operations.
 
 Profile seeding preserves existing names and unspecified preferences. `restore`
-replaces declared metadata, enables Sync everything, joins stored chains, and
+replaces declared metadata, applies the managed Sync selection, joins stored chains, and
 requires live verification. Metadata `save` updates vault fields and avatars
 without changing recovery words; the separate live Sync action can save a code
 into an existing note and verify its readback. Backup's browser export sidecar
@@ -143,8 +159,10 @@ The [native Sync helper][native-sync] owns enrollment and recovery;
 
 ### Verification and device removal
 
-Verification requires a fresh successful GetUpdates response, healthy native
-Sync diagnostics, required data types running, and two observations without
+Verification requires fresh matched GetUpdates requests and final responses for
+every active downloadable model. A subsequent request must carry their progress
+markers before model readback. The configured models must be running, native
+transport and encryption must be healthy, and two observations must have no
 unacknowledged exported entity sequences or pending tombstones. Stale success, partial
 responses, errors, and timeouts remain unverified. An existing matching seed must
 not be rejoined even when saved transport flags indicate incomplete setup.
@@ -174,28 +192,26 @@ invalidates the observation; late replies cannot complete it. Explicit native
 rejections and broken automation connections fail recovery.
 
 Reduce diagnostics inside the browser to booleans, numeric metrics and
-allowlisted error categories. Never return entity contents, scripts, recovery
-words or arbitrary native error messages. Upstream API changes fail closed;
+allowlisted error categories. Installation verification additionally carries
+validated extension/app identifiers through private IPC to compare native
+installation inventories. Names, URLs, entity contents, scripts, recovery words,
+and arbitrary native error messages never enter task results. Upstream API changes fail closed;
 saved preferences alone cannot prove server upload. Throttled enrollment points
 to the [device-limit recovery procedure](../usage/browser.md#restore-on-another-computer).
 Entity coverage failures report each mismatched type's live-entity count and
 number of diagnostic nodes with metadata. Type labels are allowlisted; unknown
 types use a fixed label, and missing or ambiguous node groups are unavailable.
-Require exact counts except for Sessions: Chromium's session tracker deliberately
-omits tab nodes without a valid tab ID from its diagnostic export. A Sessions
-group must be present, nonempty when live entities exist, and contain no more
-metadata nodes than the live count. Check every exported node's acknowledgement
-and the full tracker counts for pending deletions. Omitted Sessions metadata is
-not exposed by the native API and cannot be independently verified. See the
-[upstream serializer][session-serializer] and its [regression test][session-serializer-test].
+Require exact counts for every active model and check all exported metadata and
+pending tombstones. Ordinary tabs and their Sessions model are excluded from the
+managed selection. Commit-only models have no GetUpdates checkpoint but retain
+upload verification. A busy cycle alone does not invalidate complete evidence.
+Actual extension enabled/disabled state and web-app installation state are read
+back separately: Sync's diagnostic nodes can include pending installations.
 Keep the last complete observation for timeout reporting across later busy cycles
 or missing replies, but never reuse it for verification. If native health checks
 prevent entity inspection, report those prerequisites without presenting skipped
 entity checks as failures. Retry refreshes for missing successful downloads and
 unacknowledged changes; a coverage mismatch alone must not start another cycle.
-
-[session-serializer]: https://github.com/chromium/chromium/blob/156.0.8078.80/components/sync_sessions/synced_session_tracker.cc#L891-L903
-[session-serializer-test]: https://github.com/chromium/chromium/blob/156.0.8078.80/components/sync_sessions/synced_session_tracker_unittest.cc#L1034-L1076
 
 ## Validation
 
@@ -219,6 +235,11 @@ diagnostic JavaScript with synthetic success, failure, stale, upload, deletion a
 delayed response states. It does not certify public Sync connectivity; the
 [full VM flow](e2e-tests.md#run-the-flow) checks live recovery.
 
+The separate [checkpoint experiment](e2e-tests.md#browser-checkpoint-experiment)
+qualifies the production checkpoint verifier and actual bookmark/preference
+readback on a synthetic live chain. These isolated checks complement the full
+workstation flow.
+
 [brave-role]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/roles/browser_brave
-[native-sync]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/browser_native_sync.py
-[profile-sync]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/browser_profile_sync.py
+[native-sync]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/browser/sync/native.py
+[profile-sync]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/browser/profiles/reconciliation.py

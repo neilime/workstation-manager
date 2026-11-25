@@ -67,7 +67,7 @@ profiles:
 
 # pylint: disable=wrong-import-position
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_profile_avatars import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles.avatars import (  # noqa: E402
     BrowserAvatarRecovery,
 )
 

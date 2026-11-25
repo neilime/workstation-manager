@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.lifecycle import (
     browser_processes,
 )
 

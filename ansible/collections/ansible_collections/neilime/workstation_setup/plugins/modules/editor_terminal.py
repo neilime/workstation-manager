@@ -65,7 +65,7 @@ import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.editor_terminal import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.editor.terminal import (  # noqa: E402
     EditorTerminalKeybindings,
     EditorTerminalSettings,
 )

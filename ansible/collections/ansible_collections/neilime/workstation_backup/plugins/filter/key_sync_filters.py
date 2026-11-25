@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_backup.plugins.module_utils.key_sync import (
+from ansible_collections.neilime.workstation_backup.plugins.module_utils.recovery.keys import (
     BitwardenGpgKeySyncPlanner,
     BitwardenSshKeySyncPlanner,
 )

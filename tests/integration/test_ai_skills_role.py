@@ -3,7 +3,7 @@
 import sys
 
 import pytest
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state_ai_tools import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state.ai_tools import (
     AiToolsNormalizer,
 )
 from ansible_test_helpers import (

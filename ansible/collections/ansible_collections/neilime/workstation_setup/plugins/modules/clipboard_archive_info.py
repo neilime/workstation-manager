@@ -33,11 +33,11 @@ metadata:
 """
 
 # pylint: disable=wrong-import-position
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
-    gnome_extension_archive_module,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop.extensions import (  # noqa: E402
+    archive_module as gnome_extension_archive_module,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.clipboard_archive import (  # noqa: E402
-    ClipboardArchive,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop.extensions import (  # noqa: E402
+    clipboard,
 )
 
 # pylint: enable=wrong-import-position
@@ -45,7 +45,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.clipboar
 
 def main() -> None:
     """Expose archive checks to setup orchestration."""
-    gnome_extension_archive_module.run_archive_module(ClipboardArchive.validate, "Clipboard Indicator")
+    gnome_extension_archive_module.run_archive_module(clipboard.ClipboardArchive.validate, "Clipboard Indicator")
 
 
 if __name__ == "__main__":

@@ -61,7 +61,7 @@ deferred:
 from pathlib import Path  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai_skill_links import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai.skill_links import (  # noqa: E402
     AiSkillLinks,
 )
 

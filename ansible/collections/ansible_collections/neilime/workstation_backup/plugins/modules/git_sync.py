@@ -61,7 +61,7 @@ state:
 # Ansible requires runtime imports after the module documentation.
 # pylint: disable=wrong-import-position
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_backup.plugins.module_utils.git_sync import (  # noqa: E402
+from ansible_collections.neilime.workstation_backup.plugins.module_utils.git.sync import (  # noqa: E402
     synchronize_git,
 )
 
