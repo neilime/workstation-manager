@@ -130,7 +130,8 @@ DOWNLOAD_OBSERVER = r"""(() => {
         // This crosses the engine's update-dispatch boundary. Model queries made
         // after it queue behind those dispatched updates on each model sequence.
         const applied = markers.filter(marker => state.markers.has(Number(marker.data_type_id))
-          && marker.token === state.markers.get(Number(marker.data_type_id))).map(marker => Number(marker.data_type_id));
+          && marker.token === state.markers.get(Number(marker.data_type_id)))
+          .map(marker => Number(marker.data_type_id));
         if (applied.length) {
           emit({kind: 'applied', types: applied});
           applied.forEach(type => { state.applied.add(type); state.markers.delete(type); });
@@ -152,7 +153,8 @@ DOWNLOAD_OBSERVER = r"""(() => {
         if (success && remaining === 0 && reduced.types && requested.every(type => reduced.types.includes(type))) {
           for (const marker of updates.new_progress_marker) {
             const type = Number(marker.data_type_id);
-            if (requested.includes(type) && !state.applied.has(type) && typeof marker.token === 'string' && marker.token) {
+            if (requested.includes(type) && !state.applied.has(type)
+                && typeof marker.token === 'string' && marker.token) {
               state.markers.set(type, marker.token);
             }
           }
