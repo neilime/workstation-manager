@@ -73,7 +73,7 @@ local_changes:
 from pathlib import Path  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.chezmoi_source import (  # noqa: E402
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.chezmoi.source import (  # noqa: E402
     ChezmoiSourceError,
     ChezmoiSourceUpdater,
 )

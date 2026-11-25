@@ -1,8 +1,8 @@
 # Browser profiles
 
 Setup installs Brave Stable, makes it the default browser, and recreates profiles
-from Bitwarden. It enables **Sync everything**, joins the stored Sync chains, and
-verifies synchronization. Backup checks local profiles and offers approved
+from Bitwarden. It selects the required Sync categories, joins the stored chains,
+and verifies restored data before succeeding. Backup checks local profiles and offers approved
 synchronization; see [before backup](#before-backup).
 
 ## Configure recovery
@@ -39,8 +39,8 @@ directories unique. Find an existing profile's directory in `brave://version`, a
 the end of **Profile Path**. Keep recovery words and profile definitions out of
 Git. Brave supplies a rotating 25th pairing word; do not store it in Bitwarden.
 
-To add a profile, create it in Brave, start a Sync chain, enable **Sync everything**,
-and create its note. Keep its name equal to the name shown in Brave's profile
+To add a profile, create it in Brave, start a Sync chain, select bookmarks,
+settings, themes, extensions, history, and apps, and create its note. Keep its name equal to the name shown in Brave's profile
 picker. Setup restores the name saved in Bitwarden. To keep a local rename,
 update its note or save the change during backup before running setup.
 
@@ -50,12 +50,11 @@ update its note or save the change during backup before running setup.
    [setup](../../README.md#set-up-or-update-the-workstation) from the managed user's
    desktop session with its system keyring unlocked.
 2. Setup restores saved profile settings, joins the stored chains, and waits for
-   fresh successful synchronization and matching recovery codes. Resolve any
+   fresh downloads for each required data type, completed application installation,
+   acknowledged changes and matching recovery codes. Resolve any
    reported desktop, vault, policy, or server error and rerun setup.
-3. Check bookmarks, extensions, settings, and important tabs in each profile.
-   Successful Sync cannot prove that another device saved everything you expected.
-   Brave can omit unmapped tab entries from its diagnostics, so verification of
-   tab acknowledgements covers the entries it exports.
+3. Open each recovered profile. Recovery uses the latest data uploaded to its
+   chain; data that another computer never uploaded remains unavailable.
 
 Setup reuses an existing matching chain or switches a configured profile to its
 stored chain. It preserves unrelated browser data and does not update Bitwarden
@@ -72,9 +71,10 @@ and `nodes` counts when reporting the failure. This means the verifier could not
 match Brave's entity counts to its diagnostic nodes; it does not by itself prove
 data loss. The error contains no browsing data or recovery words. Keep the
 existing profile and saved chain while investigating.
-If the final check reports `Sync Cycle Ongoing`, Sync was still active when the
-verification deadline expired. The error may include counts from the last
-complete entity observation; those counts do not certify the current state.
+A busy Sync cycle does not by itself fail recovery. Missing downloads, incomplete
+installation, unavailable encryption, and unacknowledged changes still stop setup.
+Keep the saved chain and rerun setup after resolving the reported problem; a
+matching chain resumes without replacing its device identity.
 
 If enrollment reports server throttling, open **Settings → Sync → Manage your
 synced devices** on a connected device. Remove only devices you no longer use,
@@ -89,13 +89,20 @@ dry runs never remove devices.
 
 Brave Sync recovery depends on the chain's data remaining available; see the
 [Brave Sync FAQ](https://support.brave.app/hc/en-us/articles/360047642371-Sync-FAQ).
-Open Tabs Sync does not guarantee a pinned-tab layout. Re-pin important tabs after
-recovery; extensions may also need their own settings or sign-in restored.
+Recovery covers bookmarks and folders, supported settings and search engines,
+Shields/site preferences, themes, installed extensions and their synced settings,
+Sync-supported history, and supported web-app registrations.
+History is not a complete archive. Web-app registration does not guarantee an OS
+shortcut. Extensions and sites can still require sign-in or local-only settings.
 
 Setup disables Brave's password-saving and automatic sign-in prompts for managed
 profiles. It does not import browser passwords into Bitwarden. Import and verify
-them separately before deleting browser copies. Recovery still requires **Sync
-everything** when Bitwarden is your password manager.
+them separately before deleting browser copies. Passwords, autofill, payment
+methods, passkeys, ordinary open tabs, saved tab groups, and reading lists are
+excluded from managed synchronization. Pinned tabs are unmanaged and outside
+the recovery guarantee. Existing local data is preserved. Cookies,
+site storage, exact sessions, downloads, Wallet/Rewards data, and Leo history are
+also outside the recovery guarantee.
 
 Browser profiles are outside the default archive. The
 [browser backup sidecar](backup-and-restore.md#included-files-and-recovery-limits)
@@ -142,7 +149,7 @@ with Bitwarden.
 For profile-setting differences, choose `save` to update existing notes from this
 computer. This preserves recovery words, unrelated fields, and secondary colors;
 it removes disabled logos and managed colors that no longer exist locally.
-Backup does not recreate missing profiles or enable **Sync everything**. Run
+Backup does not recreate missing profiles or repair the selected Sync categories. Run
 setup to apply stored profile settings, or fix the reported issue and use `retry`.
 A new local profile needs a valid secure note before its recovery can be managed.
 

@@ -22,7 +22,7 @@ class GossVariables:
         workspace = Path(__file__).resolve().parents[1]
         init_plugin_loader(prefix_collections_path=[str(workspace / "ansible/collections")])
         # pylint: disable=import-outside-toplevel
-        from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state import (
+        from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state.normalizer import (
             DesiredStateConfigNormalizer,
         )
 

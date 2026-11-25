@@ -31,6 +31,25 @@ normalizers, the private override example, tests, and the relevant guide togethe
 Backup source roles use the shared
 [recovery decision contract](automation.md#recovery-decisions).
 
+### Python packages
+
+Group related helpers under `plugins/module_utils/` in their owning collection.
+Use fully qualified collection imports so Ansible bundles module dependencies,
+and keep package initializers empty. Import helpers from their owning modules;
+public module and filter names belong to the thin adapters.
+
+| Collection            | Packages and responsibilities                                                                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workstation_setup`   | `desired_state/` for configuration normalization; `ai/`, `bitwarden/`, `chezmoi/`, `editor/`, and `github/` for their integrations; `desktop/` for session access, memory alerts, and extension archives; `browser/` for profiles and Sync. |
+| `workstation_backup`  | `archive/` for planning, manifests, exports, archive writing, and progress; `git/` for repository inventory and synchronization; `recovery/` for decision validation and key reconciliation.                                                |
+| `workstation_restore` | `archive/` for archive safety and extraction planning.                                                                                                                                                                                      |
+
+Keep standalone helpers at the collection root when they have no related modules,
+including the shared JSONC parser, Snap removal, Git signing, backup terminal I/O,
+and managed-state serialization. Mirror package directories in collection unit
+tests. Tests that invoke real Ansible, terminals, or subprocess protocols stay in
+`tests/integration/`.
+
 ## Local checks
 
 ```sh

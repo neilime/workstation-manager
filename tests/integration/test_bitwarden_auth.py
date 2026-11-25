@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
-    bitwarden_auth,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden import (
+    auth as bitwarden_auth,
 )
 from ansible_collections.neilime.workstation_setup.plugins.modules import bitwarden_cli
 

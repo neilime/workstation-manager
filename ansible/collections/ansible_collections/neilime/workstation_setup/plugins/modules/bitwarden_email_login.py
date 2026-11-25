@@ -65,8 +65,8 @@ session:
 
 # pylint: disable=wrong-import-position
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
-    bitwarden_auth,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden import (  # noqa: E402
+    auth as bitwarden_auth,
 )
 
 # pylint: enable=wrong-import-position

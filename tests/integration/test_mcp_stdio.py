@@ -3,7 +3,7 @@
 import sys
 
 import pytest
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.mcp_stdio import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai.mcp_stdio import (
     McpStdioSession,
 )
 

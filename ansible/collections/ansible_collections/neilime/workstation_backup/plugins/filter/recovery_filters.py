@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_backup.plugins.module_utils.recovery import (
+from ansible_collections.neilime.workstation_backup.plugins.module_utils.recovery.decisions import (
     recovery_decision,
     recovery_decision_id,
 )

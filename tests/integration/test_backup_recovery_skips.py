@@ -11,6 +11,9 @@ import tarfile
 import tempfile
 import unittest
 
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.selection import (
+    SYNC_SELECTION,
+)
 from ansible_test_helpers import ansible_environment
 from backup_prompt_helpers import run_interactive
 
@@ -420,7 +423,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             json.dumps(
                 {
                     "profile": {"name": "Local"},
-                    "sync": {"keep_everything_synced": True},
+                    "sync": {"keep_everything_synced": False, **SYNC_SELECTION},
                     "brave_sync_v2": {"seed": "synthetic-browser-seed"},
                     "browser": {"theme": {"user_color2": int("654321", 16) - 0x1000000}},
                     "bookmark_bar": {"show_on_all_tabs": True},
@@ -493,7 +496,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
             json.dumps(
                 {
                     "profile": {"name": "Local"},
-                    "sync": {"keep_everything_synced": True},
+                    "sync": {"keep_everything_synced": False, **SYNC_SELECTION},
                     "brave_sync_v2": {"seed": "synthetic-browser-seed"},
                 }
             )
@@ -539,7 +542,8 @@ class BackupRecoverySkipTests(unittest.TestCase):
         self.assertNotIn("synthetic-recovery-words", output)
         current = json.loads(preferences.read_text())
         self.assertEqual(current["profile"]["name"], "Local")
-        self.assertTrue(current["sync"]["keep_everything_synced"])
+        self.assertFalse(current["sync"]["keep_everything_synced"])
+        self.assertEqual({key: current["sync"][key] for key in SYNC_SELECTION}, SYNC_SELECTION)
         self.assertEqual(json.loads(store.read_text())["name"], "Local")
         self.assert_archive([])
 
@@ -571,7 +575,7 @@ class BackupRecoverySkipTests(unittest.TestCase):
         tasks, preferences, lock = self._prepare_locked_browser()
         saved = json.loads(preferences.read_text())
         saved["profile"]["name"] = "Remote"
-        saved["sync"]["keep_everything_synced"] = True
+        saved["sync"] = {"keep_everything_synced": False, **SYNC_SELECTION}
         preferences.write_text(json.dumps(saved))
         (preferences.parent.parent / "Local State").write_text(
             json.dumps({"profile": {"info_cache": {"Default": {"name": "Remote"}}}})

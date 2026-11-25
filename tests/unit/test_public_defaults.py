@@ -3,7 +3,7 @@
 import re
 
 from ansible.utils.vars import merge_hash
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state.normalizer import (
     DesiredStateConfigNormalizer,
 )
 

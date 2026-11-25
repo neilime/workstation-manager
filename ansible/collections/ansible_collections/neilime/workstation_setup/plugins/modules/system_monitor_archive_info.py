@@ -33,11 +33,11 @@ metadata:
 """
 
 # pylint: disable=wrong-import-position
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
-    gnome_extension_archive_module,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop.extensions import (  # noqa: E402
+    archive_module as gnome_extension_archive_module,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.system_monitor_archive import (  # noqa: E402
-    SystemMonitorArchive,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desktop.extensions import (  # noqa: E402
+    system_monitor,
 )
 
 # pylint: enable=wrong-import-position
@@ -45,7 +45,7 @@ from ansible_collections.neilime.workstation_setup.plugins.module_utils.system_m
 
 def main() -> None:
     """Expose archive checks to setup orchestration."""
-    gnome_extension_archive_module.run_archive_module(SystemMonitorArchive.validate, "Vitals")
+    gnome_extension_archive_module.run_archive_module(system_monitor.SystemMonitorArchive.validate, "Vitals")
 
 
 if __name__ == "__main__":

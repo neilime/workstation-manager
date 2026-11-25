@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from ansible.parsing.dataloader import DataLoader
 from ansible.utils.vars import merge_hash
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state.normalizer import (
     DesiredStateConfigNormalizer,
 )
 from ansible_test_helpers import (

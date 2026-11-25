@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
     BrowserPipe,
     BrowserProtocolError,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.native import (
     _DIAGNOSTIC_TYPES,
+    _DOWNLOAD_TYPES,
+    _REQUIRED_DATA_TYPES,
     _SNAPSHOT,
     _START,
 )
@@ -34,7 +36,7 @@ def diagnostic_fixture() -> dict:
         "Server Connection": "OK",
         "Auth Error": "OK",
     }
-    types = ["Bookmarks", "Passwords", "Preferences", "Extensions", "Sessions", "Device Info"]
+    types = list(_REQUIRED_DATA_TYPES)
     return {
         "about": {
             "details": [{"data": [{"stat_name": key, "stat_value": value} for key, value in stats.items()]}],
@@ -71,7 +73,7 @@ def retry_failed_cycles(pipe: BrowserPipe, page: str) -> None:
       const download = aboutInfo.details.flatMap(section => section.data)
         .find(item => item.stat_name === 'Download Step Result');
       download.stat_value = 'Network error';
-      window.workstationSync.downloaded = false;
+      window.workstationSync.downloadedTypes = [];
       window.fixtureRefreshes = 0;
       const send = chrome.send;
       chrome.send = (method, args) => {
@@ -89,7 +91,7 @@ def retry_failed_cycles(pipe: BrowserPipe, page: str) -> None:
           const stats = window.fixtureAbout.details.flatMap(section => section.data);
           stats.find(item => item.stat_name === 'Download Step Result').stat_value = 'Success';
           stats.find(item => item.stat_name === 'Commit Step Result').stat_value = 'Network error';
-          window.workstationSync.downloaded = true;
+          window.workstationSync.downloadedTypes = window.fixtureDownloadedTypes;
           return true;
         })()""",
     )
@@ -197,7 +199,7 @@ def entity_coverage_diagnostics(pipe: BrowserPipe, page: str) -> None:
         ".find(item => item.stat_name === 'Sync Cycle Ongoing').stat_value = true; true"
     )
     pipe.evaluate(page, busy)
-    assert snapshot(pipe, page) == {"healthy": False, "pending": True, "fresh": True}
+    assert snapshot(pipe, page) == {"healthy": True, "pending": True, "fresh": True}
     assert pipe.evaluate(page, "window.workstationSync.entityCoverage") == missing
     assert pipe.evaluate(page, "window.fixtureRefreshes") == refreshes
     pipe.evaluate(page, busy.replace("= true", "= false"))
@@ -232,55 +234,13 @@ def entity_coverage_diagnostics(pipe: BrowserPipe, page: str) -> None:
     assert pipe.evaluate(page, "window.workstationSync.entityCoverage") == []
 
 
-def session_export_coverage(pipe: BrowserPipe, page: str) -> None:
-    """Sessions may omit unmapped tabs, but missing responses and pending changes still fail."""
-
-    pipe.evaluate(
-        page,
-        """(() => {
-          window.fixtureSessions = window.fixtureNodes.find(group => group.type === 'Sessions');
-          window.fixtureSessionCounts = window.fixtureAbout.type_status.find(row => row.name === 'Sessions');
-          window.fixtureSessionCounts.num_entries = window.fixtureSessionCounts.num_live = 3;
-          return true;
-        })()""",
-    )
-    assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
-    assert pipe.evaluate(page, "window.workstationSync.entityCoverage") == []
-    pipe.evaluate(page, "window.fixtureSessions.nodes[0].metadata.sequence_number = '2'; true")
-    assert snapshot(pipe, page)["pending"] is True
-    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Metadata']") is False
-    pipe.evaluate(page, "window.fixtureSessions.nodes[0].metadata.acked_sequence_number = '2'; true")
-    pipe.evaluate(page, "window.fixtureSessionCounts.num_entries = 4; true")
-    assert snapshot(pipe, page)["pending"] is True
-    assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
-    pipe.evaluate(page, "window.fixtureSessionCounts.num_entries = 3; true")
-    # A gap cannot excuse an absent, empty, duplicated, or oversized export.
-    for change, restore in (
-        ("window.fixtureSessions.type = 'Missing'", "window.fixtureSessions.type = 'Sessions'"),
-        (
-            "window.fixtureSessionNodes = window.fixtureSessions.nodes; window.fixtureSessions.nodes = []",
-            "window.fixtureSessions.nodes = window.fixtureSessionNodes",
-        ),
-        ("window.fixtureNodes.push(window.fixtureSessions)", "window.fixtureNodes.pop()"),
-        (
-            "window.fixtureSessionCounts.num_entries = window.fixtureSessionCounts.num_live = 0",
-            "window.fixtureSessionCounts.num_entries = window.fixtureSessionCounts.num_live = 3",
-        ),
-    ):
-        pipe.evaluate(page, change + "; true")
-        assert snapshot(pipe, page)["pending"] is True
-        assert pipe.evaluate(page, "window.workstationSync.checks['Entity Coverage']") is False
-        pipe.evaluate(page, restore + "; true")
-    pipe.evaluate(page, "window.fixtureSessionCounts.num_entries = window.fixtureSessionCounts.num_live = 1; true")
-    assert snapshot(pipe, page)["pending"] is False
-
-
 def prepare_diagnostics(pipe: BrowserPipe, page: str) -> None:
     """Publish native status replacements before asynchronous per-type entity counts."""
 
     prepare = """(async () => {
       const {webUIListenerCallback, webUIResponse} = window.cr;
       const fixture = FIXTURE;
+      window.fixtureDownloadedTypes = DOWNLOAD_TYPES;
       window.fixtureAbout = fixture.about;
       window.fixtureNodes = fixture.nodes;
       window.fixturePublishAbout = source => {
@@ -307,7 +267,9 @@ def prepare_diagnostics(pipe: BrowserPipe, page: str) -> None:
         }
       };
       return true;
-    })()""".replace("FIXTURE", json.dumps(diagnostic_fixture()))
+    })()""".replace("FIXTURE", json.dumps(diagnostic_fixture())).replace(
+        "DOWNLOAD_TYPES", json.dumps(list(_DOWNLOAD_TYPES.values()))
+    )
     assert pipe.evaluate(page, prepare) is True
 
 
@@ -329,7 +291,7 @@ def fresh_diagnostics(pipe: BrowserPipe, page: str) -> None:
           return true;
         })()""".replace("CURRENT", json.dumps(current_busy)),
         )
-        assert snapshot(pipe, page) == {"healthy": not current_busy, "pending": current_busy, "fresh": True}
+        assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
     pipe.evaluate(
         page,
         "window.fixtureAbout.details.flatMap(section => section.data)"
@@ -349,7 +311,7 @@ def retry_missing_diagnostics(pipe: BrowserPipe, page: str) -> None:
         )
         for _ in range(2):
             result = snapshot(pipe, page, timeout_ms=50)
-            assert result == {"healthy": False, "pending": True, "fresh": True}
+            assert result == {"healthy": False, "pending": True, "fresh": False}
             assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
             pipe.evaluate(page, "window.fixturePublishHeld(window.fixtureAbout); true")
             assert pipe.evaluate(page, "window.workstationSync.checks['Entity Counts']") is False
@@ -401,12 +363,16 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     pipe.evaluate(page, event.replace("OFFSET", "- 10000"))
     assert snapshot(pipe, page)["fresh"] is False
     pipe.evaluate(page, event.replace("OFFSET", ""))
+    assert snapshot(pipe, page)["fresh"] is False, "An orphan response is not per-type download evidence"
+    pipe.evaluate(page, "window.workstationSync.downloadedTypes = window.fixtureDownloadedTypes; true")
     assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
     # A discarded/reloaded page loses its diagnostic state. Previously observed
     # success cannot certify the new context; it must request a fresh download.
     pipe.evaluate(page, "delete window.workstationSync; true")
     assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": False}
     pipe.evaluate(page, event.replace("OFFSET", ""))
+    assert snapshot(pipe, page)["fresh"] is False, "An orphan response is not per-type download evidence"
+    pipe.evaluate(page, "window.workstationSync.downloadedTypes = window.fixtureDownloadedTypes; true")
     assert snapshot(pipe, page) == {"healthy": True, "pending": False, "fresh": True}
     assert pipe.evaluate(
         page,
@@ -425,14 +391,13 @@ def diagnostics(pipe: BrowserPipe, page: str) -> None:
     retry_pending_changes(pipe, page)
     retry_missing_nodes(pipe, page)
     entity_coverage_diagnostics(pipe, page)
-    session_export_coverage(pipe, page)
     pipe.evaluate(page, "window.fixtureAbout.type_status[0].status = 'severity_error'; true")
     assert snapshot(pipe, page)["healthy"] is False
     assert pipe.evaluate(page, "window.workstationSync.checks['Data Type Status']") is False
     retry_failed_cycles(pipe, page)
     print(
         "Native diagnostics: page callbacks, fresh status/counts, stale busy/idle caches, "
-        "pending upload/deletion, partial Sessions export, missing/late/rejected replies, status replacement, "
+        "pending upload/deletion, missing/late/rejected replies, status replacement, "
         "lost page state, redacted commit errors, failure, retry, and success passed.",
         flush=True,
     )

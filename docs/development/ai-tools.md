@@ -111,7 +111,7 @@ explicitly defers provider sign-in and checks command availability and user writ
 access to installed packages. Normal setup still requires provider login unless
 the configuration explicitly defers it.
 
-[normalizer]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/desired_state_ai_tools.py
+[normalizer]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/desired_state/ai_tools.py
 [shared-role]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/roles/ai_tools
 [provider-auth]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/modules/ai_provider_auth.py
-[mcp-stdio]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/mcp_stdio.py
+[mcp-stdio]: ../../ansible/collections/ansible_collections/neilime/workstation_setup/plugins/module_utils/ai/mcp_stdio.py

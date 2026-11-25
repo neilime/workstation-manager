@@ -104,9 +104,9 @@ else:
     isolated = tmp_path / "collections/ansible_collections/neilime/workstation_setup"
     for relative in (
         "plugins/modules/ghcr_auth.py",
-        "plugins/module_utils/ghcr_auth.py",
-        "plugins/module_utils/github_auth.py",
-        "plugins/module_utils/desktop_session.py",
+        "plugins/module_utils/github/ghcr_auth.py",
+        "plugins/module_utils/github/auth.py",
+        "plugins/module_utils/desktop/session.py",
     ):
         destination = isolated / relative
         destination.parent.mkdir(parents=True, exist_ok=True)

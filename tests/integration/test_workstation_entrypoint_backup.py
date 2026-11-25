@@ -137,7 +137,8 @@ class PipedBackupTests(unittest.TestCase):
                 'print("Fixture recovery confirmation: ", end="", flush=True)\n'
                 "answer = sys.stdin.readline().strip()\n"
                 'if os.environ.get("TEST_BITWARDEN_CODE") == "1":\n'
-                "    from ansible_collections.neilime.workstation_setup.plugins.module_utils import bitwarden_auth\n"
+                "    from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden "
+                "import auth as bitwarden_auth\n"
                 "    code = bitwarden_auth._prompt_for_hidden_code(\n"
                 "        'Fixture Bitwarden emailed code: ', tty_path=os.environ['WORKSTATION_MANAGER_TTY'])\n"
                 "    if code != '654321': sys.exit(8)\n"

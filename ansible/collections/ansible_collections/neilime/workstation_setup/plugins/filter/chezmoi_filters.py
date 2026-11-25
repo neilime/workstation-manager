@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.chezmoi_conflicts import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.chezmoi.conflicts import (
     ChezmoiConflictClassifier,
 )
 

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (
-    browser_profile_paths,
-    browser_profile_reporting,
-    browser_profile_sync,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (
+    paths as browser_profile_paths,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (
+    reconciliation as browser_profile_sync,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (
+    reporting as browser_profile_reporting,
 )
 
 _planner = browser_profile_paths.BrowserProfilePathsPlanner()

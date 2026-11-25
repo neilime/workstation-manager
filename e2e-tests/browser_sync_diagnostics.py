@@ -7,14 +7,14 @@ import platform
 import tempfile
 from pathlib import Path
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
     BrowserPipe,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_lifecycle import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.lifecycle import (
     automation_arguments,
     closed_browser,
 )
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_native_sync import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.sync.native import (
     _GET_ABOUT,
     _SETTINGS_BRIDGE,
     NativeSync,

@@ -15,7 +15,7 @@ short_description: Synchronize approved native profile metadata
 version_added: '1.0.0'
 description:
   - Restores saved profile metadata locally or updates existing vault records from local metadata.
-  - Restore also enables Sync everything for declared profiles without changing their pairing or setup state.
+  - Restore also selects the managed Sync categories without changing profile pairing or setup state.
   - Preserves recovery words and unrelated browser settings; never deletes profile records.
   - Gracefully closes a running browser, verifies applied changes, and reopens its desktop session.
   - Returns a blocker before synchronization if Brave cannot close safely or its profile remains locked.
@@ -23,7 +23,7 @@ author:
   - workstation-manager contributors (@neilime)
 options:
   direction:
-    description: Save local metadata to Bitwarden or restore stored metadata and enable Sync everything locally.
+    description: Save local metadata to Bitwarden or restore stored metadata and select the managed Sync categories.
     type: str
     required: true
     choices: [save, restore]
@@ -67,10 +67,14 @@ blocker:
 from contextlib import nullcontext  # noqa: E402
 
 from ansible.module_utils.basic import AnsibleModule  # noqa: E402
-from ansible_collections.neilime.workstation_setup.plugins.module_utils import (  # noqa: E402
-    browser_lifecycle,
-    browser_profile_arguments,
-    browser_profile_sync,
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser import (  # noqa: E402
+    lifecycle as browser_lifecycle,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (  # noqa: E402
+    arguments as browser_profile_arguments,
+)
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.profiles import (  # noqa: E402
+    reconciliation as browser_profile_sync,
 )
 
 # pylint: enable=wrong-import-position

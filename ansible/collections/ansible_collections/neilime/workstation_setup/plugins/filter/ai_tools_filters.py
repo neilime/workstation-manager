@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai_tools import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.ai.runtime import (
     AiToolsRuntime,
 )
 

@@ -38,7 +38,7 @@ more specific `AGENTS.md` files when working in their directories.
   under the role's `files/` and `templates/` trees instead of adding more flat
   top-level assets.
 - Public defaults belong in `ansible/group_vars/all.yml`; configuration validation
-  and normalization belong in the setup collection's `desired_state*` helpers.
+  and normalization belong in the setup collection's `module_utils/desired_state/` package.
   Roles should consume `workstation_manager_resolved` where applicable.
 - When configuration changes, update defaults, normalizers, the example in
   `ansible/vars/private.override.example.yml`, affected tests, and documentation

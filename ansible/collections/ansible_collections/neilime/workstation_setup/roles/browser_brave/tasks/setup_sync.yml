@@ -2,7 +2,7 @@
 - name: Preview Brave Sync recovery
   ansible.builtin.debug:
     msg: >-
-      Setup will enable Sync everything, recover the configured profiles,
+      Setup will apply the selected Sync categories, recover the configured profiles,
       and remove duplicate or configured disposable Sync devices while keeping This Device.
   when: ansible_check_mode
 

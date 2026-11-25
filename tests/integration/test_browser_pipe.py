@@ -6,7 +6,7 @@ import os
 import sys
 
 import pytest
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser_cdp import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.browser.cdp import (
     BrowserPipe,
     BrowserProtocolError,
 )

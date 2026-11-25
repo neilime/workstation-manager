@@ -17,7 +17,7 @@
 - name: Install the memory alert monitor
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.copy:
-    src: "{{ role_path }}/../../plugins/module_utils/memory_alerts.py"
+    src: "{{ role_path }}/../../plugins/module_utils/desktop/memory_alerts.py"
     dest: "{{ workstation_manager_resolved.user.home }}/.local/share/workstation-manager/memory-alerts.py"
     owner: "{{ workstation_manager_resolved.user.name }}"
     group: "{{ workstation_manager_resolved.user.name }}"

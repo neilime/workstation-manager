@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden_gpg_keys import (
+from ansible_collections.neilime.workstation_setup.plugins.module_utils.bitwarden.gpg_keys import (
     BitwardenGpgKeyRestorePlanner,
 )
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.git_gpg_signing import (
