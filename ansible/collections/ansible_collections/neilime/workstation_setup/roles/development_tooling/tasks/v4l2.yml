@@ -1,0 +1,30 @@
+---
+- name: Preview configured V4L2 camera controls
+  ansible.builtin.debug:
+    msg: >-
+      Would apply V4L2 controls on {{ workstation_manager_resolved.desktop.v4l2.device }}:
+      {{ workstation_manager_resolved.desktop.v4l2.controls | join(', ') }}
+  when:
+    - ansible_check_mode
+    - workstation_manager_resolved.desktop is defined
+    - workstation_manager_resolved.desktop.v4l2 is defined
+    - workstation_manager_resolved.desktop.v4l2.controls | length > 0
+
+- name: Apply configured V4L2 camera controls
+  become: "{{ workstation_manager_use_become }}"
+  ansible.builtin.command:
+    argv:
+      - v4l2-ctl
+      - --device
+      - "{{ workstation_manager_resolved.desktop.v4l2.device }}"
+      - --set-ctrl
+      - "{{ item }}"
+  loop: "{{ workstation_manager_resolved.desktop.v4l2.controls }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - workstation_manager_resolved.desktop is defined
+    - workstation_manager_resolved.desktop.v4l2 is defined
+    - workstation_manager_resolved.desktop.v4l2.controls | length > 0

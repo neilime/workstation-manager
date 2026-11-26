@@ -25,6 +25,8 @@ workstation_manager:
       apt:
         - bleachbit
         - htop
+        - qv4l2
+        - v4l-utils
         - xdg-utils
         - fwupd
       # Reuse APT metadata for this many seconds between setup's forced refreshes.
@@ -36,6 +38,10 @@ workstation_manager:
         net.ipv6.conf.all.disable_ipv6: "1"
         net.ipv6.conf.default.disable_ipv6: "1"
   desktop:
+    v4l2:
+      # Device and controls applied during setup to keep webcam settings in sync.
+      device: /dev/video0
+      controls: []
     memory_alerts:
       # Notify only: no process termination, throttling, or OOM policy changes.
       available_warning_percent: 20

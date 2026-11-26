@@ -217,6 +217,25 @@ preferences; keep `zstyle ':omz:update' mode disabled` in `.zshrc` so setup owns
 framework updates. Tracked framework edits stop updates; keep personal plugins
 and themes in `custom/` or Chezmoi. Existing shell history is preserved.
 
+### Camera controls (V4L2)
+
+The managed baseline can apply webcam controls during setup with `v4l2-ctl`.
+Configure `desktop.v4l2` in [public defaults](../../ansible/group_vars/all.yml)
+when the workstation baseline requires it. Setup applies each declared
+`name=value` control on the configured device (default `/dev/video0`) and
+previews the actions in `--dry-run`.
+
+Example:
+
+```yaml
+desktop:
+  v4l2:
+    device: /dev/video4
+    controls:
+      - exposure_auto=1
+      - exposure_time_absolute=200
+```
+
 ### Scheduled configuration drift check
 
 Setup schedules a weekly, read-only check that compares the workstation with its

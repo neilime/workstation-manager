@@ -73,6 +73,7 @@ def test_normalize_returns_complete_shape_with_defaults(with_tool_versions) -> N
     assert normalized["desktop"]["flatpak"]["remote"] == "flathub"
     assert normalized["desktop"]["browser"] == "brave"
     assert normalized["desktop"]["gnome"] == {"favorites": None}
+    assert normalized["desktop"]["v4l2"] == {"device": "/dev/video0", "controls": []}
     assert normalized["development"]["mise"] == {
         "tools": {"vfox:jdx/vfox-php": "1.2.3", "github:composer/composer": "1.2.3"},
         "version": "1.2.3",
@@ -229,6 +230,7 @@ def test_normalize_preserves_declared_values_and_env_overrides(with_tool_version
     assert normalized["desktop"]["flatpak"]["packages"] == ["com.brave.Browser"]
     assert normalized["desktop"]["browser"] == "brave"
     assert normalized["desktop"]["gnome"]["favorites"] == ["org.gnome.Terminal.desktop"]
+    assert normalized["desktop"]["v4l2"] == {"device": "/dev/video0", "controls": []}
     assert normalized["development"]["packages"] == [
         "git",
         "make",

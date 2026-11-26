@@ -11,6 +11,9 @@
     cache_valid_time: "{{ workstation_manager_resolved.system.packages.cache_valid_time }}"
   when: workstation_manager_resolved.development.packages | length > 0
 
+- name: Apply configured V4L2 camera controls
+  ansible.builtin.import_tasks: v4l2.yml
+
 - name: Inspect development config directory permissions
   become: "{{ workstation_manager_use_become }}"
   ansible.builtin.stat:
