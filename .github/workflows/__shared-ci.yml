@@ -18,7 +18,7 @@ permissions: {}
 jobs:
   linter:
     # yamllint disable rule:line-length
-    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@d07ee49b460ae2f3815804b5153fe918092aa321 # 4.2.0
+    uses: hoverkraft-tech/ci-github-common/.github/workflows/linter.yml@f165c0ca3e88604611481e1408ace1e0e3a5ee47 # 4.3.1
     # yamllint enable rule:line-length
     with:
       linter-env: |
@@ -66,7 +66,7 @@ jobs:
         if: steps.tooling.outputs.image == ''
         id: build
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-container/actions/docker/build-image@ed1e90302235365110f9b4b05df96840f715a14f # 0.43.0
+        uses: hoverkraft-tech/ci-github-container/actions/docker/build-image@b055d6ce0f3a5e223615ad494d88d92e17af11e5 # 4.2.0
         # yamllint enable rule:line-length
         with:
           oci-registry: ghcr.io
@@ -124,7 +124,7 @@ jobs:
           persist-credentials: false
 
       - name: Test Ansible
-        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@f8c074d2d45a37caa4a24e2dcdf6d2df034a2ae1 # 1.3.0
+        uses: hoverkraft-tech/ci-github-iac/actions/ansible/test@d68eae92246f1b635fe0564c47089054ee87de79 # 1.3.1
         with:
           ansible-requirements: ansible/requirements.txt
           collection: ${{ matrix.collection }}
@@ -171,7 +171,7 @@ jobs:
 
       - name: Parse host reports
         if: ${{ always() }}
-        uses: hoverkraft-tech/ci-github-common/actions/quality/parse-ci-reports@d07ee49b460ae2f3815804b5153fe918092aa321 # 4.2.0
+        uses: hoverkraft-tech/ci-github-common/actions/quality/parse-ci-reports@f165c0ca3e88604611481e1408ace1e0e3a5ee47 # 4.3.1
         with:
           report-paths: .reports/tests/unit.junit.xml,.reports/tests/integration.junit.xml
           report-name: Unit and Integration Validation
@@ -277,7 +277,7 @@ jobs:
       - name: Create e2e VM
         id: vm
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@f8c074d2d45a37caa4a24e2dcdf6d2df034a2ae1 # 1.3.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/create@d68eae92246f1b635fe0564c47089054ee87de79 # 1.3.1
         # yamllint enable rule:line-length
         with:
           vm-config: .cache/e2e-vm.json
@@ -328,7 +328,7 @@ jobs:
         id: backup-expectations
         run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" backup
       - name: Backup - Assert
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@f8c074d2d45a37caa4a24e2dcdf6d2df034a2ae1 # 1.3.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@d68eae92246f1b635fe0564c47089054ee87de79 # 1.3.1
         with:
           vm: ${{ steps.vm.outputs.vm }}
           goss-file: e2e-tests/goss/backup.yaml
@@ -351,7 +351,7 @@ jobs:
         id: setup-expectations
         run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" setup
       - name: Setup - Assert
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@f8c074d2d45a37caa4a24e2dcdf6d2df034a2ae1 # 1.3.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@d68eae92246f1b635fe0564c47089054ee87de79 # 1.3.1
         with:
           vm: ${{ steps.vm.outputs.vm }}
           goss-file: e2e-tests/goss/setup.yaml
@@ -374,7 +374,7 @@ jobs:
         id: cleanup-expectations
         run: bash e2e-tests/prepare-assertions.sh "$VM_NAME" cleanup
       - name: Cleanup - Assert
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@f8c074d2d45a37caa4a24e2dcdf6d2df034a2ae1 # 1.3.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/test@d68eae92246f1b635fe0564c47089054ee87de79 # 1.3.1
         with:
           vm: ${{ steps.vm.outputs.vm }}
           goss-file: e2e-tests/goss/cleanup.yaml
@@ -409,7 +409,7 @@ jobs:
             && steps.upload-e2e-desktop-screenshot.outputs.artifact-url != ''
           }}
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-common/actions/create-or-update-comment@d07ee49b460ae2f3815804b5153fe918092aa321 # 4.2.0
+        uses: hoverkraft-tech/ci-github-common/actions/create-or-update-comment@f165c0ca3e88604611481e1408ace1e0e3a5ee47 # 4.3.1
         # yamllint enable rule:line-length
         with:
           title: "## E2E desktop screenshot"
@@ -431,7 +431,7 @@ jobs:
           ${{ always() && steps.vm.outputs.vm != '' &&
             (steps.vm.outcome != 'success' || steps.browser-teardown.outcome == 'success') }}
         # yamllint disable rule:line-length
-        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@f8c074d2d45a37caa4a24e2dcdf6d2df034a2ae1 # 1.3.0
+        uses: hoverkraft-tech/ci-github-iac/actions/vm/destroy@d68eae92246f1b635fe0564c47089054ee87de79 # 1.3.1
         # yamllint enable rule:line-length
         with:
           vm: ${{ steps.vm.outputs.vm }}
