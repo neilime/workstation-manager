@@ -64,6 +64,14 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             defaults.get("gnome"),
             "workstation_manager.desktop.defaults.gnome",
         )
+        v4l2 = self._resolver.mapping(
+            desktop.get("v4l2"),
+            "workstation_manager.desktop.v4l2",
+        )
+        default_v4l2 = self._resolver.mapping(
+            defaults.get("v4l2"),
+            "workstation_manager.desktop.defaults.v4l2",
+        )
         favorites = self._resolver.value_or_default(
             gnome.get("favorites"),
             default_gnome.get("favorites"),
@@ -85,6 +93,20 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
             raise ValueError(
                 "Simple Scan is installed through APT; remove org.gnome.SimpleScan from desktop.flatpak.packages"
             )
+        v4l2_controls_raw = self._resolver.list_value(
+            self._resolver.value_or_default(
+                v4l2.get("controls"),
+                default_v4l2.get("controls"),
+            ),
+            "workstation_manager.desktop.v4l2.controls",
+        )
+        v4l2_controls: list[str] = []
+        for control in v4l2_controls_raw:
+            if not isinstance(control, str) or control.strip() == "":
+                raise ValueError(
+                    "workstation_manager.desktop.v4l2.controls must contain non-empty strings like name=value"
+                )
+            v4l2_controls.append(control)
 
         return {
             "memory_alerts": memory_alerts,
@@ -105,6 +127,13 @@ class DesktopSectionNormalizer(desired_state_support.DesiredStateDefaultsSection
                 )
             ),
             "gnome": {"favorites": favorites},
+            "v4l2": {
+                "device": self._resolver.first_non_empty_string(
+                    v4l2.get("device"),
+                    default_v4l2.get("device"),
+                ),
+                "controls": v4l2_controls,
+            },
         }
 
     def _pinned_extension(self, desktop: dict[str, object], key: str) -> dict[str, object]:

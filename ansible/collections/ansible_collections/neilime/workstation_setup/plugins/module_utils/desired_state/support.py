@@ -140,6 +140,10 @@ class DesiredStateDefaultsFactory:
                 },
             },
             "desktop": {
+                "v4l2": {
+                    "device": "/dev/video0",
+                    "controls": [],
+                },
                 "memory_alerts": {
                     "available_warning_percent": 20,
                     "available_critical_percent": 10,

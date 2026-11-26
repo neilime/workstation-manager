@@ -25,6 +25,7 @@ def test_normalize_returns_default_flatpak_desktop_configuration(with_tool_versi
         "packages": [],
     }
     assert normalized["desktop"]["browser"] == "brave"
+    assert normalized["desktop"]["v4l2"] == {"device": "/dev/video0", "controls": []}
 
 
 def test_normalize_preserves_declared_flatpak_apps_separately_from_browser(
@@ -54,6 +55,28 @@ def test_normalize_preserves_declared_flatpak_apps_separately_from_browser(
         "packages": ["com.bitwarden.desktop", "com.slack.Slack"],
     }
     assert normalized["desktop"]["browser"] == "brave"
+    assert normalized["desktop"]["v4l2"] == {"device": "/dev/video0", "controls": []}
+
+
+def test_normalize_v4l2_control_overrides(with_tool_versions) -> None:
+    """Desktop V4L2 overrides should preserve declared device and controls."""
+
+    normalized = DesiredStateConfigNormalizer().normalize(
+        with_tool_versions(
+            {
+                "desktop": {
+                    "v4l2": {
+                        "device": "/dev/video4",
+                        "controls": ["exposure_auto=1", "exposure_time_absolute=200"],
+                    }
+                }
+            }
+        )
+    )
+    assert normalized["desktop"]["v4l2"] == {
+        "device": "/dev/video4",
+        "controls": ["exposure_auto=1", "exposure_time_absolute=200"],
+    }
 
 
 def test_public_defaults_include_inkscape_flatpak(public_defaults) -> None:
@@ -128,6 +151,13 @@ def test_duplicate_flatpak_scanner_is_rejected(with_tool_versions):
                 }
             )
         )
+
+
+@pytest.mark.parametrize("controls", [[""], [True], [None]])
+def test_v4l2_controls_reject_invalid_entries(with_tool_versions, controls):
+    """V4L2 controls must be non-empty strings in name=value format."""
+    with pytest.raises(ValueError, match="desktop.v4l2.controls"):
+        DesiredStateConfigNormalizer().normalize(with_tool_versions({"desktop": {"v4l2": {"controls": controls}}}))
 
 
 def test_memory_alert_defaults_match_public_configuration(with_tool_versions, public_defaults):
