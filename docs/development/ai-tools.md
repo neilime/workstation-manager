@@ -70,9 +70,17 @@ as unverified. Check mode starts no clients.
 
 The [stdio helper][mcp-stdio] bounds protocol responses and deadlines, discards
 stderr, and closes its process group on completion or failure. It never logs
-payloads. Probes verify discovery and each declared `auth_check`. Keep credentials
-in the private server environment and select read-only tools. Use `expect_text`
+payloads. Probes verify discovery and declared MCP tool checks. Use `expect_text`
 for tools that report upstream failures as text without MCP's `isError` flag.
+The shared role uses `ansible.builtin.uri` for HTTPS checks, with the declared
+server environment's bearer credential, certificate validation, HTTP 200, no
+redirects, and no ambient `.netrc` authentication. Both forms fail closed, remain
+private, and are deferred in check mode.
+
+Context7 uses its [authenticated usage endpoint](https://context7.com/docs/api-guide#rate-limits),
+which does not consume query quota. Setup and CI verify the installed MCP process
+and live credentials without requiring spare documentation-query capacity. This
+does not certify remaining quota or the result of a future documentation query.
 
 ## Updating resources
 

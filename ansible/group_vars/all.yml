@@ -179,13 +179,10 @@ workstation_manager:
           env:
             CONTEXT7_API_KEY:
               bitwarden_secret: context7-api-key
-          # Read-only service check also validates an optional Bitwarden-backed API key.
+          # Validate the Bitwarden-backed key without consuming documentation-query quota.
           auth_check:
-            tool: resolve-library-id
-            arguments:
-              libraryName: playwright
-              query: How do I open a page?
-            expect_text: /microsoft/playwright
+            url: https://context7.com/api/v2/usage
+            bearer_env: CONTEXT7_API_KEY
         - name: playwright
           npm: "@playwright/mcp"
           # renovate: datasource=npm depName=@playwright/mcp

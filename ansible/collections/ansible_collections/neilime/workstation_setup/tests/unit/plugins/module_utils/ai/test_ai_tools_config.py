@@ -344,6 +344,8 @@ def test_mcp_authentication_checks_preserve_explicit_arguments(declaration):
         "arguments": {},
         "expect_text": "",
     }
+    server["auth_check"] = {"url": "https://example.invalid/usage", "bearer_env": "TOKEN"}
+    assert AiToolsNormalizer().normalize(declaration)["mcp_servers"][0]["auth_check"] == server["auth_check"]
 
 
 @pytest.mark.parametrize(
@@ -354,6 +356,13 @@ def test_mcp_authentication_checks_preserve_explicit_arguments(declaration):
         {"tool": "read", "arguments": []},
         {"tool": "read", "expect_text": 42},
         {"tool": "read", "unknown": "synthetic-secret"},
+        {"url": "http://example.invalid/usage", "bearer_env": "TOKEN"},
+        {"url": "https://synthetic-secret@example.invalid/usage", "bearer_env": "TOKEN"},
+        {"url": "https://example.invalid:bad/usage", "bearer_env": "TOKEN"},
+        {"url": "https://example.invalid/usage#synthetic-secret", "bearer_env": "TOKEN"},
+        {"url": "https://example.invalid/\nusage", "bearer_env": "TOKEN"},
+        {"url": "https://example.invalid/usage", "bearer_env": "UNDECLARED"},
+        {"url": "https://example.invalid/usage", "bearer_env": "TOKEN", "tool": "read"},
     ],
 )
 def test_mcp_authentication_checks_reject_invalid_declarations(declaration, check):

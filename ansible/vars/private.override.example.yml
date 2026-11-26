@@ -44,4 +44,5 @@ secrets:
     # Each secure note: name=profile label, custom fields id/directory, notes=Sync words.
     browser_profiles_collection_id: "<your-browser-profiles-collection-uuid>"
     # Required Context7 API key item UUID; store the key in its password field.
+    # Setup verifies the key through its quota-free authenticated usage endpoint.
     context7-api-key: "<your-context7-item-uuid>"

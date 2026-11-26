@@ -67,14 +67,20 @@ selectors and missing, empty, ambiguous, or inaccessible credentials fail setup.
 Use literal `env` strings only for non-secret values. See
 [Bitwarden authentication](configuration.md#prepare-bitwarden-collections).
 
-Optional `auth_check` declares a read-only MCP tool call after startup. Supply its
-`tool`, optional `arguments` mapping, and optional `expect_text` substring. Use a
-harmless operation with no secret arguments. Failed access or a missing expected
-response stops setup without logging the server response. Without `auth_check`,
-setup checks startup and tool discovery only.
+Optional `auth_check` verifies service access after MCP startup and tool discovery.
+For a read-only MCP tool call, supply `tool`, optional `arguments`, and optional
+`expect_text`. Use a harmless operation with no secret arguments. For an
+authenticated HTTPS endpoint, supply `url` and `bearer_env`, naming an environment
+variable declared on that server. Setup requires HTTP 200 and rejects redirects.
+Choose one form. Failed access or a missing expected response stops setup without
+logging credentials or server responses. Without `auth_check`, setup checks only
+startup and tool discovery.
 
-The default Context7 check resolves a public library; invalid credentials, quota
-limits, and network errors stop setup. Local Playwright needs no server login.
+The default Context7 check validates its API key through the authenticated usage
+endpoint, which does not consume documentation-query quota. Invalid credentials
+and network failures still stop setup. Successful setup verifies authentication,
+not remaining query quota; documentation queries require available quota when
+used. Local Playwright needs no server login.
 For `@playwright/mcp`, set `playwright.browser` to `chromium`, `firefox`, or `webkit`.
 Setup installs the matching browser and Ubuntu libraries. The default launch uses
 a headless, isolated profile. Omit `playwright` only if you provision prerequisites
