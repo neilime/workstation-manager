@@ -1,0 +1,40 @@
+---
+- name: Verify MCP startup, discovery and declared tool checks
+  neilime.workstation_setup.ai_mcp_probe:
+    home: "{{ workstation_manager_resolved.user.home }}"
+    servers: "{{ workstation_ai_servers }}"
+    authentication_checks: >-
+      {{ workstation_ai_config.mcp_servers | selectattr('auth_check.tool', 'defined') |
+         items2dict(key_name='name', value_name='auth_check') }}
+  no_log: true
+
+- name: Require single-line HTTP authentication credentials
+  ansible.builtin.assert:
+    that:
+      - workstation_ai_servers[item.name].env[item.auth_check.bearer_env] | length > 0
+      - >-
+        '\r' not in workstation_ai_servers[item.name].env[item.auth_check.bearer_env]
+      - >-
+        '\n' not in workstation_ai_servers[item.name].env[item.auth_check.bearer_env]
+    fail_msg: MCP HTTP authentication requires a nonempty single-line credential.
+    quiet: true
+  loop: "{{ workstation_ai_config.mcp_servers | selectattr('auth_check.url', 'defined') | list }}"
+  when: not ansible_check_mode
+  no_log: true
+
+- name: Verify declared HTTPS authentication endpoints
+  ansible.builtin.uri:
+    url: "{{ item.auth_check.url }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ workstation_ai_servers[item.name].env[item.auth_check.bearer_env] }}"
+    status_code: 200
+    follow_redirects: none
+    use_netrc: false
+    validate_certs: true
+    return_content: false
+    timeout: 30
+  loop: "{{ workstation_ai_config.mcp_servers | selectattr('auth_check.url', 'defined') | list }}"
+  when: not ansible_check_mode
+  changed_when: false
+  no_log: true

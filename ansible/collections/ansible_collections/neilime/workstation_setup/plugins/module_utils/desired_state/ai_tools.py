@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import PurePosixPath
+from urllib.parse import urlsplit
 
 from ansible_collections.neilime.workstation_setup.plugins.module_utils.desired_state.support import (
     DesiredStateValueResolver,
@@ -123,7 +124,8 @@ class AiToolsNormalizer:
                 raise ValueError("AI MCP args must contain strings without NUL bytes")
             args.append(arg)
         server["args"] = args
-        server["env"] = self._environment(server.get("env"), bitwarden)
+        environment = self._environment(server.get("env"), bitwarden)
+        server["env"] = environment
         npm = self._server_npm(server)
         server["npm"] = npm
         browser = self._values.mapping(server.get("playwright"), "AI MCP playwright", allowed_keys={"browser"})
@@ -141,20 +143,49 @@ class AiToolsNormalizer:
             ):
                 raise ValueError("Configure the managed browser only through the MCP playwright.browser field")
         server["playwright"] = browser
-        server["auth_check"] = self._auth_check(server.get("auth_check"))
+        server["auth_check"] = self._auth_check(server.get("auth_check"), environment)
         return server
 
-    def _auth_check(self, value: object) -> dict:
+    def _auth_check(self, value: object, environment: dict) -> dict:
         """Validate an explicitly selected read-only service check without running it."""
-        check = self._values.mapping(value, "AI MCP auth_check", allowed_keys={"tool", "arguments", "expect_text"})
+        check = self._values.mapping(
+            value, "AI MCP auth_check", allowed_keys={"tool", "arguments", "expect_text", "url", "bearer_env"}
+        )
         if not check:
             return {}
+        if "url" in check or "bearer_env" in check:
+            return self._https_auth_check(check, environment)
         check["tool"] = self._name(check.get("tool"), "authentication check tool", r"[A-Za-z0-9_][A-Za-z0-9_.:-]*")
         check["arguments"] = self._values.mapping(check.get("arguments"), "AI MCP auth_check arguments")
         expected = check.get("expect_text", "")
         if not isinstance(expected, str) or "\x00" in expected:
             raise ValueError("AI MCP auth_check expect_text must be a string without NUL bytes")
         check["expect_text"] = expected
+        return check
+
+    def _https_auth_check(self, check: dict, environment: dict) -> dict:
+        """Bind a credential to one HTTPS endpoint without embedding it in the URL."""
+        if set(check) != {"url", "bearer_env"}:
+            raise ValueError("AI HTTPS authentication checks require only url and bearer_env")
+        url = check["url"]
+        if not isinstance(url, str) or re.search(r"[\s\x00-\x1f\x7f]", url):
+            raise ValueError("AI authentication URL must be a credential-free HTTPS URL")
+        try:
+            parsed = urlsplit(url)
+            valid = (
+                parsed.scheme == "https"
+                and bool(parsed.hostname)
+                and parsed.username is None
+                and not parsed.fragment
+                and (parsed.port is None or parsed.port > 0)
+            )
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError("AI authentication URL must be a credential-free HTTPS URL")
+        name = self._name(check["bearer_env"], "authentication environment variable", r"[a-zA-Z_][a-zA-Z0-9_]*")
+        if name not in environment:
+            raise ValueError("AI authentication bearer_env must reference a declared server environment variable")
         return check
 
     def _server_npm(self, server: dict) -> dict:

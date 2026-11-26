@@ -77,12 +77,7 @@
           no_log: true
 
         - name: Verify MCP startup and declared authentication checks
-          neilime.workstation_setup.ai_mcp_probe:
-            home: "{{ workstation_manager_resolved.user.home }}"
-            servers: "{{ workstation_ai_servers }}"
-            authentication_checks: >-
-              {{ workstation_ai_config.mcp_servers | items2dict(key_name='name', value_name='auth_check') }}
-          no_log: true
+          ansible.builtin.import_tasks: mcp/verify.yml
 
         - name: Configure selected AI providers
           ansible.builtin.include_role:
