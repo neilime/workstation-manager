@@ -1,6 +1,6 @@
 ---
 # Setup-owned framework pin; Renovate follows the upstream master branch.
-workstation_manager_oh_my_zsh_revision: "c0140703a53eb0d22be44f7bac318d0baacc927c"
+workstation_manager_oh_my_zsh_revision: "abfce729ab56543b976b08ef34a54b3dc57601a4"
 
 workstation_manager:
   user:
@@ -130,7 +130,7 @@ workstation_manager:
     editor_packages:
       - code
     mise:
-      version: "2026.11.10"
+      version: "2026.11.14"
       # Project mise.toml files may select their own tools and versions.
       tools:
         # renovate: datasource=github-releases depName=starship/starship
@@ -142,16 +142,16 @@ workstation_manager:
         # Renovate follows stable php-* tags; use the maintained backend explicitly.
         "vfox:jdx/vfox-php": "8.6.0"
         # renovate: datasource=github-releases depName=composer/composer
-        "github:composer/composer": "2.11.2"
+        "github:composer/composer": "2.11.3"
         # renovate: datasource=github-releases depName=runkids/skillshare
-        "github:runkids/skillshare": "0.30.12"
+        "github:runkids/skillshare": "0.33.0"
     # Define AI applications and extensions here.
     ai_tools:
       # Set false only when provider sign-in will be completed separately.
       authenticate: true
       orca:
         # renovate: datasource=github-releases depName=stablyai/orca
-        version: "1.4.265"
+        version: "1.4.279"
         # Seed only missing settings; preserve existing workspaces and preferences.
         settings:
           theme: system
@@ -161,12 +161,12 @@ workstation_manager:
         codex:
           npm: "@openai/codex"
           # renovate: datasource=npm depName=@openai/codex
-          version: "0.171.0"
+          version: "0.172.0"
           command: codex
         copilot:
           npm: "@github/copilot"
           # renovate: datasource=npm depName=@github/copilot
-          version: "1.0.114"
+          version: "1.0.116"
           command: copilot
       # Agent Skills (SKILL.md) shared by providers; custom skills come from workstation-config.
       skills:
@@ -179,7 +179,7 @@ workstation_manager:
         - name: context7
           npm: "@upstash/context7-mcp"
           # renovate: datasource=npm depName=@upstash/context7-mcp
-          version: "4.7.3"
+          version: "4.9.0"
           binary: context7-mcp
           args: ["--transport", "stdio"]
           env:
@@ -205,7 +205,7 @@ workstation_manager:
     # Manage user-home dotfiles through the built-in Chezmoi integration.
     chezmoi:
       # Pin a stable Chezmoi release for reproducible workstation bootstrap.
-      version: "2.74.1"
+      version: "2.74.2"
       # Git repository used to initialize the managed dotfiles checkout.
       source: "https://github.com/neilime/workstation-config.git"
       # Install the Chezmoi binary to this global path.
